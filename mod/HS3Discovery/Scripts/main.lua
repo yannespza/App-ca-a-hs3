@@ -245,16 +245,8 @@ pcall(function()
     log("Hook de abate ativo")
 end)
 
-pcall(function()
-    RegisterHook("/Script/HS3AnimalsRuntime.AnimalBaggingHandlerComponent:Client_OnBagRequestFinished", function(_, req, res, info)
-        local ok, t = pcall(readKill, info:get())
-        if not ok then t = {} end
-        t.acao = req:get()
-        t.resultado = res:get()
-        emit("abate_final", t)
-    end)
-    log("Hook de resultado do abate ativo")
-end)
+-- Observação: o hook em Client_OnBagRequestFinished derrubava o jogo ao vender o animal.
+-- O abate é registrado pelo popup (acima); a ponte ignora popups repetidos do mesmo animal.
 
 ------------------------------------------------------------------ laços
 LoopAsync(3000, function() return tryHookSpotted() end)

@@ -16,7 +16,7 @@ import webbrowser
 from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSAO = "0.1.0"
+VERSAO = "0.1.1"
 
 # ------------------------------------------------------------------ caminhos
 if getattr(sys, "frozen", False):
@@ -73,7 +73,8 @@ def nome_especie(tag):
     """Animals.Types.Bird.Duck.NorthernPintail -> Northern Pintail"""
     if not tag:
         return None
-    ultimo = tag.split(".")[-1]
+    partes = [p for p in tag.split(".") if p.lower() not in ("texas", "colorado", "a", "b")]
+    ultimo = partes[-1] if partes else tag
     out = ""
     for i, c in enumerate(ultimo):
         if i and c.isupper() and not ultimo[i - 1].isupper():
@@ -308,25 +309,18 @@ class Companion:
             self.registrar_grupo(chave)
             if novo:
                 return avaliar_missoes(d, {"tipo": "marcado", "id": ev.get("id"), "ts": time.time()})
-        elif tipo == "abate":
-            d["pendentes"][str(ev.get("id"))] = ev
-        elif tipo == "abate_final":
-            if ev.get("resultado") not in RESULTADO_OK:
-                return []
+        elif tipo in ("abate", "abate_final"):
+            # O abate é confirmado no popup do animal abatido (o mesmo animal só conta uma vez).
             id_ = str(ev.get("id"))
             if any(str(a.get("id")) == id_ for a in d["abates"]):
                 return []
-            base = d["pendentes"].pop(id_, {})
-            ab = dict(base)
-            ab.update({k: v for k, v in ev.items() if v is not None})
-            if base.get("distancia_m") is not None:
-                ab["distancia_m"] = base["distancia_m"]
+            ab = dict(ev)
             marc = d["marcados"].get(id_)
             especie = (marc or {}).get("especie")
             chave, nome = grupo_de(especie or ab.get("classe"))
             ab.update({"grupo": chave, "grupo_nome": nome, "especie": especie,
                        "especie_nome": nome_especie(especie) or nome,
-                       "acao_nome": ACOES.get(ab.get("acao"), "?"), "ts": time.time()})
+                       "acao_nome": ACOES.get(ab.get("acao"), "Recolhido"), "ts": time.time()})
             self.registrar_grupo(chave)
             d["abates"].append(ab)
             return avaliar_missoes(d, dict(ab, tipo="abate_confirmado"))
