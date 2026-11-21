@@ -196,7 +196,15 @@ function renderAtivas(d) {
     </div>`);
   const fim = d.finalizadas.slice(0, 3).map(m => `<div class="ativa concl"><div class="at-titulo"><span>${esc(m.titulo)}</span>
       <span class="recomp">${m.status === "paga" ? "✅ Pago" : (m.enviado ? "⏳ Pagando…" : "✔ Concluída")}</span></div></div>`);
-  $("ativas").innerHTML = lista.concat(fim).join("") || `<div class="vazio">Aceite um contrato do Velho Earl.</div>`;
+  const jogo = (d.contratos_jogo || []).map(c => `<div class="ativa do-jogo">
+      <div class="at-titulo"><span><span class="selo-jogo">JOGO</span> ${esc(c.titulo)}</span>${c.rastreado ? `<span class="selo-rastreio">Rastreando</span>` : ""}</div>
+      <div class="of-meta">${esc(c.vendedor)}${c.tempo_min != null ? ` · ⏱ ${c.tempo_min} min restantes` : ""}</div>
+      ${c.objetivos.map(o => `<div class="obj-jogo ${o.feito ? "feito" : ""}"><span>${o.feito ? "✔" : "▸"} ${esc(o.texto)}</span><b>${o.progresso} / ${o.meta}</b></div>
+        <div class="barra"><div style="width:${Math.min(100, 100 * o.progresso / o.meta)}%"></div></div>`).join("")}
+    </div>`);
+  const partes = lista.concat(fim);
+  if (jogo.length) partes.push(`<div class="sep-jogo">Contratos do jogo</div>`, ...jogo);
+  $("ativas").innerHTML = partes.join("") || `<div class="vazio">Aceite um contrato do Velho Earl.</div>`;
 }
 
 async function acao(tipo, id) {
@@ -372,75 +380,228 @@ function cartaoItem(i) {
 // ---------------------------------------------------------------- Mochila
 let mochilaMissoes = null;  // ids escolhidos (null = todas as ativas)
 let mochilaDados = null;
-async function renderArmario() {
-  const p = $("painel-armario");
-  if (p.contains(document.activeElement) && document.activeElement.tagName === "SELECT") return;
-  const q = mochilaMissoes ? `?missoes=${mochilaMissoes.join(",")}` : "";
-  const d = await (await fetch("/api/mochila" + q)).json();
-  mochilaDados = d;
-  if (!d.pronto) { p.innerHTML = `<p class="vazio">Primeiro leia os dados do jogo na aba Diário de campo.</p>`; return; }
-  const slots = d.slots, porTipo = (t) => d.mochila.filter(m => m.tipo === t);
-  const cartao = (i, botoes) => `<div class="mo-item ${i.serve ? "serve" : i.serve === false ? "nao" : ""}" title="${esc(i.motivo || "")}">
-      <span class="mo-foto">${i.imagem ? `<img src="${i.imagem}" onerror="this.remove()">` : ""}</span>
-      <div class="mo-txt"><b>${esc(i.nome)}</b>${i.motivo ? `<small>${i.serve ? "✔ " : ""}${esc(i.motivo)}</small>` : ""}${botoes || ""}</div></div>`;
-  const vagas = (t, nome) => {
-    const itens = porTipo(t), n = slots[t] || itens.length;
-    const cel = [];
-    for (let k = 0; k < Math.max(n, itens.length); k++) {
-      const it = itens.find(x => x.idx === k) || (itens.every(x => x.idx == null) ? itens[k] : null);
-      cel.push(it ? cartao(it, `<button class="mo-btn" onclick="moAcao({acao:'tirar',item:'${it.item}'})">Tirar</button>`)
-                  : `<div class="mo-item vazio-slot">espaço livre</div>`);
-    }
-    return `<div class="mo-slot"><h4>${nome} <small>${itens.length}/${n}</small></h4><div class="mo-grade">${cel.join("")}</div></div>`;
-  };
-  const grupos = {};
-  d.possuidos.forEach(i => (grupos[i.grupo] ||= []).push(i));
-  const proxIdx = (t) => { const usados = new Set(porTipo(t).map(x => x.idx)); for (let k = 0; k < (slots[t] || 1); k++) if (!usados.has(k)) return k; return (slots[t] || 1) - 1; };
-  const botoesPossuido = (i) => {
-    let h = `<div class="mo-linha">`;
-    if (i.slot && !i.na_mochila) h += `<button class="mo-btn verde" onclick="moAcao({acao:'por',item:'${i.item}',tipo:'${i.slot}',idx:${proxIdx(i.slot)}})">Pôr na mochila</button>`;
-    if (i.na_mochila) h += `<span class="chip">Na mochila</span>`;
-    if (i.sugerido) h += `<span class="chip latao">Sugerido</span>`;
-    h += `</div>`;
-    if (i.calibres) h += `<div class="mo-cal">${i.calibres.map(c => `<span class="chip ${c.serve ? "" : "cinza"}">${esc(c.nome)}</span>`).join("")}</div>`;
-    if (i.municoes && i.municoes.length) h += `<div class="mo-mun"><select id="mun-${i.id}">${i.municoes.map(m =>
-        `<option value="${m.id}" ${(m.atual || (!i.municoes.some(x => x.atual) && m === i.municoes.find(x => x.serve))) ? "selected" : ""}>${m.serve ? "✔ " : "✖ "}${esc(m.nome)}${m.atual ? " (atual)" : ""}</option>`).join("")}</select>
-        <button class="mo-btn" onclick="moAcao({acao:'municao',arma:'${i.id}',municao:$('mun-${i.id}').value})">Usar munição</button></div>`;
-    return h;
-  };
-  const sug = d.sugestao, nSug = sug.armas.length + sug.objetos.length;
-  p.innerHTML = `
-    <h3>Missões para montar a mochila</h3>
-    <div class="filtros">${d.ativas.length ? d.ativas.map(m => `<button class="${m.escolhida ? "ativo" : ""}" onclick="moMissao('${m.id}')">${m.escolhida ? "☑" : "☐"} ${esc(m.titulo)}</button>`).join("")
-      : `<span class="item-sub">Nenhum contrato ativo — aceite um contrato do Velho Earl. Sem missão, a sugestão vale para qualquer animal.</span>`}</div>
-    <div class="mo-req">${d.requisitos.map(r => `<span class="chip latao">${esc(r)}</span>`).join("")}</div>
-    <div class="mo-acoes"><button class="btn-papel verde" ${nSug ? "" : "disabled"} onclick="moMontar()">Montar mochila sugerida (${nSug} itens)</button>
-      <span class="item-sub">${d.lida_ts ? "Mochila lida do jogo." : "Abra o jogo numa reserva para ler os espaços da mochila."} Verde = serve para as missões escolhidas.</span></div>
-    <h3>Na mochila agora</h3>
-    <div class="mo-slots">${vagas("Inventory.Weapon", "Armas")}${vagas("Inventory.Objects", "Objetos")}${vagas("Inventory.GPS", "GPS")}</div>
-    <h3>Seus itens</h3>
-    ${Object.entries(grupos).map(([g, its]) => {
-      const sim = its.filter(x => x.serve), nao = its.filter(x => !x.serve);
-      return `<h4 class="mo-grupo">${esc(g)} <small>${sim.length} de ${its.length} servem</small></h4>
-        ${sim.length ? `<div class="mo-grade larga">${sim.map(i => cartao(i, botoesPossuido(i))).join("")}</div>` : `<p class="item-sub">Nenhum serve para as missões escolhidas.</p>`}
-        ${nao.length ? `<details class="mo-nao"><summary>Ver os que não servem (${nao.length})</summary><div class="mo-grade larga">${nao.map(i => cartao(i, botoesPossuido(i))).join("")}</div></details>` : ""}`;
-    }).join("")}`;
+const MO_TIPOS = [
+  { tipo: "Inventory.Weapon", nome: "Armas", classe: "armas" },
+  { tipo: "Inventory.Objects", nome: "Equipamentos", classe: "objetos" },
+  { tipo: "Inventory.GPS", nome: "GPS", classe: "gps" },
+];
+let moAssinatura = "", moOcupadoAte = 0;
+const moTxtIdade = (s) => s == null ? "" : s < 60 ? `há ${s} s` : `há ${Math.round(s / 60)} min`;
+// recorta a parte transparente dos ícones do jogo (armas ocupam só uma faixa do quadrado)
+const moRecortes = {};
+function moRecortar(img) {
+  const src = img.dataset.src;
+  img.parentElement.classList.add("tem");
+  if (moRecortes[src]) { if (img.src !== moRecortes[src]) img.src = moRecortes[src]; return; }
+  try {
+    const c = document.createElement("canvas"), w = img.naturalWidth, h = img.naturalHeight;
+    if (!w || !h) return;
+    c.width = w; c.height = h;
+    const g = c.getContext("2d"); g.drawImage(img, 0, 0);
+    const px = g.getImageData(0, 0, w, h).data;
+    let x0 = w, y0 = h, x1 = -1, y1 = -1;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (px[(y * w + x) * 4 + 3] > 12) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    if (x1 < 0) return;
+    const m = 3, cw = x1 - x0 + 1 + 2 * m, ch = y1 - y0 + 1 + 2 * m;
+    const c2 = document.createElement("canvas"); c2.width = cw; c2.height = ch;
+    c2.getContext("2d").drawImage(c, x0, y0, x1 - x0 + 1, y1 - y0 + 1, m, m, x1 - x0 + 1, y1 - y0 + 1);
+    moRecortes[src] = c2.toDataURL();
+    img.src = moRecortes[src];
+  } catch { moRecortes[src] = src; }
 }
+const moFoto = (i, cls) => `<div class="mo-foto ${cls || ""}">${i && i.imagem ? `<img src="${moRecortes[i.imagem] || i.imagem}" data-src="${i.imagem}" alt="" onload="moRecortar(this)" onerror="this.remove()">` : ""}
+  <span class="mo-foto-ini">${esc(((i && i.nome) || "?").trim()[0] || "?")}</span></div>`;
+const moSelo = (i) => i.serve ? `<span class="mo-selo sim">✔ serve</span>` : i.serve === false ? `<span class="mo-selo nao">não serve</span>` : "";
+
+async function renderArmario(forcar) {
+  const p = $("painel-armario");
+  if (!forcar && (document.querySelector(".mo-modal") || p.contains(document.activeElement) && document.activeElement.tagName === "SELECT")) return;
+  const q = mochilaMissoes ? `?missoes=${encodeURIComponent(mochilaMissoes.join(","))}` : "";
+  let d;
+  try { d = await (await fetch("/api/mochila" + q)).json(); } catch { return; }
+  const assin = JSON.stringify(d);
+  if (!forcar && assin === moAssinatura && p.innerHTML) return;
+  moAssinatura = assin;
+  mochilaDados = d;
+  if (!d.pronto) {
+    p.innerHTML = `<div class="mo-vazio-grande"><b>Falta ler os dados do jogo</b><span>Abra a aba <b>Diário de campo</b> e clique em “Ler dados do jogo” com o jogo aberto numa reserva.</span></div>`;
+    return;
+  }
+  const ocupado = Date.now() < moOcupadoAte || d.fila;
+  const lida = d.lida_ts && d.mochila.length;
+  const status = !d.em_reserva ? `<span class="mo-status off">● Jogo fora da reserva — entre numa reserva para mexer na mochila</span>`
+    : ocupado ? `<span class="mo-status ocupado">● Arrumando a mochila no jogo…</span>`
+    : lida ? `<span class="mo-status on">● Mochila do jogo · atualizada ${moTxtIdade(d.lida_idade)}</span>`
+    : `<span class="mo-status ocupado">● Lendo a mochila do jogo…</span>`;
+  const plano = d.plano || [];
+  const pode = d.em_reserva && lida && !ocupado;
+  const botaoMontar = !lida ? "" : plano.length
+    ? `<button class="mo-principal" ${pode ? "" : "disabled"} onclick="moConfirmarMontar()"><span class="mo-principal-ico">★</span>
+         <span><b>Montar mochila sugerida</b><small>${plano.length} troca${plano.length > 1 ? "s" : ""} para os contratos escolhidos</small></span></button>`
+    : `<div class="mo-pronta">✔ A mochila já está pronta para os contratos escolhidos</div>`;
+
+  const contratos = d.ativas.length ? d.ativas.map(m => `<button class="mo-contrato ${m.escolhida ? "on" : ""}" onclick="moMissao('${esc(m.id)}')">
+      <span class="mo-check">${m.escolhida ? "✔" : ""}</span><span class="mo-origem ${m.do_jogo ? "jogo" : "app"}">${m.do_jogo ? "JOGO" : "EARL"}</span>${esc(m.titulo)}</button>`).join("")
+    : `<span class="mo-dica">Nenhum contrato ativo. Sem contrato, a sugestão vale para qualquer animal.</span>`;
+
+  // espaços da mochila
+  const porTipo = (t) => d.mochila.filter(m => m.tipo === t);
+  const mudancas = {};
+  plano.filter(x => x.acao === "por").forEach(x => mudancas[x.tipo + ":" + x.idx] = x);
+  const secao = (T) => {
+    const itens = porTipo(T.tipo), n = Math.max(d.slots[T.tipo] || 0, itens.length);
+    const cel = [];
+    for (let k = 0; k < n; k++) {
+      const it = itens.find(x => x.idx === k);
+      const mud = mudancas[T.tipo + ":" + k];
+      const sug = mud ? `<div class="mo-sugere">Sugestão: <b>${esc(mud.nome)}</b></div>` : "";
+      if (!it) {
+        cel.push(`<div class="mo-slot vazio ${pode ? "clic" : ""}" ${pode ? `onclick="moEscolher('${T.tipo}',${k})"` : ""}>
+          <div class="mo-mais">+</div><div class="mo-slot-nome">Espaço livre</div>${pode ? `<small>Clique para escolher</small>` : ""}${sug}</div>`);
+        continue;
+      }
+      let mun = "";
+      if (it.municoes) {
+        const ruim = it.municoes.some(m => m.atual && !m.serve) || !it.municoes.some(m => m.atual);
+        mun = it.municoes.length ? `<label class="mo-municao ${ruim ? "ruim" : ""}" onclick="event.stopPropagation()"><span>Munição</span>
+            <select ${pode ? "" : "disabled"} onchange="moAcao({acao:'municao',arma:'${esc(it.id)}',municao:this.value})">
+              ${it.municoes.some(m => m.atual) ? "" : `<option value="">— escolha —</option>`}
+              ${it.municoes.map(m => `<option value="${esc(m.id)}" ${m.atual ? "selected" : ""}>${m.serve ? "✔" : "✖"} ${esc(m.nome)}</option>`).join("")}
+            </select></label>` : `<div class="mo-aviso">Você não tem munição para esta arma</div>`;
+      }
+      cel.push(`<div class="mo-slot ${it.serve ? "serve" : it.serve === false ? "nao" : ""}">
+          ${moFoto(it, T.classe === "armas" ? "larga" : "")}
+          <div class="mo-slot-info"><div class="mo-slot-nome">${esc(it.nome)}</div>${moSelo(it)}
+            ${it.motivo ? `<small class="mo-motivo">${esc(it.motivo)}</small>` : ""}${mun}${sug}</div>
+          ${pode ? `<div class="mo-slot-botoes"><button onclick="moEscolher('${T.tipo}',${k})">Trocar</button>
+            <button class="sec" onclick="moAcao({acao:'tirar',item:'${esc(it.item)}'})">Tirar</button></div>` : ""}
+        </div>`);
+    }
+    return `<section class="mo-sec ${T.classe}"><header><h4>${T.nome}</h4><span>${itens.length}/${n}</span></header><div class="mo-grade">${cel.join("")}</div></section>`;
+  };
+
+  p.innerHTML = `<div class="mochila">
+    <div class="mo-topo">
+      <div><h2>Mochila</h2>${status}</div>
+      ${botaoMontar}
+    </div>
+    <div class="mo-bloco">
+      <div class="mo-rotulo">1 · Para quais contratos?</div>
+      <div class="mo-contratos">${contratos}</div>
+      ${d.requisitos.length ? `<div class="mo-precisa"><span>O que precisa:</span>${d.requisitos.map(r => `<b>${esc(r)}</b>`).join("")}</div>` : ""}
+    </div>
+    <div class="mo-bloco">
+      <div class="mo-rotulo">2 · Sua mochila no jogo <span class="mo-dica">verde = serve para os contratos · clique em Trocar ou num espaço livre para escolher o item</span></div>
+      ${lida ? `<div class="mo-tabuleiro">${secao(MO_TIPOS[0])}${secao(MO_TIPOS[1])}${secao(MO_TIPOS[2])}</div>`
+             : `<div class="mo-vazio-grande"><b>${d.em_reserva ? "Lendo a mochila…" : "Entre numa reserva no jogo"}</b><span>Os espaços aparecem aqui assim que o jogo responder.</span></div>`}
+    </div>
+  </div>`;
+}
+
 function moMissao(id) {
   const todas = mochilaDados.ativas.map(m => m.id);
   let sel = mochilaMissoes || todas.slice();
   sel = sel.includes(id) ? sel.filter(x => x !== id) : [...sel, id];
   mochilaMissoes = sel.length === todas.length ? null : (sel.length ? sel : ["nenhuma"]);
-  renderArmario();
+  renderArmario(true);
 }
+
+function moFecharModal() { document.querySelectorAll(".mo-modal").forEach(m => m.remove()); }
+function moModal(html) {
+  moFecharModal();
+  const m = document.createElement("div");
+  m.className = "mo-modal";
+  m.innerHTML = `<div class="mo-janela">${html}</div>`;
+  m.onclick = (e) => { if (e.target === m) moFecharModal(); };
+  document.body.appendChild(m);
+  return m;
+}
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") moFecharModal(); });
+
+function moAviso(txt, tipo) {
+  const t = document.createElement("div");
+  t.className = "mo-toast " + (tipo || "");
+  t.textContent = txt;
+  document.body.appendChild(t);
+  setTimeout(() => t.classList.add("sai"), 3200);
+  setTimeout(() => t.remove(), 3800);
+}
+
+function moEscolher(tipo, idx) {
+  const d = mochilaDados;
+  const T = MO_TIPOS.find(x => x.tipo === tipo);
+  const atual = d.mochila.find(x => x.tipo === tipo && x.idx === idx);
+  const lista = d.possuidos.filter(i => i.slot === tipo);
+  const naMochila = new Set(d.mochila.map(x => x.item));
+  const cat = (i) => {
+    if (tipo !== "Inventory.Weapon") return i.grupo;
+    const t = i.tipo || "";
+    return /Bow|Crossbow/.test(t) ? "Arcos" : /Shotgun/.test(t) ? "Espingardas" : /Handgun|Pistol|Revolver/.test(t) ? "Pistolas" : "Rifles";
+  };
+  const cats = [...new Set(lista.map(cat))];
+  const cartao = (i) => {
+    const ja = naMochila.has(i.item);
+    return `<button class="mo-opcao ${i.serve ? "serve" : ""} ${ja ? "ja" : ""}" data-nome="${esc(i.nome.toLowerCase())}" data-cat="${esc(cat(i))}" ${ja ? "disabled" : `onclick="moPor('${esc(i.item)}','${tipo}',${idx})"`}>
+      ${moFoto(i, T.classe === "armas" ? "larga" : "")}
+      <span class="mo-opcao-nome">${esc(i.nome)}</span>
+      <span class="mo-opcao-sub">${ja ? "já está na mochila" : esc(i.motivo || i.grupo)}</span>${i.serve && !ja ? `<span class="mo-selo sim">✔ serve</span>` : ""}
+    </button>`;
+  };
+  const servem = lista.filter(i => i.serve), outros = lista.filter(i => !i.serve);
+  moModal(`<header class="mo-jan-topo"><div><h3>Escolher ${T.classe === "armas" ? "arma" : T.classe === "gps" ? "GPS" : "equipamento"}</h3>
+      <small>${T.nome} · espaço ${idx + 1}${atual ? ` · hoje: ${esc(atual.nome)}` : ""}</small></div>
+      <input class="mo-busca" placeholder="Procurar…" oninput="moFiltrar(this.value)"><button class="mo-x" onclick="moFecharModal()">✕</button></header>
+    ${cats.length > 1 ? `<div class="mo-cats"><button class="on" onclick="moCat(this,'')">Todos</button>${cats.map(c => `<button onclick="moCat(this,'${esc(c)}')">${esc(c)}</button>`).join("")}</div>` : ""}
+    <div class="mo-jan-corpo">
+      ${servem.length ? `<h4>Servem para os contratos (${servem.length})</h4><div class="mo-opcoes">${servem.map(cartao).join("")}</div>` : ""}
+      ${outros.length ? `<h4>${servem.length ? "Outros itens seus" : "Seus itens"} (${outros.length})</h4><div class="mo-opcoes">${outros.map(cartao).join("")}</div>` : ""}
+      ${lista.length ? "" : `<p class="mo-dica">Você não tem itens deste tipo.</p>`}
+    </div>`);
+  moFiltroCat = ""; moFiltroTxt = "";
+  setTimeout(() => document.querySelector(".mo-busca")?.focus(), 30);
+}
+let moFiltroCat = "", moFiltroTxt = "";
+function moAplicarFiltro() {
+  document.querySelectorAll(".mo-opcao").forEach(b => b.style.display =
+    (!moFiltroTxt || b.dataset.nome.includes(moFiltroTxt)) && (!moFiltroCat || b.dataset.cat === moFiltroCat) ? "" : "none");
+  document.querySelectorAll(".mo-jan-corpo h4").forEach(h => {
+    const g = h.nextElementSibling;
+    h.style.display = g && [...g.children].some(c => c.style.display !== "none") ? "" : "none";
+  });
+}
+function moFiltrar(t) { moFiltroTxt = t.trim().toLowerCase(); moAplicarFiltro(); }
+function moCat(btn, c) {
+  moFiltroCat = c;
+  btn.parentElement.querySelectorAll("button").forEach(b => b.classList.toggle("on", b === btn));
+  moAplicarFiltro();
+}
+function moPor(item, tipo, idx) { moFecharModal(); moAcao({ acao: "por", item, tipo, idx }); }
+
 async function moAcao(corpo) {
-  const r = await post("/api/mochila", corpo);
-  if (!r.ok) return alert(r.erro);
-  setTimeout(renderArmario, 2500);
+  let r;
+  try { r = await post("/api/mochila", corpo); } catch { return moAviso("O app não respondeu.", "erro"); }
+  if (!r.ok) return moAviso(r.erro || "Não deu certo.", "erro");
+  if (r.nada) return moAviso("A mochila já está pronta.");
+  const seg = r.segundos || 3;
+  moOcupadoAte = Date.now() + seg * 1000;
+  moAviso(r.trocas > 1 ? `Enviando ${r.trocas} trocas para o jogo…` : "Enviado para o jogo…", "ok");
+  renderArmario(true);
+  setTimeout(() => { moOcupadoAte = 0; renderArmario(true); }, (seg + 1.5) * 1000);
+  setTimeout(() => renderArmario(true), (seg + 5) * 1000);
 }
-async function moMontar() {
-  if (!confirm("Montar a mochila no jogo com os itens sugeridos? Os espaços serão trocados pelos itens verdes.")) return;
-  moAcao({ acao: "montar", sugestao: mochilaDados.sugestao });
+
+function moConfirmarMontar() {
+  const plano = mochilaDados.plano || [];
+  const tipoNome = (t) => (MO_TIPOS.find(x => x.tipo === t) || {}).nome || t;
+  const linhas = plano.map(x => x.acao === "por"
+    ? `<li><span class="mo-li-onde">${tipoNome(x.tipo)} · espaço ${x.idx + 1}</span>${x.sai ? `<s>${esc(x.sai)}</s> → ` : ""}<b>${esc(x.nome)}</b></li>`
+    : `<li><span class="mo-li-onde">Munição · ${esc(x.arma_nome)}</span><b>${esc(x.nome)}</b></li>`).join("");
+  moModal(`<header class="mo-jan-topo"><div><h3>Montar mochila sugerida</h3><small>O que vai mudar no jogo</small></div>
+      <button class="mo-x" onclick="moFecharModal()">✕</button></header>
+    <div class="mo-jan-corpo"><ul class="mo-lista-plano">${linhas}</ul>
+      <p class="mo-dica">As trocas são feitas uma por segundo para o jogo não travar. Leva uns ${plano.length + 2} segundos.</p></div>
+    <footer class="mo-jan-rodape"><button class="sec" onclick="moFecharModal()">Cancelar</button>
+      <button class="ok" onclick="moFecharModal();moAcao({acao:'montar',missoes:mochilaMissoes||[]})">Montar agora</button></footer>`);
 }
 
 async function renderLoja() {
@@ -496,7 +657,7 @@ async function renderEnciclopedia() {
       <p>Os dados do diário (fotos, hábitos, calibres, armas, roupas, cães) são lidos do jogo uma única vez.</p>
       <p>Com o jogo aberto <b>dentro de uma reserva</b>, clique no botão abaixo. A leitura é feita aos poucos (uns 10 a 15 minutos,
       sem travar o jogo) e esta página se completa sozinha no fim. Se sair da reserva no meio, é só clicar de novo: continua de onde parou.</p>
-      <button class="btn-papel verde" onclick="post('/api/exportar_dados',{}).then(()=>this.textContent='Lendo dados do jogo…')">Ler dados do jogo</button></div>`;
+      <button class="btn-papel verde" onclick="post('/api/exportar_dados',{}).then(r=>{if(r.ok)this.textContent='Lendo dados do jogo… (uns 10 a 15 minutos)';else moAviso(r.erro||'O jogo não respondeu.','erro')})">Ler dados do jogo</button></div>`;
     setTimeout(() => { if (abaAtual === "enciclopedia") renderEnciclopedia(); }, 15000);
     return;
   }

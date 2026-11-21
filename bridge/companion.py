@@ -689,9 +689,13 @@ class Companion:
         return info
 
     def enviar_comando(self, linhas):
+        """Escreve comandos para o mod. Com o jogo fechado não escreve nada (o mod descarta comandos antigos ao abrir)."""
+        if not self.conectado():
+            return False
         with open(self.caminho("cmd.txt"), "a", encoding="utf-8") as f:
             for l in linhas:
                 f.write(l + "\n")
+        return True
 
     # --- processamento de eventos
     def registrar_grupo(self, chave):
@@ -959,53 +963,104 @@ class Companion:
             return extras.armario(self.catalogo(), self.equipamento(), self.tabela_calibres(), nome_especie, self.dados["abates"])
 
     # --- mochila
+    # --- contratos do próprio jogo (lidos pelo mod em contratos_jogo.json)
+    PALAVRAS_PT = [("porco", ["javali", "porco", "caititu", "queixada", "cateto"]), ("cervo", ["cervo", "veado", "corça"]),
+                   ("alce", ["alce", "wapiti"]), ("antilocapra", ["antilocapra", "pronghorn"]), ("pato", ["pato", "marreca", "arrabio"]),
+                   ("ganso", ["ganso"]), ("peru", ["peru"]), ("faisao", ["faisão", "perdiz"]), ("codorna", ["codorna"]),
+                   ("pomba", ["pomba", "rolinha"]), ("antilope", ["antílope", "nilgai", "órix"]), ("felino", ["lince", "puma", "felino"]),
+                   ("roedor", ["cão-da-pradaria"]), ("coiote", ["coiote"]), ("lobo", ["lobo"]), ("raposa", ["raposa"]),
+                   ("coelho", ["coelho", "lebre"]), ("urso", ["urso"]), ("carneiro", ["carneiro", "cabra"]), ("bisao", ["bisão"])]
+    VENDEDORES = {"Ranger": "Guarda-florestal", "SportsShooter": "Atirador esportivo", "Hunter": "Caçador", "Guide": "Guia"}
+
+    def contratos_jogo(self):
+        d = self.cache.json(self.caminho("contratos_jogo.json"), None)
+        if not d or not self.em_reserva() or time.time() - (d.get("ts") or 0) > 120:
+            return []
+        limpo = lambda t: re.sub(r"\s+", " ", re.sub(r"<[^>]*>", "", str(t or ""))).strip()
+        saida = []
+        for c in d.get("contratos") or []:
+            if not isinstance(c, dict):
+                continue
+            objs = []
+            for o in c.get("objetivos") or []:
+                meta = int(o.get("meta") or 1) if o.get("quantidade") else 1
+                prog = min(int(o.get("progresso") or 0), meta)
+                texto_o = limpo(o.get("titulo"))
+                if texto_o.endswith("sob influência"):
+                    texto_o += " de um chamador"
+                objs.append({"texto": texto_o, "progresso": prog, "meta": meta, "feito": prog >= meta})
+            vend = (c.get("vendedor") or "").split(".")[-1]
+            tempo = c.get("tempo")
+            texto = " ".join([limpo(c.get("titulo")), limpo(c.get("descricao"))] + [o["texto"] for o in objs]).lower()
+            grupo = next((g for g, palavras in self.PALAVRAS_PT if any(p in texto for p in palavras)), None)
+            dist = re.search(r"(\d{2,4})\s*m(?:etros)?\b", texto)
+            tipo = "atrair" if re.search(r"apito|chamad|atrai|isca|chamariz", texto) else \
+                ("distancia" if dist and re.search(r"dist|longe|mais de|alcance", texto) else ("abater_grupo" if grupo else "abater_qualquer"))
+            saida.append({"id": "jogo:" + str(c.get("id") or len(saida)), "titulo": limpo(c.get("titulo")) or "Contrato do jogo",
+                          "descricao": limpo(c.get("descricao")), "vendedor": self.VENDEDORES.get(vend, vend or "Jogo"),
+                          "rastreado": bool(c.get("rastreado")), "objetivos": objs, "do_jogo": True,
+                          "tempo_min": round(tempo / 60) if isinstance(tempo, (int, float)) and c.get("limitado") and tempo > 0 else None,
+                          "tipo": tipo, "grupo": grupo, "dist_min": int(dist.group(1)) if tipo == "distancia" else 0,
+                          "dist_max": 9999 if tipo == "distancia" else 0})
+        return saida
+
     def dados_mochila(self, ids=None):
         agora = time.time()
-        if agora - getattr(self, "_mochila_pedida", 0) > 10:
+        if self.em_reserva() and agora - getattr(self, "_mochila_pedida", 0) > 8:
             self._mochila_pedida = agora
             self.enviar_comando(["mochila ler"])
         dados = self.cache.json(self.caminho("jogo_dados.json"), None)
         lida = self.cache.json(self.caminho("mochila.json"), None)
+        if lida and not lida.get("itens") and lida.get("pronto") is not True:
+            lida = None
+        do_jogo = self.contratos_jogo()
         with self.lock:
-            ativas = self.por_status("ativa")
+            ativas = self.por_status("ativa") + do_jogo
             escolhidas = [m for m in ativas if not ids or m["id"] in ids]
             if not dados:
                 return {"pronto": False}
             r = extras.mochila(dados, self.tabela_calibres(), self.equipamento(), lida, escolhidas,
                                nome_especie, grupo_de, nome_grupo)
             r["pronto"] = True
-            r["ativas"] = [{"id": m["id"], "titulo": m["titulo"], "escolhida": m in escolhidas} for m in ativas]
-            r["no_jogo"] = bool(self.estado.get("mapa"))
+            r["ativas"] = [{"id": m["id"], "titulo": m["titulo"], "escolhida": m in escolhidas, "do_jogo": bool(m.get("do_jogo")),
+                            "vendedor": m.get("vendedor")} for m in ativas]
+            r["em_reserva"] = self.em_reserva()
+            r["no_jogo"] = r["em_reserva"]
+            r["lida_idade"] = round(agora - lida["ts"]) if lida and lida.get("ts") else None
+            r["fila"] = getattr(self, "_mochila_fila_ate", 0) > agora
             return r
 
     def acao_mochila(self, corpo):
+        if not self.em_reserva():
+            return {"ok": False, "erro": "Entre numa reserva no jogo para mexer na mochila."}
         acao = corpo.get("acao")
         ok_id = lambda x: bool(x) and bool(re.fullmatch(r"[\w:.\-]+", str(x)))
-        if acao == "por" and ok_id(corpo.get("item")) and ok_id(corpo.get("tipo")):
-            self.enviar_comando([f"mochila por {corpo['item']} {corpo['tipo']} {int(corpo.get('idx') or 0)}"])
+        tipos = ("Inventory.Weapon", "Inventory.Objects", "Inventory.GPS")
+        linhas = []
+        if acao == "por" and ok_id(corpo.get("item")) and corpo.get("tipo") in tipos:
+            linhas = [f"mochila por {corpo['item']} {corpo['tipo']} {max(0, int(corpo.get('idx') or 0))}"]
         elif acao == "tirar" and ok_id(corpo.get("item")):
-            self.enviar_comando([f"mochila tirar {corpo['item']}"])
+            linhas = [f"mochila tirar {corpo['item']}"]
         elif acao == "municao" and ok_id(corpo.get("arma")) and ok_id(corpo.get("municao")):
-            self.enviar_comando([f"mochila municao {corpo['arma']} {corpo['municao']}"])
+            linhas = [f"mochila municao {corpo['arma']} {corpo['municao']}"]
         elif acao == "montar":
-            sug = corpo.get("sugestao") or {}
-            linhas = []
-            for i, it in enumerate(sug.get("armas") or []):
-                if ok_id(it):
-                    linhas.append(f"mochila por {it} Inventory.Weapon {i}")
-            for i, it in enumerate(sug.get("objetos") or []):
-                if ok_id(it):
-                    linhas.append(f"mochila por {it} Inventory.Objects {i}")
-            for arma, mun in (sug.get("municao") or {}).items():
-                if ok_id(arma) and ok_id(mun):
-                    linhas.append(f"mochila municao {arma} {mun}")
+            ids = [str(x) for x in (corpo.get("missoes") or [])] or None
+            plano = self.dados_mochila(ids).get("plano") or []
+            for t in plano:
+                if t["acao"] == "por" and ok_id(t["item"]):
+                    linhas.append(f"mochila por {t['item']} {t['tipo']} {int(t['idx'])}")
+                elif t["acao"] == "municao" and ok_id(t["arma"]) and ok_id(t["municao"]):
+                    linhas.append(f"mochila municao {t['arma']} {t['municao']}")
             if not linhas:
-                return {"ok": False, "erro": "Nada para montar."}
-            self.enviar_comando(linhas)
+                return {"ok": True, "nada": True}
         else:
             return {"ok": False, "erro": "Ação inválida."}
-        self._mochila_pedida = 0
-        return {"ok": True}
+        if not self.enviar_comando(linhas):
+            return {"ok": False, "erro": "O jogo não está respondendo."}
+        # o mod faz uma troca por segundo e depois salva e relê
+        self._mochila_fila_ate = time.time() + len(linhas) + 3
+        self._mochila_pedida = time.time() + len(linhas)
+        return {"ok": True, "trocas": len(linhas), "segundos": len(linhas) + 2}
 
     def dados_loja(self):
         with self.lock:
@@ -1156,6 +1211,7 @@ class Companion:
                 "rastreados": rastreados,
                 "ofertas": [m for m in missoes if m["status"] == "oferta"],
                 "ativas": [m for m in missoes if m["status"] == "ativa"],
+                "contratos_jogo": self.contratos_jogo(),
                 "finalizadas": [m for m in missoes if m["status"] in ("concluida", "paga")][-8:][::-1],
                 "gerando": self.gerando,
                 "abates": self.dados["abates"][-30:][::-1],
@@ -1335,11 +1391,11 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/chat":
             return self.responder(200, APP.conversar(corpo.get("texto")))
         if p == "/api/exportar_dados":
-            APP.enviar_comando(["exportar_dados"])
-            return self.responder(200, {"ok": True})
+            if not APP.em_reserva():
+                return self.responder(200, {"ok": False, "erro": "Entre numa reserva no jogo primeiro."})
+            return self.responder(200, {"ok": APP.enviar_comando(["exportar_dados"])})
         if p == "/api/exportar_mapa":
-            APP.enviar_comando(["export_map"])
-            return self.responder(200, {"ok": True})
+            return self.responder(200, {"ok": APP.enviar_comando(["export_map"])})
         self.responder(404, {"erro": "não encontrado"})
 
 

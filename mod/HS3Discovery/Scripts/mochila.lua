@@ -1,10 +1,12 @@
 -- Mochila (inventário levado para a caçada) e munição de cada arma.
 -- Recarregado a cada comando (pode ser atualizado com o jogo aberto).
--- Regra de segurança: nada de guardar objetos do jogo entre chamadas; tudo é buscado na hora.
+-- Regras de segurança (o jogo fechou em 21/11 com várias trocas seguidas):
+--  * nada de guardar objetos do jogo entre chamadas; tudo é buscado na hora e checado com IsValid;
+--  * a munição é lida pela propriedade AppliedWeaponStoreItems (nada de parâmetros de saída de funções);
+--  * cada troca é feita num passo separado (main.lua põe numa fila, 1 por segundo) e só no fim salva e relê.
 local M = {}
 
 local TIPOS = { "Inventory.Weapon", "Inventory.Objects", "Inventory.GPS" }
-local TAG_MUNICAO = "Cosmetics.Weapons.Attachments.Ammo"
 
 local function tag(nome) return { TagName = FName(nome) } end
 local function id(tipo, nome) return { PrimaryAssetType = { Name = FName(tipo) }, PrimaryAssetName = FName(nome) } end
@@ -12,87 +14,127 @@ local function idStr(pid)
     local ok, s = pcall(function() return pid.PrimaryAssetType.Name:ToString() .. ":" .. pid.PrimaryAssetName:ToString() end)
     return ok and s or nil
 end
-local function inv() return FindFirstOf("HS3InventoryManagerComponent") end
-local function chunkArmas() return FindFirstOf("HS3WeaponSaveSlotChunk") end
+local function valido(o)
+    if not o then return false end
+    local ok, v = pcall(function() return o:IsValid() end)
+    return ok and v
+end
+local function inv()
+    local im = FindFirstOf("HS3InventoryManagerComponent")
+    if valido(im) then return im end
+end
+local function chunkArmas()
+    local ch = FindFirstOf("HS3WeaponSaveSlotChunk")
+    if valido(ch) then return ch end
+end
 
-function M.ler(ctx)
-    local log, tagName = ctx.log, ctx.tagName
-    local r = { ts = os.time(), slots = {}, itens = {}, municao = {}, erros = {} }
-    local im = inv()
-    if not im then r.erros[#r.erros + 1] = "sem inventário"; ctx.writeFile(ctx.DIR .. "mochila.json", ctx.json(r)); return r end
-    for _, t in ipairs(TIPOS) do
-        local ok, n = pcall(function() return im:GetNumSlotsForType(tag(t), false) end)
-        if ok then r.slots[t] = n else r.erros[#r.erros + 1] = "slots " .. t .. ": " .. tostring(n) end
-    end
+-- dentro de uma reserva, com personagem
+function M.pronto()
+    local pc = FindFirstOf("HS3PlayerController")
+    if not valido(pc) then return false end
+    local ok, pawn = pcall(function() return pc.Pawn end)
+    return ok and valido(pawn) and inv() ~= nil
+end
+
+local function itensAtuais(im, tagName)
+    local lista = {}
     pcall(function()
         im.CachedInventoryList.Items:ForEach(function(_, e)
             local it = e:get()
-            r.itens[#r.itens + 1] = { item = idStr(it.SaveInfo.AssetId), tipo = tagName(it.SaveInfo.Type),
-                                      idx = it.SaveInfo.SlotTypeIndex, cargas = it.Charges }
+            lista[#lista + 1] = { item = idStr(it.SaveInfo.AssetId), tipo = tagName(it.SaveInfo.Type),
+                                  idx = it.SaveInfo.SlotTypeIndex, cargas = it.Charges }
         end)
     end)
+    return lista
+end
+
+function M.ler(ctx)
+    local log, tagName = ctx.log, ctx.tagName
+    local r = { ts = os.time(), slots = {}, itens = {}, municao = {}, erros = {}, pronto = M.pronto() }
+    local im = inv()
+    if not r.pronto or not im then
+        -- fora da reserva: não sobrescreve a última leitura boa
+        return r
+    end
+    for _, t in ipairs(TIPOS) do
+        local ok, n = pcall(function() return im:GetNumSlotsForType(tag(t), false) end)
+        if ok then r.slots[t] = n else r.erros[#r.erros + 1] = "slots " .. t end
+    end
+    r.itens = itensAtuais(im, tagName)
     local ch = chunkArmas()
     if ch then
         local ok, e = pcall(function()
-            local lista = {}
-            ch:GetAllWeaponStoreIds(lista)
-            for _, v in ipairs(lista) do
-                local wid = v:get()
-                local nome = wid.PrimaryAssetName:ToString()
-                -- todos os acessórios salvos da arma (luneta, bipé, munição…); o app separa a munição
-                local anexos = {}
-                pcall(function()
-                    local out = {}
-                    ch:GetAllAttachmentStoreIdsForWeapon(wid, out)
-                    for _, a in pairs(out) do
-                        local v = a; pcall(function() v = a:get() end)
-                        local nomeA = idStr(v)
-                        if nomeA then anexos[#anexos + 1] = nomeA:match(":(.+)$") or nomeA end
-                    end
-                end)
-                r.municao[nome] = anexos
-            end
+            ch.AppliedWeaponStoreItems:ForEach(function(_, el)
+                local c = el:get()
+                local arma = idStr(c.WeaponStoreId)
+                if arma then
+                    local anexos = {}
+                    pcall(function()
+                        c.AttachmentStoreIds:ForEach(function(_, a)
+                            local s = idStr(a:get())
+                            if s then anexos[#anexos + 1] = s:match(":(.+)$") or s end
+                        end)
+                    end)
+                    r.municao[arma:match(":(.+)$") or arma] = anexos
+                end
+            end)
         end)
         if not ok then r.erros[#r.erros + 1] = "munição: " .. tostring(e) end
-    else
-        r.erros[#r.erros + 1] = "sem HS3WeaponSaveSlotChunk"
     end
     ctx.writeFile(ctx.DIR .. "mochila.json", ctx.json(r))
-    log(string.format("mochila lida: %d itens, slots arma=%s objeto=%s gps=%s, %d armas com config",
-        #r.itens, tostring(r.slots["Inventory.Weapon"]), tostring(r.slots["Inventory.Objects"]),
-        tostring(r.slots["Inventory.GPS"]), (function() local n = 0; for _ in pairs(r.municao) do n = n + 1 end; return n end)()))
+    log(string.format("mochila lida: %d itens, slots arma=%s objeto=%s gps=%s",
+        #r.itens, tostring(r.slots["Inventory.Weapon"]), tostring(r.slots["Inventory.Objects"]), tostring(r.slots["Inventory.GPS"])))
     return r
 end
 
 -- põe um item (HS3InventoryItemDefinition:ID_x) no espaço idx (0, 1, 2…) do tipo
 function M.por(ctx, item, tipo, idx)
-    local im = inv(); if not im then error("sem inventário") end
+    if not M.pronto() then ctx.log("mochila: fora da reserva, ignorado"); return end
+    local im = inv()
     local t, n = item:match("^([^:]+):(.+)$")
-    local slot = im:GetSlotIndexFromTypeIndex(tag(tipo), idx, false)
-    ctx.log(string.format("mochila: pondo %s em %s #%d (slot %s)", n, tipo, idx, tostring(slot)))
+    if not n then return end
+    for _, i in ipairs(itensAtuais(im, ctx.tagName)) do
+        if i.item == item and i.tipo == tipo and i.idx == idx then
+            ctx.log("mochila: " .. n .. " já está no espaço " .. idx); return
+        end
+    end
+    local okS, slot = pcall(function() return im:GetSlotIndexFromTypeIndex(tag(tipo), idx, false) end)
+    if not okS or type(slot) ~= "number" or slot < 0 then ctx.log("mochila: espaço inválido " .. tipo .. " #" .. idx); return end
+    ctx.log(string.format("mochila: pondo %s em %s #%d (slot %d)", n, tipo, idx, slot))
+    im = inv(); if not im then return end
     im:AddItemAsset(id(t, n), tag(tipo), slot, true, false)
-    pcall(function() im:SaveInventoryData(true) end)
     ctx.emit("mochila", { acao = "por", item = item, tipo = tipo, idx = idx })
-    return M.ler(ctx)
 end
 
 function M.tirar(ctx, item)
-    local im = inv(); if not im then error("sem inventário") end
+    if not M.pronto() then ctx.log("mochila: fora da reserva, ignorado"); return end
+    local im = inv()
     local t, n = item:match("^([^:]+):(.+)$")
+    if not n then return end
+    local tem = false
+    for _, i in ipairs(itensAtuais(im, ctx.tagName)) do if i.item == item then tem = true end end
+    if not tem then ctx.log("mochila: " .. n .. " não está na mochila"); return end
     ctx.log("mochila: tirando " .. n)
     im:RemoveItemAsset(id(t, n))
-    pcall(function() im:SaveInventoryData(true) end)
     ctx.emit("mochila", { acao = "tirar", item = item })
-    return M.ler(ctx)
 end
 
 -- troca a munição carregada numa arma (ids de loja: DA_..._StoreItem / D_Ammo_..._StoreItem)
 function M.municao(ctx, armaLoja, municaoLoja)
-    local ch = chunkArmas(); if not ch then error("sem HS3WeaponSaveSlotChunk") end
+    if not M.pronto() then ctx.log("mochila: fora da reserva, ignorado"); return end
+    local ch = chunkArmas(); if not ch then ctx.log("munição: sem dados de armas"); return end
     ctx.log("munição: " .. armaLoja .. " <- " .. municaoLoja)
     ch:UpdateAttachmentForWeapon(id("HS3StoreItemAsset", armaLoja), id("HS3StoreItemAsset", municaoLoja))
-    pcall(function() ch:SaveWeaponCosmetics() end)
     ctx.emit("mochila", { acao = "municao", arma = armaLoja, municao = municaoLoja })
+end
+
+-- grava no save do jogo e relê (chamado uma vez no fim de uma série de trocas)
+function M.salvar(ctx)
+    if not M.pronto() then return end
+    local im = inv()
+    if im then pcall(function() im:SaveInventoryData(true) end) end
+    local ch = chunkArmas()
+    if ch then pcall(function() ch:SaveWeaponCosmetics() end) end
     return M.ler(ctx)
 end
 

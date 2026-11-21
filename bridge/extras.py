@@ -612,8 +612,10 @@ def mochila(dados, calibres, equip, lida, missoes, nome_especie, grupo_de, grupo
     for a in possuidos:
         if a["grupo"] != "Armas":
             continue
-        ids_cal = {x["id"] for x in a["calibres"]}
-        opcoes = [m for m in municoes if m.get("calibre") in ids_cal]
+        ids_cal = [x["id"] for x in a["calibres"]]
+        cabe = lambda c: bool(c) and any(c == w or c.startswith(w + ".") or w.startswith(c + ".") for w in ids_cal)
+        opcoes = [m for m in municoes if cabe(m.get("calibre"))]
+        opcoes.sort(key=lambda m: (not m["serve"], m["nome"]))
         a["municoes"] = [{"id": m["id"], "nome": m["nome"], "serve": m["serve"], "atual": m["id"] == a.get("municao_atual")} for m in opcoes]
 
     # sugestão de mochila
@@ -641,26 +643,57 @@ def mochila(dados, calibres, equip, lida, missoes, nome_especie, grupo_de, grupo
                 objetos.append(p)
     municao_sug = {}
     for a in armas:
-        boa = next((m for m in a["municoes"] if m["serve"]), None)
+        boa = next((m for m in a["municoes"] if m["serve"] and m["atual"]), None) or next((m for m in a["municoes"] if m["serve"]), None)
         if boa:
             municao_sug[a["id"]] = boa["id"]
     for p in possuidos:
         p["sugerido"] = p in armas or p in objetos or p["id"] in municao_sug.values()
 
+    por_item = {x["item"]: x for x in possuidos}
     mochila_atual = []
     for it, info in na_mochila.items():
         c = por_def.get(it) or {}
-        p = next((x for x in possuidos if x["item"] == it), None)
-        mochila_atual.append({"item": it, "tipo": info.get("tipo"), "idx": info.get("idx"), "nome": c.get("nome") or it.split(":")[-1],
-                              "imagem": img(c.get("icone")), "serve": p["serve"] if p else None, "motivo": p["motivo"] if p else ""})
+        p = por_item.get(it)
+        e = {"item": it, "tipo": info.get("tipo"), "idx": info.get("idx"), "nome": c.get("nome") or it.split(":")[-1].replace("ID_", "").replace("_", " "),
+             "imagem": img(c.get("icone")), "serve": p["serve"] if p else None, "motivo": p["motivo"] if p else "",
+             "grupo": p["grupo"] if p else None, "id": c.get("id")}
+        if p and p["grupo"] == "Armas":
+            e["municoes"], e["calibres"], e["municao_atual"] = p.get("municoes", []), p.get("calibres", []), p.get("municao_atual")
+        mochila_atual.append(e)
     mochila_atual.sort(key=lambda x: (TIPOS_MOCHILA.index(x["tipo"]) if x["tipo"] in TIPOS_MOCHILA else 9, x["idx"] if x["idx"] is not None else 99))
 
     grupos_ordem = ["Armas", "Munição", "Chamadores", "Iscas de cheiro", "Chamarizes", "Binóculos", "Telêmetros",
                     "Disfarce de odor", "Esconderijos", "Vento", "GPS", "Outros"]
     possuidos.sort(key=lambda p: (grupos_ordem.index(p["grupo"]) if p["grupo"] in grupos_ordem else 99, not p["serve"], p["nome"]))
+    sugestao = {"armas": [a["item"] for a in armas], "objetos": [o["item"] for o in objetos], "municao": municao_sug}
     return {
         "missoes": [{"id": m["id"], "titulo": m["titulo"], "descricao": m.get("descricao")} for m in missoes],
         "requisitos": req["chips"], "slots": slots, "lida_ts": (lida or {}).get("ts"), "mochila": mochila_atual,
-        "possuidos": possuidos,
-        "sugestao": {"armas": [a["item"] for a in armas], "objetos": [o["item"] for o in objetos], "municao": municao_sug},
+        "possuidos": possuidos, "sugestao": sugestao,
+        "plano": plano_mochila(sugestao, lida, slots, por_def, possuidos),
     }
+
+
+def plano_mochila(sug, lida, slots, por_def, possuidos):
+    """Trocas mínimas para deixar a mochila como a sugestão: não mexe no que já está certo."""
+    if not lida or not lida.get("itens"):
+        return []
+    nome = lambda it: (por_def.get(it) or {}).get("nome") or it.split(":")[-1]
+    itens = lida["itens"]
+    plano = []
+    for tipo, desejados in (("Inventory.Weapon", sug.get("armas", [])), ("Inventory.Objects", sug.get("objetos", []))):
+        n = int(slots.get(tipo) or 0)
+        atual = {i["idx"]: i["item"] for i in itens if i.get("tipo") == tipo and isinstance(i.get("idx"), int)}
+        presentes = set(atual.values())
+        faltam = [x for x in desejados if x not in presentes]
+        livres = [k for k in range(n) if k not in atual] + [k for k in range(n) if k in atual and atual[k] not in desejados]
+        for item, k in zip(faltam, livres):
+            plano.append({"acao": "por", "item": item, "tipo": tipo, "idx": k, "nome": nome(item),
+                          "sai": nome(atual[k]) if k in atual else None})
+    mun_atual = {p["id"]: p.get("municao_atual") for p in possuidos if p["grupo"] == "Armas"}
+    nomes_id = {p["id"]: p["nome"] for p in possuidos}
+    for arma, mun in (sug.get("municao") or {}).items():
+        if mun_atual.get(arma) != mun:
+            plano.append({"acao": "municao", "arma": arma, "municao": mun, "nome": nomes_id.get(mun, mun),
+                          "arma_nome": nomes_id.get(arma, arma)})
+    return plano

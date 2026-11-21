@@ -609,6 +609,39 @@ local function exportarDados(forcar)
                          fim = function() exportando = false end })
 end
 
+------------------------------------------------------------------ mochila e contratos do jogo
+-- (Scripts\mochila.lua e Scripts\contratos.lua, recarregados a cada uso)
+local filaMochila = {}
+local mochilaMexeu = false
+local function ctxScripts() return { DIR = DIR, log = log, emit = emit, writeFile = writeFile, json = jsonEncode, tagName = tagName } end
+local function rodarMochila(fn)
+    local chunk, e = loadfile(DIR .. "Scripts\\mochila.lua")
+    if not chunk then log("mochila.lua: " .. tostring(e)); return end
+    local ok, err = pcall(function() fn(chunk(), ctxScripts()) end)
+    if not ok then log("mochila: " .. tostring(err)) end
+end
+local function passoMochila()
+    if #filaMochila == 0 then
+        if mochilaMexeu then mochilaMexeu = false; rodarMochila(function(mo, ctx) mo.salvar(ctx) end) end
+        return
+    end
+    local line = table.remove(filaMochila, 1)
+    local p = {}
+    for w in line:gmatch("%S+") do p[#p + 1] = w end
+    local acao = p[2]
+    mochilaMexeu = true
+    rodarMochila(function(mo, ctx)
+        if acao == "por" and p[3] and p[4] and tonumber(p[5]) then mo.por(ctx, p[3], p[4], math.tointeger(tonumber(p[5])) or 0)
+        elseif acao == "tirar" and p[3] then mo.tirar(ctx, p[3])
+        elseif acao == "municao" and p[3] and p[4] then mo.municao(ctx, p[3], p[4])
+        else log("mochila: comando inválido: " .. line) end
+    end)
+end
+local function lerContratosJogo()
+    local chunk = loadfile(DIR .. "Scripts\\contratos.lua")
+    if chunk then pcall(function() chunk().ler(ctxScripts()) end) end
+end
+
 local ultimoNivel, ticks = nil, 0
 local function periodic()
     ticks = ticks + 1
@@ -634,6 +667,8 @@ local function periodic()
             end
         end
     end
+    pcall(passoMochila)
+    if ticks % 5 == 3 and #filaMochila == 0 then lerContratosJogo() end
     if ticks % 10 == 0 then pcall(writeEquipamento) end
     if ticks % 5 == 0 then pcall(writeAnimals) end
     if ticks % 60 == 0 then pcall(exportPois) end
@@ -680,18 +715,9 @@ LoopAsync(1000, function()
                 elseif cmd == "export_map" then exportMap(); exportPois(); exportFog(); exportCalibres()
                 elseif cmd == "mochila" then
                     -- mochila ler | mochila por <item> <tipo> <idx> | mochila tirar <item> | mochila municao <arma> <municao>
-                    local chunk, e = loadfile(DIR .. "Scripts\\mochila.lua")
-                    if not chunk then log("mochila.lua: " .. tostring(e)); return end
-                    local mo = chunk()
-                    local ctx = { DIR = DIR, log = log, emit = emit, writeFile = writeFile, json = jsonEncode, tagName = tagName }
-                    local p = {}
-                    for w in line:gmatch("%S+") do p[#p + 1] = w end
-                    local acao = p[2]
-                    if acao == "ler" then mo.ler(ctx)
-                    elseif acao == "por" and p[3] and p[4] and tonumber(p[5]) then mo.por(ctx, p[3], p[4], tonumber(p[5]))
-                    elseif acao == "tirar" and p[3] then mo.tirar(ctx, p[3])
-                    elseif acao == "municao" and p[3] and p[4] then mo.municao(ctx, p[3], p[4])
-                    else log("mochila: comando inválido: " .. line) end
+                    -- leitura na hora; trocas vão para a fila (uma por segundo, depois salva e relê)
+                    if arg == "ler" then rodarMochila(function(mo, ctx) mo.ler(ctx) end)
+                    else filaMochila[#filaMochila + 1] = line end
                 elseif cmd == "script" and arg ~= "" and arg:match("^[%w_%-]+%.lua$") then
                     local chunk, e = loadfile(DIR .. "dev" .. "\\" .. arg)
                     if not chunk then log("script erro ao carregar: " .. tostring(e)); return end
@@ -705,4 +731,9 @@ LoopAsync(1000, function()
     return false
 end)
 
+-- comandos que sobraram de uma sessão anterior (jogo fechado) não são executados
+do
+    local f = io.open(CMD_FILE, "r")
+    if f then f:close(); os.remove(CMD_FILE); log("cmd.txt antigo descartado ao iniciar") end
+end
 log("HS3 Companion carregado. Pasta: " .. DIR)
