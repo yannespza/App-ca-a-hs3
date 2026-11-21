@@ -41,7 +41,7 @@
     text-shadow: 2px 2px 0 #000;
   }
   .logo span { color: var(--laranja); }
-  .conexao { margin-left: auto; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  .conexao { font-size: 14px; display: flex; align-items: center; gap: 8px; }
   .led { width: 12px; height: 12px; border-radius: 50%; background: var(--vermelho); box-shadow: 0 0 8px var(--vermelho); }
   .led.on { background: #6fbf3a; box-shadow: 0 0 10px #6fbf3a; }
   .led.meio { background: var(--ouro); box-shadow: 0 0 10px var(--ouro); }
@@ -99,13 +99,21 @@
   .btn:hover { background: var(--laranja); }
   .tag { display: inline-block; background: var(--musgo); color: var(--papel); border-radius: 4px; padding: 1px 7px; font-size: 12px; }
   .vazio { color: #7a6243; font-style: italic; }
+  .atualizar { margin-left: 14px; display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .atualizar button { background: var(--madeira); color: var(--papel); border: 1px solid var(--ouro); border-radius: 6px;
+                      padding: 6px 12px; cursor: pointer; font-size: 13px; }
+  .atualizar button.nova { background: var(--laranja); border-color: #fff3; animation: pulsa 1.6s infinite; }
+  .atualizar button:disabled { opacity: .6; cursor: default; animation: none; }
+  @keyframes pulsa { 50% { box-shadow: 0 0 12px var(--laranja); } }
+  #versao { opacity: .7; }
   .breve { text-align: center; padding: 60px 20px; color: #6b5233; font-family: Georgia, serif; font-size: 20px; }
 </style>
 </head>
 <body>
 <header>
   <div class="logo">Cabana do <span>Caçador</span></div>
-  <div class="conexao"><div id="led" class="led"></div><span id="conexao-txt">Procurando o jogo…</span></div>
+  <div class="conexao" style="margin-left:auto"><div id="led" class="led"></div><span id="conexao-txt">Procurando o jogo…</span></div>
+  <div class="atualizar"><span id="versao"></span><button id="btn-atualizar" onclick="clicarAtualizar()">Procurar atualização</button></div>
 </header>
 <nav id="abas">
   <button data-aba="status" class="ativo">Status</button>
@@ -226,6 +234,35 @@ function cartaoMissao(m, compacto) {
   </div>`;
 }
 
+let ultimaAtualizacao = null, atualizando = false;
+function mostrarAtualizacao(a, versao) {
+  ultimaAtualizacao = a;
+  $("versao").textContent = "v" + versao;
+  const b = $("btn-atualizar");
+  if (!a) return;
+  b.classList.toggle("nova", !!a.disponivel);
+  b.disabled = ["baixando", "reiniciando", "verificando"].includes(a.estado);
+  b.title = a.erro || "";
+  b.textContent = a.estado === "baixando" ? "Baixando…" : a.estado === "reiniciando" ? "Reiniciando…"
+    : a.estado === "verificando" ? "Verificando…" : a.disponivel ? `Atualizar para v${a.nova}` : "Procurar atualização";
+}
+async function clicarAtualizar() {
+  const a = ultimaAtualizacao;
+  if (a && a.disponivel) {
+    if (!confirm(`Atualizar para a versão ${a.nova}?\n\nO programa reinicia sozinho em alguns segundos. ` +
+                 `A parte do mod vale na próxima vez que você abrir o jogo.`)) return;
+    atualizando = true;
+    await fetch("/api/atualizar", {method: "POST"});
+    $("btn-atualizar").textContent = "Baixando…"; $("btn-atualizar").disabled = true;
+  } else {
+    $("btn-atualizar").textContent = "Verificando…";
+    const r = await (await fetch("/api/verificar", {method: "POST"})).json();
+    mostrarAtualizacao(r, r.atual);
+    if (r.erro) alert(r.erro);
+    else if (!r.disponivel) alert(`Você já está na versão mais recente (v${r.atual}).`);
+  }
+}
+
 async function trocar(id) {
   await fetch("/api/missoes/trocar", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({id})});
   atualizar();
@@ -260,7 +297,15 @@ function desenharRadar(marcados) {
 async function atualizar() {
   let d;
   try { d = await (await fetch("/api/estado")).json(); }
-  catch { $("led").className = "led"; $("conexao-txt").textContent = "HS3Companion.exe fechado"; return; }
+  catch {
+    $("led").className = "led";
+    $("conexao-txt").textContent = atualizando ? "Atualizando, aguarde…" : "HS3Companion.exe fechado";
+    return;
+  }
+  if (atualizando && d.atualizacao && d.atualizacao.estado === "parado" && !d.atualizacao.disponivel) {
+    atualizando = false; location.reload(); return;
+  }
+  mostrarAtualizacao(d.atualizacao, d.versao);
 
   const st = d.estado || {};
   $("led").className = "led " + (d.em_reserva ? "on" : d.conectado ? "meio" : "");

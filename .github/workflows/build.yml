@@ -21,9 +21,13 @@ jobs:
       - name: Instalar PyInstaller
         run: pip install pyinstaller
 
+      - name: Gravar versão
+        shell: pwsh
+        run: Set-Content -Path bridge/versao.txt -Value "0.1.${{ github.run_number }}" -NoNewline
+
       - name: Gerar executável
         working-directory: bridge
-        run: pyinstaller --onefile --console --name HS3Companion --icon icon.ico --add-data "web;web" companion.py
+        run: pyinstaller --onefile --console --name HS3Companion --icon icon.ico --add-data "web;web" --add-data "versao.txt;." companion.py
 
       - name: Montar pacote
         shell: pwsh

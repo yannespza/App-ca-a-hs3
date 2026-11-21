@@ -13,10 +13,14 @@ import threading
 import time
 import uuid
 import webbrowser
+import shutil
+import subprocess
+import tempfile
+import urllib.request
+import zipfile
 from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSAO = "0.1.1"
 
 # ------------------------------------------------------------------ caminhos
 if getattr(sys, "frozen", False):
@@ -25,6 +29,17 @@ if getattr(sys, "frozen", False):
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     WEB_DIR = os.path.join(BASE_DIR, "web")
+
+def _ler_versao():
+    try:
+        with open(os.path.join(os.path.dirname(WEB_DIR), "versao.txt"), encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception:
+        return "dev"
+
+
+VERSAO = _ler_versao()
+REPO = "yannespza/App-ca-a-hs3"
 
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 DADOS_PATH = os.path.join(BASE_DIR, "dados_hs3.json")
@@ -35,6 +50,7 @@ CONFIG_PADRAO = {
     "abrir_navegador": True,
     "missoes_ativas": 3,
     "limite_diario_creditos": 20000,
+    "github_token": "",
 }
 
 # ------------------------------------------------------------------ catálogo
@@ -219,6 +235,114 @@ def avaliar_missoes(dados, evento):
                 m["concluida_em"] = time.time()
                 concluidas.append(m)
     return concluidas
+
+
+# ------------------------------------------------------------------ atualização automática
+def _versao_tupla(v):
+    try:
+        return tuple(int(x) for x in v.lstrip("v").split("."))
+    except Exception:
+        return (0,)
+
+
+class Atualizador:
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.ultima = None          # dados da última release
+        self.erro = None
+        self.estado = "parado"      # parado | verificando | baixando | reiniciando | erro
+        self.verificado_em = 0
+
+    def _req(self, url, accept="application/vnd.github+json"):
+        h = {"Accept": accept, "User-Agent": "HS3Companion"}
+        if self.cfg.get("github_token"):
+            h["Authorization"] = "Bearer " + self.cfg["github_token"]
+        return urllib.request.urlopen(urllib.request.Request(url, headers=h), timeout=60)
+
+    def verificar(self):
+        self.estado = "verificando"
+        try:
+            with self._req(f"https://api.github.com/repos/{REPO}/releases/latest") as r:
+                rel = json.load(r)
+            asset = next(a for a in rel["assets"] if a["name"].endswith(".zip"))
+            self.ultima = {"versao": rel["tag_name"].lstrip("v"), "asset_api": asset["url"],
+                           "asset_url": asset["browser_download_url"], "notas": rel.get("body", "")}
+            self.erro = None
+        except urllib.error.HTTPError as e:
+            self.erro = ("Repositório privado: torne o repositório público ou coloque um github_token no config.json"
+                         if e.code == 404 else f"GitHub respondeu {e.code}")
+        except Exception as e:
+            self.erro = f"Sem conexão com o GitHub ({e.__class__.__name__})"
+        self.verificado_em = time.time()
+        self.estado = "parado" if not self.erro else "erro"
+
+    def disponivel(self):
+        return bool(self.ultima) and VERSAO != "dev" and _versao_tupla(self.ultima["versao"]) > _versao_tupla(VERSAO)
+
+    def info(self):
+        return {"atual": VERSAO, "nova": self.ultima and self.ultima["versao"], "disponivel": self.disponivel(),
+                "estado": self.estado, "erro": self.erro}
+
+    def atualizar(self):
+        if not self.ultima:
+            self.verificar()
+        if not self.ultima:
+            return False
+        threading.Thread(target=self._aplicar, daemon=True).start()
+        return True
+
+    def _aplicar(self):
+        try:
+            self.estado = "baixando"
+            tmp = tempfile.mkdtemp(prefix="hs3upd_")
+            zip_path = os.path.join(tmp, "pacote.zip")
+            url = self.ultima["asset_api"] if self.cfg.get("github_token") else self.ultima["asset_url"]
+            with self._req(url, accept="application/octet-stream") as r, open(zip_path, "wb") as f:
+                shutil.copyfileobj(r, f)
+            pasta = os.path.join(tmp, "pacote")
+            with zipfile.ZipFile(zip_path) as z:
+                z.extractall(pasta)
+
+            # 1) mod: copia para a pasta do jogo (vale na próxima vez que o jogo abrir)
+            mod_novo = os.path.join(pasta, "HS3Discovery")
+            if os.path.isdir(mod_novo) and os.path.isdir(self.cfg["pasta_mod"]):
+                for raiz, _, arquivos in os.walk(mod_novo):
+                    destino = os.path.join(self.cfg["pasta_mod"], os.path.relpath(raiz, mod_novo))
+                    os.makedirs(destino, exist_ok=True)
+                    for a in arquivos:
+                        shutil.copy2(os.path.join(raiz, a), os.path.join(destino, a))
+
+            # 2) programa: troca o .exe depois que este processo fechar
+            if not getattr(sys, "frozen", False):
+                self.estado = "parado"
+                return
+            exe_atual = sys.executable
+            exe_novo = os.path.join(pasta, "HS3Companion.exe")
+            for extra in ("LEIA-ME.txt",):
+                if os.path.exists(os.path.join(pasta, extra)):
+                    shutil.copy2(os.path.join(pasta, extra), os.path.join(BASE_DIR, extra))
+            bat = os.path.join(tmp, "atualizar.bat")
+            with open(bat, "w", encoding="ascii", errors="ignore") as f:
+                f.write(f"""@echo off
+echo Atualizando HS3 Companion...
+:espera
+timeout /t 1 /nobreak >nul
+tasklist /fi "PID eq {os.getpid()}" | find "{os.getpid()}" >nul && goto espera
+copy /y "{exe_novo}" "{exe_atual}" >nul
+start "" "{exe_atual}" --sem-navegador
+""")
+            self.estado = "reiniciando"
+            time.sleep(1.5)  # deixa o app receber o estado "reiniciando"
+            subprocess.Popen(["cmd", "/c", bat], creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0))
+            os._exit(0)
+        except Exception as e:
+            self.erro = f"Falha ao atualizar: {e}"
+            self.estado = "erro"
+
+    def loop(self):
+        while True:
+            self.verificar()
+            time.sleep(1800)
 
 
 # ------------------------------------------------------------------ núcleo
@@ -440,6 +564,7 @@ class Companion:
             rep = [r for r in st.get("reputacao", []) or []]
             return {
                 "versao": VERSAO,
+                "atualizacao": ATUALIZADOR.info() if ATUALIZADOR else None,
                 "conectado": self.conectado(),
                 "em_reserva": self.em_reserva(),
                 "estado": st,
@@ -455,6 +580,7 @@ class Companion:
 
 
 APP = None
+ATUALIZADOR = None
 
 TIPOS = {".html": "text/html; charset=utf-8", ".js": "application/javascript", ".css": "text/css",
          ".json": "application/json", ".webmanifest": "application/manifest+json",
@@ -493,14 +619,21 @@ class Handler(BaseHTTPRequestHandler):
             corpo = json.loads(self.rfile.read(tam) or b"{}")
         except Exception:
             corpo = {}
+        if self.path == "/api/atualizar":
+            return self.responder(200, {"ok": ATUALIZADOR.atualizar()})
+        if self.path == "/api/verificar":
+            ATUALIZADOR.verificar()
+            return self.responder(200, ATUALIZADOR.info())
         if self.path == "/api/missoes/trocar":
             return self.responder(200, {"ok": APP.trocar_missao(corpo.get("id"))})
         self.responder(404, {"erro": "não encontrado"})
 
 
 def main():
-    global APP
+    global APP, ATUALIZADOR
     APP = Companion()
+    ATUALIZADOR = Atualizador(APP.cfg)
+    threading.Thread(target=ATUALIZADOR.loop, daemon=True).start()
     porta = APP.cfg["porta"]
     print(f"HS3 Companion {VERSAO}")
     print(f"Pasta do mod: {APP.cfg['pasta_mod']}")
@@ -510,7 +643,7 @@ def main():
     servidor = ThreadingHTTPServer(("127.0.0.1", porta), Handler)
     url = f"http://localhost:{porta}"
     print(f"App aberto em {url}  (deixe esta janela aberta enquanto joga)")
-    if APP.cfg.get("abrir_navegador"):
+    if APP.cfg.get("abrir_navegador") and "--sem-navegador" not in sys.argv:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
     try:
         servidor.serve_forever()
