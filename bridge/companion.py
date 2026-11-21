@@ -329,11 +329,20 @@ class Atualizador:
             bat = os.path.join(tmp, "atualizar.bat")
             with open(bat, "w", encoding="ascii", errors="ignore") as f:
                 f.write(f"""@echo off
-echo Atualizando HS3 Companion...
+set /a tentativas=0
 :espera
 timeout /t 1 /nobreak >nul
 tasklist /fi "PID eq {os.getpid()}" | find "{os.getpid()}" >nul && goto espera
-copy /y "{exe_novo}" "{exe_atual}" >nul
+tasklist /fi "PID eq {os.getppid()}" | find "{os.getppid()}" >nul && goto espera
+:copiar
+set /a tentativas+=1
+copy /y "{exe_novo}" "{exe_atual}" >nul 2>&1
+if errorlevel 1 (
+  if %tentativas% lss 60 (
+    timeout /t 1 /nobreak >nul
+    goto copiar
+  )
+)
 start "" "{exe_atual}" --sem-navegador
 """)
             self.estado = "reiniciando"
