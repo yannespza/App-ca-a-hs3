@@ -416,11 +416,14 @@ const moedaFmt = (i) => i.preco == null ? "" : (i.moeda === "pontos de campo" ? 
 const chips = (l, cls = "") => (l || []).map(x => `<span class="chip ${cls}">${esc(x)}</span>`).join("") || `<span class="item-sub">–</span>`;
 const quando = (ts) => ts ? new Date(ts * 1000).toLocaleDateString("pt-BR") : "";
 
-function fotoDiario(i, cat, grande) {
-  if (i.imagem) return `<img src="${i.imagem}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{innerHTML:this.dataset.sil}))" data-sil='${silhueta(i.grupo || "outro").replace(/'/g, "&#39;")}'>`;
+function semFoto(i, cat, grande) {
   if (cat === "animais") return silhueta(i.grupo || "outro");
-  const ic = { armas: "🎯", municao: "•", roupas: "🧥", itens: "🎒", caes: "🐕" }[cat] || "?";
+  const ic = { armas: "🎯", municao: "•", roupas: "🧥", itens: "🎒", caes: "🐕", guia: "📖" }[cat] || "?";
   return `<span class="ic-vazio${grande ? " g" : ""}">${ic}</span>`;
+}
+function fotoDiario(i, cat, grande) {
+  if (!i.imagem) return semFoto(i, cat, grande);
+  return `<img src="${i.imagem}" alt="" loading="lazy" onerror="this.outerHTML=this.dataset.sil" data-sil="${esc(semFoto(i, cat, grande))}">`;
 }
 
 async function renderEnciclopedia() {
@@ -460,7 +463,7 @@ function desenharDiario() {
     <article class="diario-pagina">${it ? (cat.id === "animais" ? paginaAnimal(it) : paginaItem(it, cat)) : ""}</article>
   </div>`;
   const p = $("painel-enciclopedia");
-  p.querySelectorAll(".dm-cats button").forEach(b => b.onclick = () => { diarioCat = b.dataset.cat; diarioSel = null; desenharDiario(); });
+  p.querySelectorAll(".dm-cats button").forEach(b => b.onclick = () => { diarioCat = b.dataset.cat; diarioSel = null; diarioBusca = ""; desenharDiario(); });
   p.querySelectorAll(".dm-item").forEach(b => b.onclick = () => { diarioSel = b.dataset.id; desenharDiario(); p.querySelector(".diario-pagina").scrollTop = 0; });
   const busca = p.querySelector(".dm-busca");
   busca.oninput = () => { diarioBusca = busca.value; const pos = busca.selectionStart; desenharDiario(); const n = $("painel-enciclopedia").querySelector(".dm-busca"); n.focus(); n.setSelectionRange(pos, pos); };
@@ -499,7 +502,7 @@ function paginaAnimal(a) {
         ${a.medalhas.length ? secao("Medalhas (pontuação do troféu)", `<table class="dp-tab">${a.medalhas.map(m => `<tr><td><span class="medalha ${esc(m.nome)}"></span>${esc(m.nome)}</td><td>${m.pontos}+</td></tr>`).join("")}</table>`) : ""}
         ${secao("Seus registros", `<table class="dp-tab">${meus.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("")}</table>` +
           (a.ultimos_abates.length ? `<div class="item-sub" style="margin-top:6px">${a.ultimos_abates.map(x => `${quando(x.ts)} · ${metros(x.distancia_m)} · ${x.calibre || "?"} · genética ${pct(x.genetica || 0)}`).join("<br>")}</div>` : ""))}
-        ${a.licencas.length ? secao("Licenças", `<div class="dp-licencas">${a.licencas.map(l => `<figure><img src="${l.imagem}" loading="lazy"><figcaption>${esc(l.reserva)}</figcaption></figure>`).join("")}</div>`) : ""}
+        ${a.licencas.length ? secao("Licenças", `<div class="dp-licencas">${a.licencas.map(l => `<figure><img src="${l.imagem}" loading="lazy" onerror="this.closest('figure').remove()"><figcaption>${esc(l.reserva)}</figcaption></figure>`).join("")}</div>`) : ""}
       </div>
     </div>`;
 }
@@ -509,8 +512,10 @@ function paginaItem(i, cat) {
     i.sub && ["Tipo", esc(i.sub)], i.raca && ["Raça", esc(i.raca)], i.marca && ["Marca", esc(i.marca)],
     i.preco != null && ["Preço", moedaFmt(i)], i.cargas && ["Quantidade por compra", i.cargas],
     i.calibre && ["Calibre", esc(i.calibre)],
-    ["Situação", i.em_uso ? "Em uso agora" : i.tem ? "Você tem" : "Não tem"],
+    i.tem != null && ["Situação", i.em_uso ? "Em uso agora" : i.tem ? "Você tem" : "Não tem"],
   ].filter(Boolean);
+  if (cat.id === "guia") return `<header class="dp-topo"><div class="dp-foto">${fotoDiario(i, cat.id, true)}</div>
+      <div><div class="dp-cab">${esc(i.sub)}</div><h2>${esc(i.nome)}</h2>${i.descricao ? `<p class="dp-desc">${esc(i.descricao)}</p>` : ""}</div></header>`;
   const compravel = !i.tem && i.preco && i.moeda === "créditos" && (cat.id === "roupas" || cat.id === "itens" || cat.id === "armas" || cat.id === "municao");
   return `<header class="dp-topo">
       <div class="dp-foto">${fotoDiario(i, cat.id, true)}</div>

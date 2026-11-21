@@ -587,7 +587,7 @@ end
 local exportador, exportando = nil, false
 local function exportarDados(forcar)
     if exportando then return end
-    if not exportador then
+    do  -- recarrega sempre (permite atualizar exportar.lua sem reiniciar o jogo)
         local chunk, e = loadfile(DIR .. "Scripts\\exportar.lua")
         if not chunk then log("exportar.lua: " .. tostring(e)); return end
         exportador = chunk()

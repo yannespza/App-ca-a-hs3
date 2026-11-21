@@ -216,6 +216,8 @@ ATRIBUTOS_PT = {
 
 def nome_mapa(m):
     m = m or ""
+    if "DEV" in m or "Lobby" in m:
+        return "Rancho"
     for chave, nome in (("Texas", "Texas"), ("Colorado", "Colorado"), ("Poland", "Polônia"), ("Hub", "Rancho")):
         if chave.lower() in m.lower():
             return nome
@@ -335,8 +337,9 @@ def enciclopedia_jogo(dados, calibres, catalogo_equip, abates, vistos, nome_espe
             "id": a["id"], "tag": tag, "nome": _limpo(a.get("titulo")) or nome_especie(tag), "grupo": g, "grupo_nome": gnome,
             "cabecalho": CABECALHOS.get(cab, cab or "Animais"), "imagem": img(a.get("imagem")),
             "descricao": _limpo(a.get("descricao")),
-            "secoes_titulo": _limpo(a.get("secoes_titulo")), "secoes": [s for s in map(_limpo, a.get("secoes") or []) if s],
-            "habitat_titulo": _limpo(a.get("habitat_titulo")), "habitat": [s for s in map(_limpo, a.get("habitat") or []) if s],
+            "secoes_titulo": "Aparência e comportamento", "secoes": [s for s in map(_limpo, a.get("secoes") or []) if s],
+            "habitat_titulo": _limpo(a.get("habitat_titulo")),
+            "habitat": [s for s in map(_limpo, a.get("habitat") or []) if s and s not in (a.get("secoes") or [])],
             "reservas": sorted({nome_mapa(m) for m in a.get("mapas") or []} - {"Rancho"}),
             "calibres": [nome_calibre(c) for c in permitidos], "proibidos": [nome_calibre(c) for c in cal.get("incompativeis", [])],
             "armas": armas_ok[:40],
@@ -351,6 +354,12 @@ def enciclopedia_jogo(dados, calibres, catalogo_equip, abates, vistos, nome_espe
             "ultimos_abates": [{"distancia_m": x.get("distancia_m"), "genetica": x.get("genetica"), "calibre": nome_calibre(x.get("calibre")),
                                 "ts": x.get("ts"), "reserva": nome_mapa(x.get("reserva"))} for x in mortos[-5:]][::-1],
         })
+    contagem = {}
+    for x in animais:
+        contagem[x["nome"]] = contagem.get(x["nome"], 0) + 1
+    for x in animais:
+        if contagem[x["nome"]] > 1 and x["reservas"]:
+            x["nome"] = f'{x["nome"]} ({", ".join(x["reservas"])})'
     ordem_cab = ["Caça grossa", "Predadores", "Caça miúda", "Aves de campo", "Aves aquáticas", "Aves", "Pragas"]
     animais.sort(key=lambda x: (ordem_cab.index(x["cabecalho"]) if x["cabecalho"] in ordem_cab else 99, x["nome"]))
 
@@ -400,18 +409,34 @@ def enciclopedia_jogo(dados, calibres, catalogo_equip, abates, vistos, nome_espe
         loja = caes_loja.pop(c["id"], None) or {}
         raca = (c.get("raca") or "").split(".")[-1]
         caes.append({"id": c["id"], "nome": _limpo(c.get("nome")) or loja.get("nome") or c["id"], "sub": "Cães",
-                     "raca": nome_atributo(raca) if raca else None, "imagem": img(c.get("imagem")) or loja.get("imagem"),
+                     "raca": nome_atributo(raca) if raca else None, "imagem": loja.get("imagem"),
                      "descricao": loja.get("descricao"), "preco": loja.get("preco"), "moeda": loja.get("moeda"), "tem": loja.get("tem")})
     caes += list(caes_loja.values())
-    diario_caes = [e for e in dados.get("diario", []) if any(p in (e.get("categoria") or "") + (e.get("grupo") or "") for p in ("Companion", "Dog"))]
-    for e in diario_caes:
-        alvo = next((c for c in caes if c["nome"].lower() in (e.get("titulo") or "").lower() or (e.get("titulo") or "").lower() in c["nome"].lower()), None)
-        if alvo:
-            alvo["descricao"] = alvo.get("descricao") or _limpo(e.get("descricao"))
-            alvo["imagem"] = alvo.get("imagem") or img(e.get("imagem"))
+    def palavras(t):
+        return {w for w in (t or "").lower().replace("-", " ").split() if len(w) > 4}
+    usados = set()
+    for c in caes:
+        e = next((e for e in dados.get("diario", []) if "Dogs.Header.Race" in (e.get("grupo") or "")
+                  and palavras(e.get("titulo")) & palavras(c["nome"])), None)
+        if e:
+            usados.add(e["id"])
+            c["descricao"] = c.get("descricao") or _limpo(e.get("descricao"))
+            c["imagem"] = c.get("imagem") or img(e.get("imagem"))
+
+    # ---- guia (demais páginas do diário do jogo)
+    nomes_guia = {"FireArms": "Armas e óticas", "Gameplay": "Jogabilidade", "EcoSim": "Comportamento animal",
+                  "Gear": "Equipamento", "Dogs": "Cães"}
+    guia = []
+    for e in dados.get("diario", []):
+        if e["id"] in usados:
+            continue
+        cat = e.get("categoria") or ""
+        if cat.startswith("World.Region."):
+            sub = "Lugares – " + nome_mapa(cat.split(".")[-1])
         else:
-            caes.append({"id": e["id"], "nome": _limpo(e.get("titulo")) or e["id"], "sub": "Cães", "imagem": img(e.get("imagem")),
-                         "descricao": _limpo(e.get("descricao"))})
+            sub = nomes_guia.get(cat.split(".")[-1], "Outros")
+        guia.append({"id": e["id"], "nome": _limpo(e.get("titulo")) or e["id"], "sub": sub, "imagem": img(e.get("imagem")),
+                     "descricao": _limpo(e.get("descricao"))})
 
     for lista in itens.values():
         lista.sort(key=lambda x: (x["sub"], not x["tem"], x["nome"]))
@@ -424,5 +449,6 @@ def enciclopedia_jogo(dados, calibres, catalogo_equip, abates, vistos, nome_espe
             {"id": "municao", "nome": "Munição", "itens": itens["municao"]},
             {"id": "roupas", "nome": "Roupas", "itens": itens["roupas"]},
             {"id": "itens", "nome": "Itens e acessórios", "itens": itens["itens"]},
+            {"id": "guia", "nome": "Guia do jogo", "itens": sorted(guia, key=lambda x: (x["sub"], x["nome"]))},
         ],
     }

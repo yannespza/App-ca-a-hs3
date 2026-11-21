@@ -63,19 +63,27 @@ function M.iniciar(ctx)
         local o = carregarSoft(x)
         return o and classe(o) and o or nil
     end
+    -- Desenha justo na proporção da imagem (sem bordas vazias), lado maior = tam.
     local function desenhar(tex, arquivo, tam, uv0, uvT, larg, alt)
-        -- um render target novo por imagem (mesmo caminho testado no jogo)
-        local rt = KRL:CreateRenderTarget2D(pc, tam, tam, 2, { R = 0, G = 0, B = 0, A = 0 }, false, false)
         local w, h = tam, tam
         if larg > alt then h = tam * alt / larg elseif alt > larg then w = tam * larg / alt end
+        -- um render target quadrado novo por imagem (mesmo caminho testado no jogo)
+        local rt = KRL:CreateRenderTarget2D(pc, tam, tam, 2, { R = 0, G = 0, B = 0, A = 0 }, false, false)
         local canvas, sz, c = {}, {}, {}
         KRL:BeginDrawCanvasToRenderTarget(pc, rt, canvas, sz, c)
         local cv = canvas.Canvas or canvas
-        cv:K2_DrawTexture(tex, { X = (tam - w) / 2, Y = (tam - h) / 2 }, { X = w, Y = h }, uv0, uvT,
-            { R = 1, G = 1, B = 1, A = 1 }, 2, 0.0, { X = 0.5, Y = 0.5 })
+        cv:K2_DrawTexture(tex, { X = (tam - w) / 2, Y = (tam - h) / 2 }, { X = w, Y = h }, uv0, uvT, { R = 1, G = 1, B = 1, A = 1 }, 2, 0.0, { X = 0.5, Y = 0.5 })
         KRL:EndDrawCanvasToRenderTarget(pc, c.Context or c)
         KRL:ExportRenderTarget(pc, rt, IMG, arquivo)
+        M.desenhou = true
     end
+
+    -- Desenha na hora, no mesmo passo em que a textura foi carregada.
+    -- NÃO guardar texturas para desenhar depois: o jogo pode descartá-las e isso fecha o jogo.
+    local function agendar(tex, arquivo, tam, uv0, uvT, larg, alt)
+        desenhar(tex, arquivo, tam, uv0, uvT, larg, alt)
+    end
+
     local function exportarImagem(x, arquivo, tam)
         local obj = resolver(x)
         if not obj then return nil end
@@ -86,7 +94,7 @@ function M.iniciar(ctx)
         if cls == "Texture2D" then
             if obj:GetFullName():find("Icon%-Warning") then return nil end
             ok = pcall(function()
-                desenhar(obj, arquivo, tam, { X = 0, Y = 0 }, { X = 1, Y = 1 }, obj:Blueprint_GetSizeX(), obj:Blueprint_GetSizeY())
+                agendar(obj, arquivo, tam, { X = 0, Y = 0 }, { X = 1, Y = 1 }, obj:Blueprint_GetSizeX(), obj:Blueprint_GetSizeY())
             end)
         elseif cls == "PaperSprite" then
             ok = pcall(function()
@@ -96,7 +104,7 @@ function M.iniciar(ctx)
                 end
                 if not tex or classe(tex) ~= "Texture2D" or dim.X == 0 or dim.Y == 0 then error("sprite sem textura") end
                 local tw, th = tex:Blueprint_GetSizeX(), tex:Blueprint_GetSizeY()
-                desenhar(tex, arquivo, tam, { X = uv.X / tw, Y = uv.Y / th }, { X = dim.X / tw, Y = dim.Y / th }, dim.X, dim.Y)
+                agendar(tex, arquivo, tam, { X = uv.X / tw, Y = uv.Y / th }, { X = dim.X / tw, Y = dim.Y / th }, dim.X, dim.Y)
             end)
         end
         return ok and arquivo or nil
@@ -121,6 +129,7 @@ function M.iniciar(ctx)
     -- fila de tarefas (cada uma processa um item)
     local fila, saida = {}, { versao = VERSAO_DADOS, animais = {}, especies = {}, caes = {}, itens = {}, diario = {} }
 
+    local vistosDiario = {}
     for _, id in ipairs(ids("AnimalFieldJournalEntryDataAsset")) do
         fila[#fila + 1] = function()
             local o = carregar(id); if not o then return end
@@ -164,7 +173,6 @@ function M.iniciar(ctx)
         end
     end
 
-    local vistosDiario = {}
     for _, id in ipairs(ids("FieldJournalEntryDataAsset")) do
         fila[#fila + 1] = function()
             local o = carregar(id); if not o then return end
@@ -213,18 +221,23 @@ function M.iniciar(ctx)
         end
     end
 
-    local total, i = #fila, 1
+    local total, i, erros = #fila, 1, 0
     log("exportação dos dados do jogo: " .. total .. " tarefas")
-    LoopAsync(700, function()
+    LoopAsync(500, function()
         ExecuteInGameThread(function()
             if not fila then return end
             if not (pc and pc:IsValid()) then
                 log("exportação interrompida (saiu da reserva). Use o botão no app para continuar.")
                 fila = nil; if ctx.fim then ctx.fim() end; return
             end
-            local fim = math.min(i + 1, total)
-            for k = i, fim do pcall(fila[k]) end
-            i = fim + 1
+            -- no máximo 1 imagem nova por passo (as que já existem são puladas rápido)
+            M.desenhou = false
+            local n = 0
+            while i <= total and n < 40 and not M.desenhou do
+                local ok, e = pcall(fila[i])
+                if not ok then erros = erros + 1; if erros <= 5 then log("exportar: " .. tostring(e)) end end
+                i = i + 1; n = n + 1
+            end
             if i > total and fila then
                 saida.diario = saida.diario or {}
                 fila = nil
