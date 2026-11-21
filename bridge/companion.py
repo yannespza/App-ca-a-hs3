@@ -355,20 +355,40 @@ class Atualizador:
             h["Authorization"] = "Bearer " + self.cfg["github_token"]
         return urllib.request.urlopen(urllib.request.Request(url, headers=h), timeout=60)
 
+    def _ultima_pelo_site(self):
+        """Plano B sem a API: github.com/<repo>/releases/latest redireciona para a tag mais nova."""
+        class SemRedirecionar(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *a, **k):
+                return None
+        abridor = urllib.request.build_opener(SemRedirecionar)
+        try:
+            abridor.open(urllib.request.Request(f"https://github.com/{REPO}/releases/latest",
+                                                headers={"User-Agent": "HS3Companion"}), timeout=30)
+        except urllib.error.HTTPError as e:
+            destino = e.headers.get("Location", "")
+            tag = destino.rstrip("/").rsplit("/", 1)[-1]
+            if tag.startswith("v"):
+                url = f"https://github.com/{REPO}/releases/download/{tag}/HS3Companion.zip"
+                return {"versao": tag.lstrip("v"), "asset_api": url, "asset_url": url, "notas": ""}
+            raise
+        raise RuntimeError("resposta inesperada do GitHub")
+
     def verificar(self):
         self.estado = "verificando"
+        self.erro = None
         try:
             with self._req(f"https://api.github.com/repos/{REPO}/releases/latest") as r:
                 rel = json.load(r)
             asset = next(a for a in rel["assets"] if a["name"].endswith(".zip"))
             self.ultima = {"versao": rel["tag_name"].lstrip("v"), "asset_api": asset["url"],
                            "asset_url": asset["browser_download_url"], "notas": rel.get("body", "")}
-            self.erro = None
-        except urllib.error.HTTPError as e:
-            self.erro = ("Repositório privado: torne o repositório público ou coloque um github_token no config.json"
-                         if e.code == 404 else f"GitHub respondeu {e.code}")
-        except Exception as e:
-            self.erro = f"Sem conexão com o GitHub ({e.__class__.__name__})"
+        except Exception as e1:
+            try:
+                self.ultima = self._ultima_pelo_site()
+            except Exception as e2:
+                motivo = getattr(e2, "reason", None) or getattr(e1, "reason", None) or e2
+                self.erro = f"Sem conexão com o GitHub: {motivo}"
+                print("atualização:", repr(e1), repr(e2))
         self.verificado_em = time.time()
         self.estado = "parado" if not self.erro else "erro"
 
