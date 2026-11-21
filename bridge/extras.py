@@ -518,6 +518,7 @@ def mochila(dados, calibres, equip, lida, missoes, nome_especie, grupo_de, grupo
     comprados = {b["id"] for b in equip.get("comprados", [])}
     itens = dados.get("itens", [])
     por_def = {c.get("item"): c for c in itens}
+    por_id = {c.get("id"): c for c in itens}
     img = lambda n: f"/api/img/{n}" if n else None
 
     # espécies (tags) de cada grupo, pela tabela de calibres do jogo
@@ -571,6 +572,10 @@ def mochila(dados, calibres, equip, lida, missoes, nome_especie, grupo_de, grupo
             d["serve"], d["motivo"], boas = arma_serve(c)
             d["calibres"] = [{"id": x, "nome": nome_calibre(x), "serve": x in boas} for x in calibres_item(c)]
             atual = municao_atual.get(c["id"])
+            if isinstance(atual, dict) or atual is False:
+                atual = None
+            if isinstance(atual, list):
+                atual = next((x for x in atual if (por_id.get(x) or {}).get("tipo", "").endswith("Attachments.Ammo")), None)
             if atual:
                 d["municao_atual"] = atual.split(":")[-1]
         elif tipo.endswith("Attachments.Ammo"):

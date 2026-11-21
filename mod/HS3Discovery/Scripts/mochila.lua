@@ -39,8 +39,18 @@ function M.ler(ctx)
             for _, v in ipairs(lista) do
                 local wid = v:get()
                 local nome = wid.PrimaryAssetName:ToString()
-                local ok2, am = pcall(function() return ch:GetAttachmentOfTypeForWeaponId(wid, tag(TAG_MUNICAO)) end)
-                r.municao[nome] = ok2 and am and idStr(am) or false
+                -- todos os acessórios salvos da arma (luneta, bipé, munição…); o app separa a munição
+                local anexos = {}
+                pcall(function()
+                    local out = {}
+                    ch:GetAllAttachmentStoreIdsForWeapon(wid, out)
+                    for _, a in pairs(out) do
+                        local v = a; pcall(function() v = a:get() end)
+                        local nomeA = idStr(v)
+                        if nomeA then anexos[#anexos + 1] = nomeA:match(":(.+)$") or nomeA end
+                    end
+                end)
+                r.municao[nome] = anexos
             end
         end)
         if not ok then r.erros[#r.erros + 1] = "munição: " .. tostring(e) end
