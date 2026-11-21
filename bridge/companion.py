@@ -317,7 +317,7 @@ class Atualizador:
                     for a in arquivos:
                         shutil.copy2(os.path.join(raiz, a), os.path.join(destino, a))
 
-            # 2) programa: troca o .exe depois que este processo fechar
+            # 2) programa: o Windows deixa renomear um .exe em uso; troca e abre a versão nova
             if not getattr(sys, "frozen", False):
                 self.estado = "parado"
                 return
@@ -326,28 +326,21 @@ class Atualizador:
             for extra in ("LEIA-ME.txt",):
                 if os.path.exists(os.path.join(pasta, extra)):
                     shutil.copy2(os.path.join(pasta, extra), os.path.join(BASE_DIR, extra))
-            bat = os.path.join(tmp, "atualizar.bat")
-            with open(bat, "w", encoding="ascii", errors="ignore") as f:
-                f.write(f"""@echo off
-set /a tentativas=0
-:espera
-timeout /t 1 /nobreak >nul
-tasklist /fi "PID eq {os.getpid()}" | find "{os.getpid()}" >nul && goto espera
-tasklist /fi "PID eq {os.getppid()}" | find "{os.getppid()}" >nul && goto espera
-:copiar
-set /a tentativas+=1
-copy /y "{exe_novo}" "{exe_atual}" >nul 2>&1
-if errorlevel 1 (
-  if %tentativas% lss 60 (
-    timeout /t 1 /nobreak >nul
-    goto copiar
-  )
-)
-start "" "{exe_atual}" --sem-navegador
-""")
+            antigo = exe_atual + ".old"
+            if os.path.exists(antigo):
+                try:
+                    os.remove(antigo)
+                except OSError:
+                    antigo = exe_atual + f".{int(time.time())}.old"
+            os.replace(exe_atual, antigo)
+            try:
+                shutil.copy2(exe_novo, exe_atual)
+            except Exception:
+                os.replace(antigo, exe_atual)  # desfaz se não conseguiu copiar
+                raise
             self.estado = "reiniciando"
             time.sleep(1.5)  # deixa o app receber o estado "reiniciando"
-            subprocess.Popen(["cmd", "/c", bat], creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            iniciar_nova_instancia(exe_atual, ["--sem-navegador", "--aguardar-porta"])
             os._exit(0)
         except Exception as e:
             self.erro = f"Falha ao atualizar: {e}"
@@ -609,12 +602,39 @@ def abrir_janela(url):
         if os.path.isfile(exe):
             perfil = os.path.join(BASE_DIR, "perfil_janela")
             try:
+                env = {k: v for k, v in os.environ.items() if not k.startswith(("_PYI", "_MEI"))}
                 subprocess.Popen([exe, f"--app={url}", "--window-size=1400,900", f"--user-data-dir={perfil}",
-                                  "--no-first-run", "--no-default-browser-check"])
+                                  "--no-first-run", "--no-default-browser-check"], env=env)
                 return
             except Exception:
                 pass
     webbrowser.open(url)
+
+
+def iniciar_nova_instancia(exe, args):
+    """Abre uma cópia nova do programa, independente desta (sem herdar o ambiente do PyInstaller)."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("_PYI", "_MEI"))}
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    flags = 0
+    for nome in ("DETACHED_PROCESS", "CREATE_NEW_PROCESS_GROUP", "CREATE_BREAKAWAY_FROM_JOB"):
+        flags |= getattr(subprocess, nome, 0)
+    try:
+        subprocess.Popen([exe] + args, env=env, creationflags=flags, close_fds=True, cwd=os.path.dirname(exe))
+    except OSError:
+        flags &= ~getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0)
+        subprocess.Popen([exe] + args, env=env, creationflags=flags, close_fds=True, cwd=os.path.dirname(exe))
+
+
+def limpar_antigos():
+    try:
+        for nome in os.listdir(BASE_DIR):
+            if nome.endswith(".old"):
+                try:
+                    os.remove(os.path.join(BASE_DIR, nome))
+                except OSError:
+                    pass
+    except OSError:
+        pass
 
 
 def porta_em_uso(porta):
@@ -677,6 +697,12 @@ def main():
     global APP, ATUALIZADOR
     cfg = carregar_config()
     url = f"http://localhost:{cfg['porta']}"
+    if "--aguardar-porta" in sys.argv:
+        for _ in range(30):
+            if not porta_em_uso(cfg["porta"]):
+                break
+            time.sleep(0.5)
+    limpar_antigos()
     if porta_em_uso(cfg["porta"]):
         # já está rodando: só abre a janela de novo
         abrir_janela(url)
