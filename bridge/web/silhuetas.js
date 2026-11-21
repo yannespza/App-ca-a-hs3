@@ -11,7 +11,7 @@ const SILHUETAS = {
 };
 const SIL_GRUPO = { cervo: "cervo", alce: "alce", antilocapra: "cervo", carneiro: "cervo", bisao: "porco", porco: "porco",
   pato: "pato", ganso: "pato", peru: "peru", faisao: "peru", codorna: "pato", pomba: "pato",
-  coiote: "coiote", lobo: "coiote", raposa: "coiote", puma: "coiote", urso: "porco", coelho: "coelho" };
+  coiote: "coiote", lobo: "coiote", raposa: "coiote", puma: "coiote", felino: "coiote", urso: "porco", coelho: "coelho", antilope: "cervo", roedor: "coelho" };
 
 function silhueta(grupo) {
   const d = SILHUETAS[SIL_GRUPO[grupo] || grupo] || SILHUETAS.outro;

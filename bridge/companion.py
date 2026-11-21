@@ -21,6 +21,7 @@ import zipfile
 from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import extras
 import ia
 import mapa
 
@@ -61,6 +62,7 @@ CONFIG_PADRAO = {
     "ollama_url": "http://localhost:11434",
     "ollama_modelo": "",
     "ollama_usar_gpu": False,
+    "voltar_ao_ultimo_local": True,
     "limite_diario_creditos": 20000,
     "github_token": "",
 }
@@ -68,12 +70,15 @@ CONFIG_PADRAO = {
 # ------------------------------------------------------------------ catálogo
 GRUPOS = [
     # (chave, nome em português, palavras que identificam no tag/classe)
-    ("pato", "Pato", ["duck", "mallard", "pintail", "bufflehead", "teal", "wigeon", "canvasback"]),
+    ("pato", "Pato / marreca", ["duck", "mallard", "pintail", "bufflehead", "teal", "wigeon", "canvasback"]),
     ("ganso", "Ganso", ["goose"]),
     ("peru", "Peru-selvagem", ["turkey"]),
-    ("faisao", "Faisão", ["pheasant"]),
+    ("faisao", "Faisão / perdiz", ["pheasant", "chukar"]),
     ("codorna", "Codorna", ["quail"]),
     ("pomba", "Pomba", ["dove", "pigeon"]),
+    ("antilope", "Antílope", ["antelope", "nilgai", "oryx"]),
+    ("felino", "Felino", ["feline", "bobcat", "cougar", "puma", "lion"]),
+    ("roedor", "Cão-da-pradaria", ["prairiedog"]),
     ("cervo", "Cervo", ["deer", "cervidae"]),
     ("alce", "Wapiti / Alce", ["elk", "moose", "wapiti"]),
     ("antilocapra", "Antilocapra", ["pronghorn"]),
@@ -83,7 +88,6 @@ GRUPOS = [
     ("raposa", "Raposa", ["fox"]),
     ("coelho", "Coelho / Lebre", ["rabbit", "hare", "jackrabbit", "cottontail"]),
     ("urso", "Urso", ["bear"]),
-    ("puma", "Puma", ["puma", "cougar", "mountainlion", "lion"]),
     ("carneiro", "Carneiro / Cabra", ["sheep", "bighorn", "goat", "ram"]),
     ("bisao", "Bisão", ["bison", "buffalo"]),
 ]
@@ -97,18 +101,44 @@ def grupo_de(texto):
     return "outro", "Outro animal"
 
 
+NOMES_PT = {
+    "Antelope.Nilgai": "Nilgai", "Antelope.ScimitarOryx": "Órix-de-cimitarra", "Bear.Black": "Urso-negro",
+    "Bird.Chukar": "Perdiz-chukar", "Bird.Dove.Mourning": "Rolinha-carpideira", "Bird.Duck.Black": "Pato-negro-americano",
+    "Bird.Duck.Bufflehead": "Pato-de-cabeça-branca", "Bird.Duck.NorthernPintail": "Arrabio", "Bird.Goose.Canada": "Ganso-do-canadá",
+    "Bird.MontezumaQuail": "Codorna-de-montezuma", "Bird.Pheasant": "Faisão", "Bird.Quail": "Codorna",
+    "Bird.Teal.GreenWinged": "Marreca-de-asa-verde", "Bird.Turkey.RioGrande": "Peru-selvagem Rio Grande",
+    "Bison.American": "Bisão-americano", "Canine.Coyote": "Coiote", "Deer.DesertMule": "Cervo-mula do deserto",
+    "Deer.MountainMule": "Cervo-mula da montanha", "Deer.WhiteTail": "Cervo-de-cauda-branca", "Elk": "Wapiti",
+    "Feline.Bobcat": "Lince-pardo", "Feline.Cougar": "Puma", "Fox.Red": "Raposa-vermelha", "Hare.JackRabbit": "Lebre jackrabbit",
+    "Peccary.Collared": "Cateto", "Pig.Feral": "Porco-selvagem", "PrairieDog.BlackTail": "Cão-da-pradaria",
+    "Pronghorn.American": "Antilocapra", "Rabbit.CottonTail": "Coelho-cottontail", "Sheep.Aoudad": "Carneiro-da-barbária",
+    "Sheep.Bighorn": "Carneiro-selvagem", "Wolf.Gray": "Lobo-cinzento",
+}
+
+
 def nome_especie(tag):
-    """Animals.Types.Bird.Duck.NorthernPintail -> Northern Pintail"""
+    """Nome em português da espécie a partir da tag do jogo (Animals.Types.Deer.WhiteTail.Texas -> Cervo-de-cauda-branca)."""
     if not tag:
         return None
-    partes = [p for p in tag.split(".") if p.lower() not in ("texas", "colorado", "a", "b")]
-    ultimo = partes[-1] if partes else tag
-    out = ""
-    for i, c in enumerate(ultimo):
-        if i and c.isupper() and not ultimo[i - 1].isupper():
-            out += " "
-        out += c
-    return out
+    resto = tag.replace("Animals.Types.", "")
+    for chave in sorted(NOMES_PT, key=len, reverse=True):
+        if resto == chave or resto.startswith(chave + "."):
+            return NOMES_PT[chave]
+
+    def espacar(t):
+        out = ""
+        for i, c in enumerate(t):
+            if i and c.isupper() and not t[i - 1].isupper():
+                out += " "
+            out += c
+        return out
+
+    partes = [p for p in tag.split(".")[2:] if p.lower() not in ("texas", "colorado", "a", "b")] or tag.split(".")[-1:]
+    if len(partes) == 2:
+        if partes[0].lower() in partes[1].lower():
+            return espacar(partes[1])
+        return f"{espacar(partes[1])} {espacar(partes[0])}"
+    return espacar(partes[-1])
 
 
 SEXO = {0: "Macho", 1: "Fêmea", 2: "Indefinido"}
@@ -475,7 +505,8 @@ class Companion:
         d = self.dados
         for chave, padrao in (("missoes", []), ("abates", []), ("marcados", {}), ("grupos_vistos", []),
                               ("eventos_offset", 0), ("pagamentos_dia", {}), ("recompensas", []),
-                              ("chat", []), ("pino_app", None), ("posicoes", {})):
+                              ("chat", []), ("pino_app", None), ("posicoes", {}), ("ultima_pos", {}),
+                              ("especies_vistas", {}), ("compras", [])):
             d.setdefault(chave, padrao)
         # missões da versão antiga continuam valendo como ativas
         for m in d["missoes"]:
@@ -489,6 +520,10 @@ class Companion:
         self._pois_cache = (None, 0, [])
         self._nevoa_cache = (None, 0, b"")
         self.salvar_pendente = False
+        self.cache = extras.Cache()
+        self.estava_em = None            # reserva em que o jogador estava no ciclo anterior
+        self.teleporte = None            # (destino, hora) aguardando
+        self.aviso_teleporte = None
 
     # --- arquivos do mod
     def caminho(self, nome):
@@ -613,6 +648,8 @@ class Companion:
             ev.update({"grupo": chave, "grupo_nome": nome, "especie_nome": nome_especie(ev.get("especie")),
                        "sexo_nome": SEXO.get(ev.get("sexo"), "?"), "visto_em": time.time(), "reserva": self.nivel()})
             novo = str(ev.get("id")) not in d["marcados"]
+            if novo and ev.get("especie"):
+                d["especies_vistas"][ev["especie"]] = d["especies_vistas"].get(ev["especie"], 0) + 1
             d["marcados"][str(ev.get("id"))] = ev
             self.registrar_grupo(chave)
             if novo:
@@ -633,6 +670,8 @@ class Companion:
             d["marcados"].pop(id_, None)
             d["posicoes"].pop(id_, None)
             return avaliar_missoes(d, dict(ab, tipo="abate_confirmado"))
+        elif tipo == "compra":
+            d["compras"] = (d["compras"] + [ev])[-50:]
         elif tipo == "recompensa":
             d["recompensas"] = (d["recompensas"] + [ev])[-100:]
             for m in d["missoes"]:
@@ -703,6 +742,15 @@ class Companion:
         cal = self.calibres()
         if cal:
             ctx["calibres_por_especie"] = cal
+        try:
+            arm = extras.armario(self.catalogo(), self.equipamento(), self.tabela_calibres(), nome_especie, self.dados["abates"])
+            ctx["mochila_atual"] = [f"{i['nome']}" + (f" ({i['calibre']})" if i.get("calibre") else "") for i in arm["mochila"]]
+            lj = extras.loja(self.catalogo(), self.equipamento())
+            ctx["roupa_atual"] = [f"{i['nome']} (camuflagem {i['camuflagem']}/100)" for i in lj["vestidos"]]
+            if lj.get("deteccao"):
+                ctx["percepcao_dos_animais_agora"] = {k: f"{round(v * 100)}%" for k, v in lj["deteccao"].items() if k != "na_estrutura"}
+        except Exception:
+            pass
         if not curto:
             ctx["pontos_nao_descobertos"] = [{"hash": p["hash"], "nome": p["nome"], "distancia_m": round(p["_d"])} for p in nao_desc]
             ctx["pontos_descobertos_proximos"] = [{"hash": p["hash"], "nome": p["nome"], "distancia_m": round(p["_d"])} for p in desc]
@@ -800,6 +848,83 @@ class Companion:
             self.salvar_pendente = True
         return {"ok": True, "resposta": resposta}
 
+    # --- voltar ao último local
+    def cuidar_posicao(self):
+        nivel = self.nivel() if self.em_reserva() else None
+        agora = time.time()
+        if nivel and nivel != self.estava_em and "Hub" not in nivel:
+            destino = self.dados["ultima_pos"].get(nivel)
+            self.anterior = destino if destino and (distancia_m(self.estado["pos"], destino) or 0) > 150 else None
+            if self.cfg.get("voltar_ao_ultimo_local") and destino and (distancia_m(self.estado["pos"], destino) or 0) > 150:
+                self.teleporte = (destino, agora + 6)
+                self.aviso_teleporte = "Voltando ao último local em instantes…"
+        self.estava_em = nivel
+        if self.teleporte:
+            destino, hora = self.teleporte
+            if agora >= hora:
+                self.enviar_comando([f"teleport {destino['x']:.0f} {destino['y']:.0f} {destino['z']:.0f}"])
+                self.teleporte = None
+                self.aviso_teleporte = None
+                self.pausa_pos_ate = agora + 8
+            return
+        if nivel and "Hub" not in nivel and agora >= getattr(self, "pausa_pos_ate", 0):
+            p = self.estado["pos"]
+            self.dados["ultima_pos"][nivel] = {"x": p["x"], "y": p["y"], "z": p["z"], "ts": agora}
+
+    def voltar_agora(self):
+        with self.lock:
+            destino = getattr(self, "anterior", None)
+            if not destino:
+                return {"ok": False, "erro": "Nenhum local anterior salvo para esta reserva."}
+            self.enviar_comando([f"teleport {destino['x']:.0f} {destino['y']:.0f} {destino['z']:.0f}"])
+        return {"ok": True}
+
+    def configurar(self, chave, valor):
+        if chave in ("voltar_ao_ultimo_local", "ollama_usar_gpu"):
+            self.cfg[chave] = bool(valor)
+            salvar_json(CONFIG_PATH, self.cfg)
+            return {"ok": True}
+        return {"ok": False}
+
+    # --- armário, loja, enciclopédia
+    def catalogo(self):
+        return self.cache.json(self.caminho("catalogo_v2.json"), [])
+
+    def equipamento(self):
+        return self.cache.json(self.caminho("equipamento.json"), {})
+
+    def tabela_calibres(self):
+        return self.cache.json(self.caminho("calibres.json"), [])
+
+    def dados_armario(self):
+        with self.lock:
+            return extras.armario(self.catalogo(), self.equipamento(), self.tabela_calibres(), nome_especie, self.dados["abates"])
+
+    def dados_loja(self):
+        with self.lock:
+            r = extras.loja(self.catalogo(), self.equipamento())
+            r["creditos"] = (self.estado.get("moedas") or {}).get("Currency.Credits")
+            r["compras"] = self.dados["compras"][-5:]
+            return r
+
+    def dados_enciclopedia(self):
+        with self.lock:
+            return extras.enciclopedia(self.tabela_calibres(), self.dados["abates"], self.dados["especies_vistas"],
+                                       nome_especie, grupo_de)
+
+    def comprar(self, id_):
+        with self.lock:
+            item = next((c for c in self.catalogo() if c.get("id") == id_), None)
+            if not item:
+                return {"ok": False, "erro": "Item não encontrado no catálogo."}
+            if not self.em_reserva():
+                return {"ok": False, "erro": "Entre numa reserva para comprar."}
+            cred = (self.estado.get("moedas") or {}).get("Currency.Credits") or 0
+            if (item.get("preco") or 0) > cred:
+                return {"ok": False, "erro": "Créditos insuficientes."}
+            self.enviar_comando([f"comprar {id_} {uuid.uuid4().hex[:6]}"])
+        return {"ok": True}
+
     # --- ciclo
     def ciclo(self):
         with self.lock:
@@ -809,6 +934,7 @@ class Companion:
             for ev in self.ler_eventos():
                 self.processar(ev)
                 mudou = True
+            self.cuidar_posicao()
             if self.em_reserva():
                 if avaliar_missoes(self.dados, {"tipo": "posicao", "id": "local", "pos": self.estado["pos"], "ts": time.time()}):
                     mudou = True
@@ -894,6 +1020,11 @@ class Companion:
                 "abates": self.dados["abates"][-30:][::-1],
                 "estatisticas": self.estatisticas(),
                 "npc": ia.NPC,
+                "patente": extras.patente(self.dados["abates"], missoes),
+                "aviso_teleporte": self.aviso_teleporte,
+                "config": {"voltar_ao_ultimo_local": self.cfg.get("voltar_ao_ultimo_local"),
+                           "ollama_usar_gpu": self.cfg.get("ollama_usar_gpu")},
+                "tem_local_salvo": bool(getattr(self, "anterior", None)),
                 "ollama": self.ollama.status(),
                 "chat": [{"role": c["role"], "content": c["content"]} for c in self.dados["chat"][-20:]],
                 "respondendo": self.respondendo,
@@ -991,6 +1122,12 @@ class Handler(BaseHTTPRequestHandler):
         if caminho == "/api/pois":
             with APP.lock:
                 return self.responder(200, [{k: v for k, v in p.items() if not k.startswith("_")} for p in APP.pois()])
+        if caminho == "/api/armario":
+            return self.responder(200, APP.dados_armario())
+        if caminho == "/api/loja":
+            return self.responder(200, APP.dados_loja())
+        if caminho == "/api/enciclopedia":
+            return self.responder(200, APP.dados_enciclopedia())
         if caminho == "/api/mapa.png":
             return self.arquivo_mod("mapa_{nivel}.png", "image/png")
         if caminho == "/api/nevoa.png":
@@ -1034,6 +1171,12 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/pino/remover":
             with APP.lock:
                 return self.responder(200, APP.remover_pino())
+        if p == "/api/comprar":
+            return self.responder(200, APP.comprar(corpo.get("id")))
+        if p == "/api/voltar":
+            return self.responder(200, APP.voltar_agora())
+        if p == "/api/config":
+            return self.responder(200, APP.configurar(corpo.get("chave"), corpo.get("valor")))
         if p == "/api/chat":
             return self.responder(200, APP.conversar(corpo.get("texto")))
         if p == "/api/exportar_mapa":

@@ -284,7 +284,13 @@ async function atualizar() {
   // placas
   const moedas = st.moedas || {};
   $("p-saldo").textContent = moedas["Currency.Credits"] !== undefined ? "$" + fmt(moedas["Currency.Credits"]) : "–";
-  $("p-ponte").textContent = d.em_reserva ? "Ativa" : d.conectado ? "Em espera" : "Desligada";
+  const pt = d.patente;
+  $("p-patente").textContent = pt.patente;
+  $("p-patente-barra").style.width = (pt.progresso * 100) + "%";
+  $("p-patente-sub").textContent = `${fmt(pt.pontos)} pts` + (pt.proxima ? ` · faltam ${fmt(pt.faltam)} p/ ${pt.proxima}` : "");
+  $("f-voltar").checked = !!d.config?.voltar_ao_ultimo_local;
+  $("btn-voltar").style.display = d.tem_local_salvo ? "" : "none";
+  $("aviso-teleporte").textContent = d.aviso_teleporte || "";
   const rep = d.reputacao_mapa_atual;
   $("p-rep").textContent = rep ? fmt(rep.valor) : "–";
   $("p-contratos").textContent = `${d.ativas.length} ativo${d.ativas.length === 1 ? "" : "s"}`;
@@ -334,3 +340,93 @@ atualizar();
 setInterval(atualizar, 2000);
 setInterval(() => { if (nivelAtual) carregarPois(); }, 60000);
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
+
+
+// ------------------------------------------------------------------ abas: armário, loja, enciclopédia
+let abaAtual = "mapa", filtroLoja = "Todas";
+document.querySelectorAll("#abas button").forEach(b => b.onclick = () => {
+  abaAtual = b.dataset.aba;
+  document.querySelectorAll("#abas button").forEach(x => x.classList.toggle("ativo", x === b));
+  ["armario", "loja", "enciclopedia"].forEach(a => $("painel-" + a).classList.toggle("ativo", a === abaAtual));
+  document.querySelector(".mapa-papel").classList.toggle("so-mapa", abaAtual === "mapa");
+  if (abaAtual === "mapa") setTimeout(() => mapa.invalidateSize(), 50);
+  atualizarAba();
+});
+$("f-voltar").onchange = (e) => post("/api/config", { chave: "voltar_ao_ultimo_local", valor: e.target.checked });
+async function voltarAgora() { const r = await post("/api/voltar"); if (!r.ok) alert(r.erro); }
+
+function barraStat(nome, v) {
+  return `<div class="st"><span>${nome}</span><span class="b"><i style="width:${Math.max(0, Math.min(100, v))}%"></i></span><b>${Math.round(v)}</b></div>`;
+}
+
+function cartaoItem(i) {
+  const tags = [i.rotulo && `<span class="item-tag cinza">${esc(i.rotulo)}</span>`, i.calibre && `<span class="item-tag latao">${esc(i.calibre)}</span>`,
+    (i.cargas > 1) && `<span class="item-tag">×${i.cargas}</span>`].filter(Boolean).join("");
+  const esp = i.especies && i.especies.length ? `<div class="item-sub">Serve para: ${esc(i.especies.slice(0, 8).join(", "))}${i.especies.length > 8 ? "…" : ""}</div>` : "";
+  return `<div class="item"><div class="item-nome">${esc(i.nome)}</div><div>${tags}</div>${esp}
+    ${i.marca ? `<div class="item-sub">${esc(i.marca)}</div>` : ""}</div>`;
+}
+
+async function renderArmario() {
+  const d = await (await fetch("/api/armario")).json();
+  const grupos = {};
+  for (const i of d.possuidos) (grupos[i.rotulo || "Outros"] ||= []).push(i);
+  const ordem = ["Chamariz", "Spray / cheiro", "Isca / decoy", "Ótica", "Espera / blind", "Acessório", "Acessório de arma"];
+  const armas = d.possuidos.filter(i => i.categoria === "arma");
+  let html = `<h3>Na mochila agora</h3>` + (d.mochila.length ? `<div class="grade-itens">${d.mochila.map(cartaoItem).join("")}</div>` : `<p class="vazio">Entre numa reserva para ver o que você está levando.</p>`);
+  html += `<h3>Minhas armas (${armas.length})</h3>` + (armas.length ? `<div class="grade-itens">${armas.map(cartaoItem).join("")}</div>` : `<p class="vazio">Nenhuma arma encontrada ainda.</p>`);
+  for (const r of ordem) if (grupos[r]) html += `<h3>${r} (${grupos[r].length})</h3><div class="grade-itens">${grupos[r].map(cartaoItem).join("")}</div>`;
+  html += `<p class="item-sub">O calibre de cada arma aparece depois do primeiro abate com ela (ou quando o jogo informa). A lista "Serve para" vem da tabela oficial de calibres do jogo.</p>`;
+  $("painel-armario").innerHTML = html;
+}
+
+async function renderLoja() {
+  const d = await (await fetch("/api/loja")).json();
+  const det = d.deteccao || {};
+  const med = (nome, v, dica) => `<div class="medidor"><div class="item-sub">${nome}</div><div class="v">${v == null ? "–" : Math.round(v * 100) + "%"}</div>
+      <div class="b"><i style="width:${(v || 0) * 100}%"></i></div><div class="item-sub">${dica}</div></div>`;
+  let html = `<h3>Como os animais te percebem agora</h3><div class="medidores">
+      ${med("Visão", det.visual, "quanto menor, mais camuflado")}${med("Audição", det.som, "barulho da roupa e dos passos")}${med("Olfato", det.cheiro, "use spray e vento a favor")}</div>`;
+  html += `<h3>Você está vestindo</h3>` + (d.vestidos.length ? `<div class="grade-itens">${d.vestidos.map(itemLoja).join("")}</div>` : `<p class="vazio">–</p>`);
+  const partes = ["Todas", ...new Set(d.itens.map(i => i.parte))];
+  html += `<h3>Catálogo (${d.itens.length} peças) · saldo $${fmt(d.creditos)}</h3><div class="filtros">${partes.map(p =>
+      `<button class="${p === filtroLoja ? "ativo" : ""}" onclick="filtroLoja='${p}';renderLoja()">${esc(p)}</button>`).join("")}</div>`;
+  const lista = d.itens.filter(i => filtroLoja === "Todas" || i.parte === filtroLoja);
+  html += `<div class="grade-itens">${lista.map(itemLoja).join("")}</div>
+    <p class="item-sub">Os números de camuflagem (0 a 100) vêm do próprio jogo: quanto maior, menos o animal te vê, ouve ou sente. A compra é feita na loja do jogo com seus créditos.</p>`;
+  $("painel-loja").innerHTML = html;
+}
+function itemLoja(i) {
+  const acao = i.vestido ? `<span class="item-tag">Vestindo</span>` : i.comprado ? `<span class="item-tag cinza">Já é seu · vista no guarda-roupa</span>`
+    : `<button class="btn-papel verde" onclick="comprarItem('${i.id}','${esc(i.nome).replace(/'/g, "")}',${i.preco})">Comprar $${fmt(i.preco)}</button>`;
+  return `<div class="item ${i.vestido ? "vestido" : ""}"><div class="item-nome">${esc(i.nome)}</div>
+    <div class="item-sub">${esc(i.parte)}${i.marca ? " · " + esc(i.marca) : ""} · camuflagem <b>${i.camuflagem}</b></div>
+    ${barraStat("Visual", i.stats.visual)}${barraStat("Som", i.stats.som)}${barraStat("Cheiro", i.stats.cheiro)}${barraStat("Corrida", i.stats.corrida)}
+    <div style="margin-top:6px">${acao}</div></div>`;
+}
+async function comprarItem(id, nome, preco) {
+  if (!confirm(`Comprar "${nome}" por $${fmt(preco)} na loja do jogo?`)) return;
+  const r = await post("/api/comprar", { id });
+  if (!r.ok) alert(r.erro); else setTimeout(renderLoja, 2500);
+}
+
+async function renderEnciclopedia() {
+  const d = await (await fetch("/api/enciclopedia")).json();
+  if (!d.length) { $("painel-enciclopedia").innerHTML = `<p class="vazio">Entre numa reserva para carregar as espécies do jogo.</p>`; return; }
+  $("painel-enciclopedia").innerHTML = `<h3>Espécies do jogo (${d.length})</h3><div class="grade-itens">${d.map(f => `
+    <div class="item"><div class="ficha-esp"><div class="sil">${silhueta(f.grupo)}</div><div>
+      <div class="item-nome">${esc(f.nome)}${f.variante && f.variante !== f.nome ? ` <span class="item-sub">(${esc(f.variante)})</span>` : ""}</div>
+      <div class="item-sub">${esc(f.grupo_nome)} · vistos ${f.vistos} · abatidos ${f.abates}</div>
+      ${f.melhor_genetica != null ? `<div class="item-sub">Melhor genética ${pct(f.melhor_genetica)} · tiro mais longo ${metros(f.tiro_mais_longo)}</div>` : ""}
+    </div></div>
+    <div class="item-sub" style="margin-top:6px"><b>Calibres permitidos:</b> ${esc(f.calibres.join(", ") || "–")}</div>
+    ${f.proibidos.length ? `<div class="item-sub"><b>Proibidos:</b> ${esc(f.proibidos.join(", "))}</div>` : ""}
+    </div>`).join("")}</div>`;
+}
+
+function atualizarAba() {
+  if (abaAtual === "armario") renderArmario();
+  else if (abaAtual === "loja") renderLoja();
+  else if (abaAtual === "enciclopedia") renderEnciclopedia();
+}
+setInterval(() => { if (abaAtual === "armario" || abaAtual === "loja") atualizarAba(); }, 8000);

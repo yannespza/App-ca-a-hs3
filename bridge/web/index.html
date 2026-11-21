@@ -26,16 +26,27 @@
 
   <section class="placas">
     <div class="placa"><div class="placa-rot">Saldo</div><div class="placa-val" id="p-saldo">–</div><div class="placa-ico" data-sil="porco"></div></div>
-    <div class="placa"><div class="placa-rot">Ponte</div><div class="placa-val" id="p-ponte">–</div><div class="placa-ico" data-sil="porco"></div></div>
+    <div class="placa"><div class="placa-rot">Patente</div><div class="placa-val" id="p-patente">–</div>
+      <div class="placa-barra"><i id="p-patente-barra"></i></div><div class="placa-sub" id="p-patente-sub"></div></div>
     <div class="placa"><div class="placa-rot">Reputação</div><div class="placa-val" id="p-rep">–</div><div class="placa-ico" data-sil="cervo"></div></div>
     <div class="placa"><div class="placa-rot">Contratos IA</div><div class="placa-val" id="p-contratos">–</div><div class="placa-ico" data-sil="pato"></div></div>
     <div class="placa"><div class="placa-rot">Pontos de campo</div><div class="placa-val" id="p-campo">–</div><div class="placa-ico" data-sil="cervo"></div></div>
   </section>
 
   <main class="corpo">
-    <section class="mapa-papel">
+    <section class="mapa-papel so-mapa">
       <i class="tacha t1"></i><i class="tacha t2"></i><i class="tacha t3"></i><i class="tacha t4"></i>
+      <nav class="abas-papel" id="abas">
+        <button data-aba="mapa" class="ativo">Mapa</button>
+        <button data-aba="armario">Armário</button>
+        <button data-aba="loja">Loja de roupas</button>
+        <button data-aba="enciclopedia">Enciclopédia</button>
+      </nav>
       <div id="mapa"></div>
+      <div class="painel-papel" id="painel-armario"></div>
+      <div class="painel-papel" id="painel-loja"></div>
+      <div class="painel-papel" id="painel-enciclopedia"></div>
+      <div id="aviso-teleporte" class="aviso-teleporte"></div>
       <div id="mapa-aviso" class="mapa-aviso"></div>
       <div class="legenda">
         <label><input type="checkbox" id="f-pois" checked> Pontos</label>
@@ -44,6 +55,8 @@
         <label><input type="checkbox" id="f-animais" checked> Animais</label>
         <button class="btn-mini" onclick="centralizar()">⌖ Eu</button>
         <button class="btn-mini" id="btn-tirar-pino" onclick="tirarPino()" style="display:none">✕ Pino</button>
+        <label title="Ao entrar na reserva, volta para onde você estava quando saiu"><input type="checkbox" id="f-voltar"> Voltar ao último local</label>
+        <button class="btn-mini" id="btn-voltar" onclick="voltarAgora()" style="display:none">↩ Voltar agora</button>
       </div>
       <div class="dica-mapa">Clique no mapa para colocar um pino (aparece também no mapa do jogo)</div>
     </section>

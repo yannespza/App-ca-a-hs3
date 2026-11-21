@@ -445,6 +445,144 @@ local function clearPin()
     log("pino removido do jogo")
 end
 
+
+------------------------------------------------------------------ catálogo da loja, inventário, roupas e compras
+local function pidStr(id) return id.PrimaryAssetType.Name:ToString() .. ":" .. id.PrimaryAssetName:ToString() end
+local function idDe(str)
+    local t, n = str:match("^([^:]+):(.+)$")
+    return { PrimaryAssetType = { Name = FName(t) }, PrimaryAssetName = FName(n) }
+end
+local function texto(t) local ok, s = pcall(function() return t:ToString() end); return ok and s or "" end
+
+local ATRIBUTOS = nil
+local function atributosRoupa()
+    if ATRIBUTOS then return ATRIBUTOS end
+    local lista = {}
+    pcall(function()
+        FindFirstOf("HS3AttributeDataAsset").AttributeConfigs:ForEach(function(k, v)
+            if v:get().bIsInfluencedByCosmetics then
+                local a = k:get()
+                lista[#lista + 1] = { nome = a.AttributeName:ToString(), ref = a }
+            end
+        end)
+    end)
+    if #lista > 0 then ATRIBUTOS = lista end
+    return lista
+end
+
+local function statsRoupa(obj)
+    local lib = StaticFindObject("/Script/HS3CoreRuntime.Default__HS3AttributeFunctionLibrary")
+    local st = {}
+    for _, a in ipairs(atributosRoupa()) do
+        pcall(function() st[a.nome] = lib:GetAttributeValueFromAssetRaw(a.ref, obj) end)
+    end
+    return st
+end
+
+local catalogo = nil   -- exportação em lotes: { ids = {...}, i = 1, itens = {} }
+local function iniciarCatalogo()
+    local KSL = StaticFindObject("/Script/Engine.Default__KismetSystemLibrary")
+    local r = {}
+    KSL:GetPrimaryAssetIdList({ Name = FName("HS3StoreItemAsset") }, r)
+    local ids = {}
+    for _, v in ipairs(r) do ids[#ids + 1] = v:get() end
+    catalogo = { ids = ids, i = 1, itens = {} }
+    log("catálogo: " .. #ids .. " itens da loja para ler")
+end
+
+local function passoCatalogo()
+    if not catalogo then return end
+    local KSL = StaticFindObject("/Script/Engine.Default__KismetSystemLibrary")
+    local proj = StaticFindObject("/Script/HS3WeaponsRuntime.Default__HS3ProjectileFunctionLibrary")
+    local fim = math.min(catalogo.i + 39, #catalogo.ids)
+    for i = catalogo.i, fim do
+        pcall(function()
+            local item = KSL:LoadAsset_Blocking(KSL:GetSoftObjectReferenceFromPrimaryAssetId(catalogo.ids[i]))
+            if not valid(item) then return end
+            local e = {
+                id = item:GetFName():ToString(), tipo = tagName(item.ItemType), nome = texto(item.ItemName),
+                descricao = texto(item.ItemDescription), preco = item.ItemCost, moeda = tagName(item.CurrencyType),
+                marca = tagName(item.ItemBrand), item = pidStr(item.ItemAssetID), cargas = item.NumberOfChargesPerPurchase,
+                desativado = item.bIsDisabled, padrao = item.bIsDefaultBought,
+            }
+            local tipoAsset = item.ItemAssetID.PrimaryAssetType.Name:ToString()
+            if tipoAsset == "HS3ClothingDataAsset" or tipoAsset == "HS3BackpackDataAsset" then
+                local roupa = KSL:LoadAsset_Blocking(KSL:GetSoftObjectReferenceFromPrimaryAssetId(item.ItemAssetID))
+                if valid(roupa) then
+                    e.stats = statsRoupa(roupa)
+                    e.parte = tagName(roupa.CosmeticTypeTag)
+                    if e.nome == "" then e.nome = texto(roupa.DisplayName) end
+                end
+            end
+            pcall(function()
+                local c = tagName(proj:GetCaliberTagFromPrimaryAssetId(item.ItemAssetID))
+                if c and c ~= "None" then e.calibre = c end
+            end)
+            pcall(function()
+                local tags = {}
+                item.CompatibilityTags.GameplayTags:ForEach(function(_, t) tags[#tags + 1] = tagName(t:get()) end)
+                if #tags > 0 then e.compat = tags end
+            end)
+            catalogo.itens[#catalogo.itens + 1] = e
+        end)
+    end
+    catalogo.i = fim + 1
+    if catalogo.i > #catalogo.ids then
+        writeFile(DIR .. "catalogo_v2.json", jsonEncode(catalogo.itens))
+        log("catálogo exportado: " .. #catalogo.itens .. " itens")
+        catalogo = nil
+    end
+end
+
+local function writeEquipamento()
+    local eq = { ts = os.time(), mochila = {}, roupa = {}, comprados = {} }
+    pcall(function()
+        FindFirstOf("HS3InventoryManagerComponent").CachedInventoryList.Items:ForEach(function(_, e)
+            local it = e:get()
+            eq.mochila[#eq.mochila + 1] = { item = pidStr(it.SaveInfo.AssetId), tipo = tagName(it.SaveInfo.Type), cargas = it.Charges }
+        end)
+    end)
+    pcall(function()
+        FindFirstOf("HS3CharacterAssetSaveGame").SavedCharacterParts:ForEach(function(_, e)
+            local p = e:get()
+            local tipo = tagName(p.CosmeticType) or ""
+            if tipo:find("Clothing") then eq.roupa[#eq.roupa + 1] = { item = pidStr(p.CosmeticId), tipo = tipo } end
+        end)
+    end)
+    pcall(function()
+        FindFirstOf("HS3StoreSaveGame").BoughtItems:ForEach(function(_, e)
+            local b = e:get()
+            eq.comprados[#eq.comprados + 1] = { id = b.AssetId.PrimaryAssetName:ToString(), cargas = b.Charges }
+        end)
+    end)
+    pcall(function()
+        local d = FindFirstOf("HS3AttributeSet_Detection")
+        eq.deteccao = { visual = d.VisualDetectionFactor.CurrentValue, som = d.SoundDetectionFactor.CurrentValue,
+                        cheiro = d.SmellDetectionFactor.CurrentValue, na_estrutura = d.InHuntingStructure.CurrentValue }
+    end)
+    writeFile(DIR .. "equipamento.json", jsonEncode(eq))
+end
+
+local function comprar(nomeItem, ref)
+    local KSL = StaticFindObject("/Script/Engine.Default__KismetSystemLibrary")
+    local item = KSL:LoadAsset_Blocking(KSL:GetSoftObjectReferenceFromPrimaryAssetId(idDe("HS3StoreItemAsset:" .. nomeItem)))
+    local lib = StaticFindObject("/Script/HS3CoreRuntime.Default__HS3StoreFunctionLibrary")
+    local pc = FindFirstOf("HS3PlayerController")
+    local antes = credits()
+    local ok, err = pcall(function() lib:TryPurchaseStoreItem(pc, item) end)
+    local depois = credits()
+    local success = ok and antes and depois and depois < antes
+    log(string.format("compra %s: %s (%s -> %s)", nomeItem, success and "OK" or "FALHOU", tostring(antes), tostring(depois)))
+    emit("compra", { item = nomeItem, ok = success, antes = antes, depois = depois, ref = ref, erro = (not ok) and tostring(err) or nil })
+    pcall(writeEquipamento)
+end
+
+local function teleportar(x, y, z)
+    local nav = FindFirstOf("NavigationPlayerStateComponent")
+    nav:Server_SafeFastTravel({ { Rotation = { X = 0, Y = 0, Z = 0, W = 1 }, Translation = { X = x, Y = y, Z = z + 60 }, Scale3D = { X = 1, Y = 1, Z = 1 } } })
+    log(string.format("teleporte para %.0f, %.0f", x, y))
+end
+
 local ultimoNivel, ticks = nil, 0
 local function periodic()
     ticks = ticks + 1
@@ -454,7 +592,11 @@ local function periodic()
         local f = io.open(DIR .. "mapa_" .. curto .. ".png", "rb")
         if f then f:close() else pcall(exportMap) end
         pcall(exportPois); pcall(exportFog); pcall(exportCalibres)
+        local f2 = io.open(DIR .. "catalogo_v2.json", "rb")
+        if f2 then f2:close() else pcall(iniciarCatalogo) end
     end
+    if catalogo then pcall(passoCatalogo) end
+    if ticks % 10 == 0 then pcall(writeEquipamento) end
     if ticks % 5 == 0 then pcall(writeAnimals) end
     if ticks % 60 == 0 then pcall(exportPois) end
     if ticks % 180 == 0 then pcall(exportFog) end   -- névoa a cada 3 min (leitura mais pesada)
@@ -487,6 +629,11 @@ LoopAsync(1000, function()
                     local x, y, z = line:match("^pin%s+(%S+)%s+(%S+)%s*(%S*)")
                     setPin(tonumber(x), tonumber(y), tonumber(z) or 0)
                 elseif cmd == "unpin" then clearPin()
+                elseif cmd == "comprar" and arg ~= "" then comprar(arg, ref)
+                elseif cmd == "catalogo" then iniciarCatalogo()
+                elseif cmd == "teleport" then
+                    local x, y, z = line:match("^teleport%s+(%S+)%s+(%S+)%s*(%S*)")
+                    teleportar(tonumber(x), tonumber(y), tonumber(z) or 0)
                 elseif cmd == "export_map" then exportMap(); exportPois(); exportFog(); exportCalibres()
                 elseif cmd == "script" and arg ~= "" and arg:match("^[%w_%-]+%.lua$") then
                     local chunk, e = loadfile(DIR .. "dev" .. "\\" .. arg)
