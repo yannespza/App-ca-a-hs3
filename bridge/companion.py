@@ -16,6 +16,7 @@ import time
 import uuid
 import webbrowser
 import shutil
+import ssl
 import subprocess
 import tempfile
 import urllib.request
@@ -374,6 +375,43 @@ def _versao_tupla(v):
         return (0,)
 
 
+def _contexto_ssl():
+    """Certificados: os do Windows + o pacote certifi embutido no programa.
+    No Windows, o Python só enxerga os certificados-raiz que já foram baixados pelo sistema;
+    o navegador baixa os que faltam na hora, o Python não. Por isso juntamos os dois."""
+    ctx = ssl.create_default_context()
+    try:
+        import certifi
+        ctx.load_verify_locations(certifi.where())
+    except Exception:
+        pass
+    return ctx
+
+
+CTX_SSL = _contexto_ssl()
+
+
+def _curl_windows(url, destino=None, headers=None, so_cabecalho=False):
+    """Plano C: o curl.exe que vem no Windows 10/11 usa a verificação do próprio Windows."""
+    curl = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "curl.exe")
+    if not os.path.isfile(curl):
+        raise RuntimeError("curl.exe não encontrado")
+    cmd = [curl, "-sS", "--max-time", "120"]
+    for k, v in (headers or {}).items():
+        cmd += ["-H", f"{k}: {v}"]
+    if so_cabecalho:
+        cmd += ["-I"]
+    else:
+        cmd += ["-L", "--fail"]
+    if destino:
+        cmd += ["-o", destino]
+    cmd.append(url)
+    r = subprocess.run(cmd, capture_output=True, timeout=180, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    if r.returncode != 0:
+        raise RuntimeError("curl: " + r.stderr.decode("utf-8", "ignore").strip()[:200])
+    return r.stdout
+
+
 class Atualizador:
     def __init__(self, cfg):
         self.cfg = cfg
@@ -386,14 +424,14 @@ class Atualizador:
         h = {"Accept": accept, "User-Agent": "HS3Companion"}
         if self.cfg.get("github_token"):
             h["Authorization"] = "Bearer " + self.cfg["github_token"]
-        return urllib.request.urlopen(urllib.request.Request(url, headers=h), timeout=60)
+        return urllib.request.urlopen(urllib.request.Request(url, headers=h), timeout=60, context=CTX_SSL)
 
     def _ultima_pelo_site(self):
         """Plano B sem a API: github.com/<repo>/releases/latest redireciona para a tag mais nova."""
         class SemRedirecionar(urllib.request.HTTPRedirectHandler):
             def redirect_request(self, *a, **k):
                 return None
-        abridor = urllib.request.build_opener(SemRedirecionar)
+        abridor = urllib.request.build_opener(SemRedirecionar, urllib.request.HTTPSHandler(context=CTX_SSL))
         try:
             abridor.open(urllib.request.Request(f"https://github.com/{REPO}/releases/latest",
                                                 headers={"User-Agent": "HS3Companion"}), timeout=30)
@@ -405,6 +443,16 @@ class Atualizador:
                 return {"versao": tag.lstrip("v"), "asset_api": url, "asset_url": url, "notas": ""}
             raise
         raise RuntimeError("resposta inesperada do GitHub")
+
+    def _ultima_pelo_curl(self):
+        cab = _curl_windows(f"https://github.com/{REPO}/releases/latest", headers={"User-Agent": "HS3Companion"},
+                            so_cabecalho=True).decode("utf-8", "ignore")
+        m = re.search(r"(?im)^location:\s*(\S+)", cab)
+        tag = m.group(1).rstrip("/").rsplit("/", 1)[-1] if m else ""
+        if not tag.startswith("v"):
+            raise RuntimeError("resposta inesperada do GitHub (curl)")
+        url = f"https://github.com/{REPO}/releases/download/{tag}/HS3Companion.zip"
+        return {"versao": tag.lstrip("v"), "asset_api": url, "asset_url": url, "notas": "", "via_curl": True}
 
     def verificar(self):
         self.estado = "verificando"
@@ -419,9 +467,12 @@ class Atualizador:
             try:
                 self.ultima = self._ultima_pelo_site()
             except Exception as e2:
-                motivo = getattr(e2, "reason", None) or getattr(e1, "reason", None) or e2
-                self.erro = f"Sem conexão com o GitHub: {motivo}"
-                print("atualização:", repr(e1), repr(e2))
+                try:
+                    self.ultima = self._ultima_pelo_curl()
+                except Exception as e3:
+                    motivo = getattr(e2, "reason", None) or getattr(e1, "reason", None) or e3
+                    self.erro = f"Sem conexão com o GitHub: {motivo}"
+                    print("atualização:", repr(e1), repr(e2), repr(e3))
         self.verificado_em = time.time()
         self.estado = "parado" if not self.erro else "erro"
 
@@ -446,8 +497,12 @@ class Atualizador:
             tmp = tempfile.mkdtemp(prefix="hs3upd_")
             zip_path = os.path.join(tmp, "pacote.zip")
             url = self.ultima["asset_api"] if self.cfg.get("github_token") else self.ultima["asset_url"]
-            with self._req(url, accept="application/octet-stream") as r, open(zip_path, "wb") as f:
-                shutil.copyfileobj(r, f)
+            try:
+                with self._req(url, accept="application/octet-stream") as r, open(zip_path, "wb") as f:
+                    shutil.copyfileobj(r, f)
+            except Exception as e:
+                print("download pelo Python falhou, tentando curl do Windows:", repr(e))
+                _curl_windows(self.ultima["asset_url"], destino=zip_path, headers={"User-Agent": "HS3Companion"})
             pasta = os.path.join(tmp, "pacote")
             with zipfile.ZipFile(zip_path) as z:
                 z.extractall(pasta)
