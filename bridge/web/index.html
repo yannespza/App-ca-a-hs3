@@ -113,7 +113,9 @@
 <header>
   <div class="logo">Cabana do <span>Caçador</span></div>
   <div class="conexao" style="margin-left:auto"><div id="led" class="led"></div><span id="conexao-txt">Procurando o jogo…</span></div>
-  <div class="atualizar"><span id="versao"></span><button id="btn-atualizar" onclick="clicarAtualizar()">Procurar atualização</button></div>
+  <div class="atualizar"><span id="versao"></span><button id="btn-atualizar" onclick="clicarAtualizar()">Procurar atualização</button>
+    <button id="btn-instalar" style="display:none" onclick="instalar()">Instalar app</button>
+    <button onclick="sair()" title="Fecha o HS3 Companion">Fechar</button></div>
 </header>
 <nav id="abas">
   <button data-aba="status" class="ativo">Status</button>
@@ -261,6 +263,16 @@ async function clicarAtualizar() {
     if (r.erro) alert(r.erro);
     else if (!r.disponivel) alert(`Você já está na versão mais recente (v${r.atual}).`);
   }
+}
+
+let pedidoInstalar = null;
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); pedidoInstalar = e; $("btn-instalar").style.display = ""; });
+async function instalar() { if (pedidoInstalar) { pedidoInstalar.prompt(); pedidoInstalar = null; $("btn-instalar").style.display = "none"; } }
+async function sair() {
+  if (!confirm("Fechar o HS3 Companion?")) return;
+  try { await fetch("/api/sair", {method: "POST"}); } catch {}
+  document.body.innerHTML = '<div style="padding:60px;text-align:center;font-family:Georgia;font-size:22px">HS3 Companion fechado. Pode fechar esta janela.</div>';
+  setTimeout(() => window.close(), 800);
 }
 
 async function trocar(id) {

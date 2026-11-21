@@ -13,11 +13,12 @@ INSTALAÇÃO (só na primeira vez ou quando atualizar)
 
 COMO USAR
 1. Abra o jogo pela Steam.
-2. Abra o HS3Companion.exe. O app abre sozinho no navegador.
-3. Para instalar como aplicativo: no Chrome/Edge, clique no ícone de instalar
-   na barra de endereço (ou menu > Instalar app). Arraste a janela para o
-   segundo monitor.
-4. Deixe a janela preta do HS3Companion aberta enquanto joga.
+2. Abra o HS3Companion.exe. O app abre sozinho numa janela própria.
+   Arraste a janela para o segundo monitor.
+3. Para fechar o programa, use o botão "Fechar" no canto superior do app.
+   Se fechar só a janela, abra o HS3Companion.exe de novo para reabri-la.
+4. Dica: clique com o botão direito no HS3Companion.exe > Enviar para >
+   Área de trabalho (criar atalho).
 
 CONFIGURAÇÃO
 Na primeira execução é criado o arquivo config.json ao lado do .exe.

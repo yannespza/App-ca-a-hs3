@@ -30,6 +30,11 @@ else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     WEB_DIR = os.path.join(BASE_DIR, "web")
 
+if getattr(sys, "frozen", False) and (sys.stdout is None or sys.stderr is None):
+    _log = open(os.path.join(BASE_DIR, "hs3companion.log"), "a", encoding="utf-8", buffering=1)
+    sys.stdout = sys.stderr = _log
+
+
 def _ler_versao():
     try:
         with open(os.path.join(os.path.dirname(WEB_DIR), "versao.txt"), encoding="utf-8") as f:
@@ -333,7 +338,7 @@ start "" "{exe_atual}" --sem-navegador
 """)
             self.estado = "reiniciando"
             time.sleep(1.5)  # deixa o app receber o estado "reiniciando"
-            subprocess.Popen(["cmd", "/c", bat], creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0))
+            subprocess.Popen(["cmd", "/c", bat], creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             os._exit(0)
         except Exception as e:
             self.erro = f"Falha ao atualizar: {e}"
@@ -582,6 +587,32 @@ class Companion:
 APP = None
 ATUALIZADOR = None
 
+
+def abrir_janela(url):
+    """Abre o app numa janela própria (modo aplicativo do Edge/Chrome), sem barra de navegador."""
+    candidatos = []
+    for base in (os.environ.get("ProgramFiles(x86)"), os.environ.get("ProgramFiles"), os.environ.get("LOCALAPPDATA")):
+        if not base:
+            continue
+        candidatos += [os.path.join(base, "Microsoft", "Edge", "Application", "msedge.exe"),
+                       os.path.join(base, "Google", "Chrome", "Application", "chrome.exe")]
+    for exe in candidatos:
+        if os.path.isfile(exe):
+            perfil = os.path.join(BASE_DIR, "perfil_janela")
+            try:
+                subprocess.Popen([exe, f"--app={url}", "--window-size=1400,900", f"--user-data-dir={perfil}",
+                                  "--no-first-run", "--no-default-browser-check"])
+                return
+            except Exception:
+                pass
+    webbrowser.open(url)
+
+
+def porta_em_uso(porta):
+    import socket
+    with socket.socket() as sk:
+        return sk.connect_ex(("127.0.0.1", porta)) == 0
+
 TIPOS = {".html": "text/html; charset=utf-8", ".js": "application/javascript", ".css": "text/css",
          ".json": "application/json", ".webmanifest": "application/manifest+json",
          ".png": "image/png", ".svg": "image/svg+xml", ".jpg": "image/jpeg", ".woff2": "font/woff2"}
@@ -619,6 +650,10 @@ class Handler(BaseHTTPRequestHandler):
             corpo = json.loads(self.rfile.read(tam) or b"{}")
         except Exception:
             corpo = {}
+        if self.path == "/api/sair":
+            self.responder(200, {"ok": True})
+            threading.Timer(0.5, lambda: os._exit(0)).start()
+            return
         if self.path == "/api/atualizar":
             return self.responder(200, {"ok": ATUALIZADOR.atualizar()})
         if self.path == "/api/verificar":
@@ -631,6 +666,12 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     global APP, ATUALIZADOR
+    cfg = carregar_config()
+    url = f"http://localhost:{cfg['porta']}"
+    if porta_em_uso(cfg["porta"]):
+        # já está rodando: só abre a janela de novo
+        abrir_janela(url)
+        return
     APP = Companion()
     ATUALIZADOR = Atualizador(APP.cfg)
     threading.Thread(target=ATUALIZADOR.loop, daemon=True).start()
@@ -641,10 +682,9 @@ def main():
         print("ATENÇÃO: pasta do mod não encontrada. Ajuste 'pasta_mod' em", CONFIG_PATH)
     threading.Thread(target=APP.loop, daemon=True).start()
     servidor = ThreadingHTTPServer(("127.0.0.1", porta), Handler)
-    url = f"http://localhost:{porta}"
     print(f"App aberto em {url}  (deixe esta janela aberta enquanto joga)")
     if APP.cfg.get("abrir_navegador") and "--sem-navegador" not in sys.argv:
-        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+        threading.Timer(1.0, lambda: abrir_janela(url)).start()
     try:
         servidor.serve_forever()
     except KeyboardInterrupt:
