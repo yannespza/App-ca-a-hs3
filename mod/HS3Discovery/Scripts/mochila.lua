@@ -50,7 +50,7 @@ end
 
 function M.ler(ctx)
     local log, tagName = ctx.log, ctx.tagName
-    local r = { ts = os.time(), slots = {}, itens = {}, municao = {}, erros = {}, pronto = M.pronto() }
+    local r = { ts = os.time(), slots = {}, itens = {}, erros = {}, pronto = M.pronto() }
     local im = inv()
     if not r.pronto or not im then
         -- fora da reserva: não sobrescreve a última leitura boa
@@ -61,30 +61,47 @@ function M.ler(ctx)
         if ok then r.slots[t] = n else r.erros[#r.erros + 1] = "slots " .. t end
     end
     r.itens = itensAtuais(im, tagName)
-    local ch = chunkArmas()
-    if ch then
-        local ok, e = pcall(function()
-            ch.AppliedWeaponStoreItems:ForEach(function(_, el)
-                local c = el:get()
-                local arma = idStr(c.WeaponStoreId)
-                if arma then
-                    local anexos = {}
-                    pcall(function()
-                        c.AttachmentStoreIds:ForEach(function(_, a)
-                            local s = idStr(a:get())
-                            if s then anexos[#anexos + 1] = s:match(":(.+)$") or s end
-                        end)
-                    end)
-                    r.municao[arma:match(":(.+)$") or arma] = anexos
-                end
-            end)
-        end)
-        if not ok then r.erros[#r.erros + 1] = "munição: " .. tostring(e) end
-    end
     ctx.writeFile(ctx.DIR .. "mochila.json", ctx.json(r))
     log(string.format("mochila lida: %d itens, slots arma=%s objeto=%s gps=%s",
         #r.itens, tostring(r.slots["Inventory.Weapon"]), tostring(r.slots["Inventory.Objects"]), tostring(r.slots["Inventory.GPS"])))
     return r
+end
+
+-- Munição e acessórios montados SÓ nas armas que estão na mochila -> armas.json.
+-- (Ler os acessórios das 111 armas a cada 8 s fechou o jogo em 21/11: o UE4SS falha às vezes ao ler
+--  uma lista dentro de outra. Agora: no máximo 2 armas, e só quando o app pede ou depois de uma troca.)
+function M.armas(ctx)
+    if not M.pronto() then return end
+    local im, ch = inv(), chunkArmas()
+    if not im or not ch then return end
+    local alvos, n = {}, 0
+    for _, i in ipairs(itensAtuais(im, ctx.tagName)) do
+        if i.tipo == "Inventory.Weapon" and i.item then
+            local nome = i.item:match("ID_(.+)$")
+            if nome then alvos["DA_" .. nome .. "_StoreItem"] = true; n = n + 1 end
+        end
+    end
+    local r = { ts = os.time(), municao = {} }
+    if n > 0 then
+        local ok, e = pcall(function()
+            ch.AppliedWeaponStoreItems:ForEach(function(_, el)
+                local c = el:get()
+                local arma = idStr(c.WeaponStoreId)
+                local nome = arma and (arma:match(":(.+)$") or arma)
+                if nome and alvos[nome] then
+                    local anexos = {}
+                    c.AttachmentStoreIds:ForEach(function(_, a)
+                        local s = idStr(a:get())
+                        if s then anexos[#anexos + 1] = s:match(":(.+)$") or s end
+                    end)
+                    r.municao[nome] = anexos
+                end
+            end)
+        end)
+        if not ok then ctx.log("armas: " .. tostring(e)) end
+    end
+    ctx.writeFile(ctx.DIR .. "armas.json", ctx.json(r))
+    ctx.log("armas da mochila lidas: " .. n)
 end
 
 -- põe um item (HS3InventoryItemDefinition:ID_x) no espaço idx (0, 1, 2…) do tipo
@@ -152,7 +169,9 @@ function M.salvar(ctx)
     if im then pcall(function() im:SaveInventoryData(true) end) end
     local ch = chunkArmas()
     if ch then pcall(function() ch:SaveWeaponCosmetics() end) end
-    return M.ler(ctx)
+    local r = M.ler(ctx)
+    M.armas(ctx)
+    return r
 end
 
 return M

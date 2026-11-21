@@ -1069,13 +1069,25 @@ class Companion:
 
     def dados_mochila(self, ids=None):
         agora = time.time()
-        if self.em_reserva() and agora - getattr(self, "_mochila_pedida", 0) > 8:
+        if self.em_reserva() and agora - getattr(self, "_mochila_pedida", 0) > 12:
             self._mochila_pedida = agora
             self.enviar_comando(["mochila ler"])
         dados = self.cache.json(self.caminho("jogo_dados.json"), None)
         lida = self.cache.json(self.caminho("mochila.json"), None)
         if lida and not lida.get("itens") and lida.get("pronto") is not True:
             lida = None
+        if lida:
+            # munição e acessórios: só das armas da mochila, lidos raramente (armas.json)
+            armas = self.cache.json(self.caminho("armas.json"), None) or {}
+            mun = armas.get("municao") if isinstance(armas.get("municao"), dict) else {}
+            lida = dict(lida, municao=mun if mun or "municao" not in lida else lida["municao"])
+            nas = {"DA_" + i["item"].split("ID_", 1)[-1] + "_StoreItem" for i in lida.get("itens") or []
+                   if i.get("tipo") == "Inventory.Weapon" and "ID_" in (i.get("item") or "")}
+            faltam = nas - set(mun)
+            velho = agora - (armas.get("ts") or 0) > 300
+            if self.em_reserva() and (faltam or velho) and agora - getattr(self, "_armas_pedidas", 0) > 30:
+                self._armas_pedidas = agora
+                self.enviar_comando(["mochila armas"])
         do_jogo = self.contratos_jogo()
         with self.lock:
             ativas = self.por_status("ativa") + do_jogo

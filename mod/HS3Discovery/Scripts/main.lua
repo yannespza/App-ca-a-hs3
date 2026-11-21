@@ -675,7 +675,7 @@ local function periodic()
         end
     end
     pcall(passoMochila)
-    if ticks % 5 == 3 and #filaMochila == 0 then lerContratosJogo() end
+    if ticks % 10 == 3 and #filaMochila == 0 then lerContratosJogo() end
     if ticks % 10 == 0 then pcall(writeEquipamento) end
     if ticks % 5 == 0 then pcall(writeAnimals) end
     if ticks % 60 == 0 then pcall(exportPois) end
@@ -727,6 +727,7 @@ LoopAsync(1000, function()
                     -- mochila ler | mochila por <item> <tipo> <idx> | mochila tirar <item> | mochila municao <arma> <municao>
                     -- leitura na hora; trocas vão para a fila (uma por segundo, depois salva e relê)
                     if arg == "ler" then rodarMochila(function(mo, ctx) mo.ler(ctx) end)
+                    elseif arg == "armas" then rodarMochila(function(mo, ctx) if mo.armas then mo.armas(ctx) end end)
                     else filaMochila[#filaMochila + 1] = line end
                 elseif cmd == "script" and arg ~= "" and arg:match("^[%w_%-]+%.lua$") then
                     local chunk, e = loadfile(DIR .. "dev" .. "\\" .. arg)
