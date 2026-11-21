@@ -289,6 +289,7 @@ async function atualizar() {
   $("p-patente-barra").style.width = (pt.progresso * 100) + "%";
   $("p-patente-sub").textContent = `${fmt(pt.pontos)} pts` + (pt.proxima ? ` · faltam ${fmt(pt.faltam)} p/ ${pt.proxima}` : "");
   $("f-voltar").checked = !!d.config?.voltar_ao_ultimo_local;
+  $("f-hud").checked = d.config?.contratos_no_jogo !== false;
   $("btn-voltar").style.display = d.tem_local_salvo ? "" : "none";
   $("aviso-teleporte").textContent = d.aviso_teleporte || "";
   const rep = d.reputacao_mapa_atual;
@@ -353,6 +354,7 @@ document.querySelectorAll("#abas button").forEach(b => b.onclick = () => {
   atualizarAba();
 });
 $("f-voltar").onchange = (e) => post("/api/config", { chave: "voltar_ao_ultimo_local", valor: e.target.checked });
+$("f-hud").onchange = (e) => post("/api/config", { chave: "contratos_no_jogo", valor: e.target.checked });
 async function voltarAgora() { const r = await post("/api/voltar"); if (!r.ok) alert(r.erro); }
 
 function barraStat(nome, v) {

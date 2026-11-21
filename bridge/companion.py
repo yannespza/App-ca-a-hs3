@@ -66,6 +66,7 @@ CONFIG_PADRAO = {
     "ollama_modelo": "",
     "ollama_usar_gpu": False,
     "voltar_ao_ultimo_local": True,
+    "contratos_no_jogo": True,
     "limite_diario_creditos": 20000,
     "github_token": "",
 }
@@ -937,7 +938,7 @@ class Companion:
         return {"ok": True}
 
     def configurar(self, chave, valor):
-        if chave in ("voltar_ao_ultimo_local", "ollama_usar_gpu"):
+        if chave in ("voltar_ao_ultimo_local", "ollama_usar_gpu", "contratos_no_jogo"):
             self.cfg[chave] = bool(valor)
             salvar_json(CONFIG_PATH, self.cfg)
             return {"ok": True}
@@ -1036,8 +1037,38 @@ class Companion:
         return {"ok": True}
 
     # --- ciclo
+    def texto_hud(self, m):
+        """Linha do objetivo no formato da caixa de contratos do jogo (<Target> destaca o número)."""
+        desc = re.sub(r"\s+\([^)]*\)", "", (m.get("descricao") or m.get("titulo") or "")).strip().rstrip(".")
+        desc = re.sub(r"(\d+(?:[–-]\d+)?(?:\s*m\b|%)?)", r"<Target>\1</>", desc, count=1)
+        texto = f"Earl: {desc}"
+        meta = int(m.get("meta") or 1)
+        prog = min(int(m.get("progresso") or 0), meta)
+        feito = m["status"] != "ativa"
+        progresso = f"<Progress>{meta if feito else prog}</> / {meta}"
+        limpo = lambda t: str(t).replace("\t", " ").replace("\n", " ").replace("\r", " ")
+        return "O\t" + limpo(texto) + "\t" + progresso + "\t" + ("1" if feito else "0")
+
+    def escrever_hud(self):
+        linhas = ["T\tContratos do Velho Earl"]
+        if self.cfg.get("contratos_no_jogo", True):
+            agora = time.time()
+            for m in self.dados["missoes"]:
+                recente = m["status"] in ("concluida", "paga") and agora - (m.get("concluida_em") or m.get("pago_em") or 0) < 120
+                if m["status"] == "ativa" or recente:
+                    linhas.append(self.texto_hud(m))
+        txt = "\n".join(linhas) + "\n"
+        if txt != getattr(self, "_hud_txt", None):
+            try:
+                with open(self.caminho("hud.txt"), "w", encoding="utf-8") as f:
+                    f.write(txt)
+                self._hud_txt = txt
+            except OSError:
+                pass
+
     def ciclo(self):
         with self.lock:
+            self.escrever_hud()
             self.ler_estado()
             self.ler_animais()
             mudou = False
@@ -1133,7 +1164,8 @@ class Companion:
                 "patente": extras.patente(self.dados["abates"], missoes),
                 "aviso_teleporte": self.aviso_teleporte,
                 "config": {"voltar_ao_ultimo_local": self.cfg.get("voltar_ao_ultimo_local"),
-                           "ollama_usar_gpu": self.cfg.get("ollama_usar_gpu")},
+                           "ollama_usar_gpu": self.cfg.get("ollama_usar_gpu"),
+                           "contratos_no_jogo": self.cfg.get("contratos_no_jogo", True)},
                 "tem_local_salvo": bool(getattr(self, "anterior", None)),
                 "ollama": self.ollama.status(),
                 "chat": [{"role": c["role"], "content": c["content"]} for c in self.dados["chat"][-20:]],

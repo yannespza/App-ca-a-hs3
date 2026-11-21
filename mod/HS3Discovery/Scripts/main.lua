@@ -622,6 +622,18 @@ local function periodic()
         if f2 then f2:close() else pcall(iniciarCatalogo) end
     end
     if catalogo then pcall(passoCatalogo) end
+    if ticks % 2 == 0 then
+        -- contratos do app na caixa de objetivos do jogo (Scripts\hud.lua, recarregado a cada vez)
+        local f = io.open(DIR .. "hud.txt", "rb")
+        if f then
+            f:close()
+            local chunk = loadfile(DIR .. "Scripts\\hud.lua")
+            if chunk then
+                local okH, errH = pcall(function() chunk().sincronizar({ DIR = DIR, log = log }) end)
+                if not okH and ticks % 60 == 0 then log("hud: " .. tostring(errH)) end
+            end
+        end
+    end
     if ticks % 10 == 0 then pcall(writeEquipamento) end
     if ticks % 5 == 0 then pcall(writeAnimals) end
     if ticks % 60 == 0 then pcall(exportPois) end

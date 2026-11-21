@@ -335,3 +335,4 @@ header { display: flex; align-items: center; gap: 14px; padding: 0 20px; }
 .mo-nao { margin: 6px 0 4px; }
 .mo-nao summary { cursor: pointer; font-size: 13px; color: var(--couro); }
 .mo-nao[open] summary { margin-bottom: 6px; }
+.opcao-hud { display: block; font-size: 12px; margin: -2px 0 6px; color: var(--tinta); cursor: pointer; }
