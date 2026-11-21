@@ -248,6 +248,9 @@ end)
 -- Observação: o hook em Client_OnBagRequestFinished derrubava o jogo ao vender o animal.
 -- O abate é registrado pelo popup (acima); a ponte ignora popups repetidos do mesmo animal.
 
+-- utilidades disponíveis para scripts de desenvolvimento (pasta dev\)
+HS3 = { log = log, emit = emit, json = jsonEncode, tagName = tagName, valid = valid, dir = DIR }
+
 ------------------------------------------------------------------ laços
 LoopAsync(3000, function() return tryHookSpotted() end)
 
@@ -268,6 +271,11 @@ LoopAsync(1000, function()
                 if cmd == "add_credits" and n then giveCredits(n, ref)
                 elseif cmd == "add_rep" and n then giveReputation(n, ref)
                 elseif cmd == "status" then log("status solicitado")
+                elseif cmd == "script" and arg ~= "" and arg:match("^[%w_%-]+%.lua$") then
+                    local chunk, e = loadfile(DIR .. "dev" .. "\\" .. arg)
+                    if not chunk then log("script erro ao carregar: " .. tostring(e)); return end
+                    local okS, res = pcall(chunk)
+                    log("script " .. arg .. ": " .. (okS and ("ok " .. tostring(res)) or ("ERRO " .. tostring(res))))
                 else log("comando desconhecido: " .. line) end
             end)
             if not ok then log("ERRO comando: " .. tostring(err)) end
