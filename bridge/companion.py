@@ -26,6 +26,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import extras
 import ia
+import missoes
 import mapa
 
 
@@ -60,8 +61,9 @@ CONFIG_PADRAO = {
     "pasta_mod": r"D:\SteamLibrary\steamapps\common\HS3\HS3\Binaries\Win64\ue4ss\Mods\HS3Discovery",
     "porta": 8765,
     "abrir_navegador": True,
-    "missoes_ativas": 3,
-    "ofertas": 3,
+    "missoes_ativas": 6,
+    "ofertas": 8,
+    "usar_ia": False,              # a IA (Ollama) usa muita memória junto com o jogo; desligada por padrão
     "ollama_url": "http://localhost:11434",
     "ollama_modelo": "",
     "ollama_usar_gpu": False,
@@ -168,8 +170,12 @@ def salvar_json(path, dados):
 
 def carregar_config():
     cfg = dict(CONFIG_PADRAO)
-    cfg.update(carregar_json(CONFIG_PATH, {}))
-    if not os.path.exists(CONFIG_PATH):
+    salvo = carregar_json(CONFIG_PATH, {})
+    cfg.update(salvo)
+    # versões antigas gravaram 3/3 no config.json: passa para os novos limites
+    if salvo.get("missoes_ativas", 6) <= 3 and "usar_ia" not in salvo:
+        cfg["missoes_ativas"], cfg["ofertas"] = CONFIG_PADRAO["missoes_ativas"], CONFIG_PADRAO["ofertas"]
+    if not os.path.exists(CONFIG_PATH) or "usar_ia" not in salvo:
         salvar_json(CONFIG_PATH, cfg)
     return cfg
 
@@ -319,6 +325,13 @@ def gerar_missao_local(dados, pois):
     return normalizar_missao(m, dados, pois)
 
 
+ARMA_TIPOS = {}   # "ID_Browning_XBolt_EV" -> "rifle" | "espingarda" | "arco" | "curta_arma" (preenchido com jogo_dados.json)
+
+
+def arma_tipo_de(arma):
+    return ARMA_TIPOS.get((arma or "").split(":")[-1])
+
+
 def dentro(pos, local, raio_m=60):
     d = distancia_m(pos, local)
     return d is not None and d <= raio_m
@@ -330,11 +343,25 @@ def avaliar_missoes(dados, evento):
     for m in dados["missoes"]:
         if m["status"] != "ativa" or evento.get("ts", 0) < m.get("aceita_em", m["criada"]) - 2:
             continue
+        t = m["tipo"]
+        if t == "combo":
+            ev = dict(evento)
+            if not missoes.conta(m, ev, dentro, arma_tipo_de):
+                continue
+            chave = f"{ev['tipo']}:{ev.get('id')}"
+            if chave in m["contados"]:
+                continue
+            m["contados"].append(chave)
+            m["progresso"] = len(m["contados"])
+            if m["progresso"] >= m["meta"]:
+                m["status"] = "concluida"
+                m["concluida_em"] = time.time()
+                concluidas.append(m)
+            continue
         chave = f"{evento['tipo']}:{evento.get('id')}"
         if chave in m["contados"]:
             continue
         conta = False
-        t = m["tipo"]
         if evento["tipo"] == "abate_confirmado":
             if t == "abater_qualquer":
                 conta = True
@@ -818,10 +845,30 @@ class Companion:
             ctx["pontos_descobertos_proximos"] = [{"hash": p["hash"], "nome": p["nome"], "distancia_m": round(p["_d"])} for p in desc]
         return ctx
 
+    def info_gerador(self):
+        """Espécies que vivem na reserva atual e tipos de arma que você tem (para o gerador de contratos)."""
+        dados = self.cache.json(self.caminho("jogo_dados.json"), None) or {}
+        nivel = (self.nivel() or "").lower().split("_")[0]
+        grupos = []
+        for a in dados.get("animais", []):
+            if nivel and any(nivel in (mp or "").lower() for mp in a.get("mapas", [])):
+                g = grupo_de(a.get("tag"))[0]
+                if g != "outro" and g not in grupos:
+                    grupos.append(g)
+        comprados = {b["id"] for b in self.equipamento().get("comprados", [])}
+        tipos = set()
+        for i in dados.get("itens", []):
+            if (i.get("tipo") or "").startswith("Inventory.Weapon"):
+                t = missoes._arma_tipo(i["tipo"])
+                ARMA_TIPOS[(i.get("item") or "").split(":")[-1]] = t
+                if i["id"] in comprados or i.get("padrao"):
+                    tipos.add(t)
+        return grupos, sorted(tipos) or ["rifle"]
+
     def _gerar_ofertas(self, n):
         try:
             novas = []
-            if self.ollama.verificar():
+            if self.cfg.get("usar_ia") and self.ollama.verificar():
                 try:
                     with self.lock:
                         ctx = self.contexto()
@@ -832,7 +879,13 @@ class Companion:
                             novas.append(nm)
                 except Exception as e:
                     print("IA falhou ao gerar missões:", e)
-            while len(novas) < n:
+            if len(novas) < n:
+                grupos, armas = self.info_gerador()
+                with self.lock:
+                    novas += missoes.gerar(self.dados, self.pois(), nome_grupo, grupos, armas, n - len(novas))
+            tentativas = 0
+            while len(novas) < n and tentativas < 20:
+                tentativas += 1
                 with self.lock:
                     nm = gerar_missao_local(self.dados, self.pois())
                 if nm:
@@ -897,6 +950,12 @@ class Companion:
             self.dados["chat"].append({"role": "user", "content": texto, "ts": time.time()})
             historico = [{"role": c["role"], "content": c["content"]} for c in self.dados["chat"][-12:-1]]
             ctx = self.contexto(curto=True)
+        if not self.cfg.get("usar_ia"):
+            resposta = missoes.dica(texto)
+            with self.lock:
+                self.dados["chat"] = (self.dados["chat"] + [{"role": "assistant", "content": resposta, "ts": time.time()}])[-40:]
+                self.salvar_pendente = True
+            return {"ok": True, "resposta": resposta}
         self.respondendo = True
         try:
             resposta = ia.conversar(self.ollama, historico, texto, ctx)
@@ -1132,6 +1191,12 @@ class Companion:
     def ciclo(self):
         with self.lock:
             self.escrever_hud()
+            if not ARMA_TIPOS and time.time() - getattr(self, "_armas_em", 0) > 60:
+                self._armas_em = time.time()
+                try:
+                    self.info_gerador()
+                except Exception:
+                    pass
             self.ler_estado()
             self.ler_animais()
             mudou = False
@@ -1232,6 +1297,7 @@ class Companion:
                            "contratos_no_jogo": self.cfg.get("contratos_no_jogo", True)},
                 "tem_local_salvo": bool(getattr(self, "anterior", None)),
                 "ollama": self.ollama.status(),
+                "usar_ia": bool(self.cfg.get("usar_ia")),
                 "chat": [{"role": c["role"], "content": c["content"]} for c in self.dados["chat"][-20:]],
                 "respondendo": self.respondendo,
                 "pasta_mod": self.cfg["pasta_mod"],

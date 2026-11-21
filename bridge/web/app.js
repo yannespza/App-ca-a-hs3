@@ -181,6 +181,7 @@ function renderOfertas(d) {
         <span><button class="btn-papel cinza" onclick="acao('recusar','${m.id}')">Outro</button>
         <button class="btn-papel verde" onclick="acao('aceitar','${m.id}')">Aceitar</button></span></div>
     </div>`).join("");
+  if (of.length) html = `<div class="of-topo"><span>${of.length} contratos na mesa</span><button class="btn-papel cinza" onclick="renovarOfertas()">Trocar todos</button></div>` + html;
   if (!of.length) html = `<div class="vazio">${d.gerando ? "O Velho Earl está pensando em novos contratos…" : (d.em_reserva ? "Sem contratos no momento." : "Entre numa reserva para receber contratos.")}</div>`;
   else if (d.gerando) html += `<div class="sub">Preparando mais contratos…</div>`;
   $("ofertas").innerHTML = html;
@@ -208,6 +209,13 @@ function renderAtivas(d) {
   $("ativas").innerHTML = partes.join("") || `<div class="vazio">Aceite um contrato do Velho Earl.</div>`;
 }
 
+async function renovarOfertas() {
+  const ids = (ultimoEstado?.ofertas || []).map(m => m.id);
+  for (const id of ids) await post("/api/missoes/recusar", { id });
+  await post("/api/missoes/gerar");
+  moAviso("O Earl está preparando contratos novos.", "ok");
+  atualizar();
+}
 async function acao(tipo, id) {
   const r = await post("/api/missoes/" + tipo, { id });
   if (!r.ok && r.erro) return moAviso(r.erro, "erro");
@@ -222,7 +230,7 @@ function renderChat(d) {
   if (msgs.length === chatQtd && chatPendente === d.respondendo) return;
   chatQtd = msgs.length; chatPendente = d.respondendo;
   const log = $("chat-log");
-  log.innerHTML = (msgs.length ? "" : `<div class="msg assistant">Pergunte o que quiser sobre caça, rapaz. Vento, rastros, calibre… o Velho Earl ajuda.</div>`)
+  log.innerHTML = (msgs.length ? "" : `<div class="msg assistant">Pergunte sobre vento, calibre, chamador, distância, roupa ou uma espécie (cervo, javali, pato, peru…) que eu te dou a dica, rapaz.</div>`)
     + msgs.map(m => `<div class="msg ${m.role}">${esc(m.content)}</div>`).join("")
     + (d.respondendo ? `<div class="msg assistant pensando">Earl está pensando…</div>` : "");
   log.scrollTop = log.scrollHeight;
@@ -327,7 +335,7 @@ async function atualizar() {
   $("npc-frase").textContent = "“" + npc.frase + "”";
   $("npc-apelido").textContent = npc.apelido;
   renderOfertas(d); renderAtivas(d); renderChat(d);
-  $("ollama-status").textContent = d.ollama.ok ? `IA: ${d.ollama.modelo}` : `IA desligada: ${d.ollama.erro || "Ollama não encontrado"} (contratos simples continuam funcionando)`;
+  $("ollama-status").textContent = !d.usar_ia ? "Dicas prontas do Earl, sem IA: não usa memória do PC." : d.ollama.ok ? `IA: ${d.ollama.modelo}` : `IA desligada: ${d.ollama.erro || "Ollama não encontrado"} (contratos simples continuam funcionando)`;
 
   // telemetria
   const prox = (d.rastreados || []).find(a => a.distancia_m !== null);

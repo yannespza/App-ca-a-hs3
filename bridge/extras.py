@@ -491,7 +491,35 @@ def _papel_objeto(item_id, tipo):
     return "outro", []
 
 
+def _tipos_combo(m):
+    """Contratos novos (tipo combo) viram os tipos antigos para a Mochila entender o que precisa."""
+    c = m.get("cond") or {}
+    if c.get("marcar"):
+        return ["marcar"]
+    if c.get("visitar"):
+        return ["visitar"]
+    t = ["abater_grupo" if m.get("grupo") else "abater_qualquer"]
+    for k in ("atrair", "nao_detectado", "calibre", "sem_torre"):
+        if c.get(k):
+            t.append(k)
+    if "dist_min" in c:
+        t.append("distancia")
+    if "genetica" in c:
+        t.append("genetica")
+    return t
+
+
 def requisitos_missoes(missoes, grupo_nome):
+    expandidas = []
+    for m in missoes:
+        if m.get("tipo") == "combo":
+            for t in _tipos_combo(m):
+                expandidas.append(dict(m, tipo=t, dist_min=m.get("dist_min", 0), dist_max=m.get("dist_max", 0),
+                                       grupo=m.get("grupo") if t not in ("marcar", "visitar") else None))
+        else:
+            expandidas.append(m)
+    missoes = expandidas
+    armas = {(m.get("cond") or {}).get("arma") for m in missoes} - {None}
     grupos, qualquer = [], False
     tipos = {m["tipo"] for m in missoes}
     dist = [m for m in missoes if m["tipo"] == "distancia"]
@@ -507,7 +535,9 @@ def requisitos_missoes(missoes, grupo_nome):
     rotulos = {"calibre": "Calibre certo", "atrair": "Atrair (chamador/cheiro)", "nao_detectado": "Sem ser percebido",
                "sem_torre": "Sem torre/espera", "marcar": "Marcar com binóculo", "genetica": "Genética alta"}
     chips += [rotulos[t] for t in tipos if t in rotulos]
-    return {"grupos": grupos, "qualquer": qualquer or not grupos, "tipos": tipos,
+    nomes_arma = {"arco": "Arco ou besta", "espingarda": "Espingarda", "rifle": "Rifle", "curta_arma": "Arma curta"}
+    chips += [nomes_arma[a] for a in armas if a in nomes_arma]
+    return {"grupos": grupos, "qualquer": qualquer or not grupos, "tipos": tipos, "armas": armas,
             "dist_min": min((m["dist_min"] for m in dist), default=0), "dist_max": max((m["dist_max"] for m in dist), default=0),
             "chips": chips}
 
@@ -547,6 +577,11 @@ def mochila(dados, calibres, equip, lida, missoes, nome_especie, grupo_de, grupo
         if not boas:
             return False, "nenhum calibre desta arma é permitido para o alvo", []
         ta = tipo_arma(c.get("tipo"))
+        exigida = req.get("armas") or set()
+        nome_t = {"arco": "arco", "espingarda": "espingarda", "rifle": "rifle"}.get(ta, ta)
+        if exigida and not ({"arco": "arco", "espingarda": "espingarda", "rifle": "rifle"}.get(ta) in exigida
+                            or ("curta_arma" in exigida and "Handgun" in (c.get("tipo") or ""))):
+            return False, f"o contrato pede {', '.join(sorted(exigida)).replace('curta_arma', 'arma curta')}, não {nome_t}", boas
         if req["dist_min"] >= 300 and ta != "rifle":
             return False, "tiro longo pede rifle", boas
         if req["dist_min"] >= 100 and ta == "arco":
