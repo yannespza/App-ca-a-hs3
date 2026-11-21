@@ -1,0 +1,45 @@
+name: Gerar HS3Companion.exe
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar PyInstaller
+        run: pip install pyinstaller
+
+      - name: Gerar executável
+        working-directory: bridge
+        run: pyinstaller --onefile --console --name HS3Companion --icon icon.ico --add-data "web;web" companion.py
+
+      - name: Montar pacote
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force pacote | Out-Null
+          Copy-Item bridge/dist/HS3Companion.exe pacote/
+          Copy-Item -Recurse mod/HS3Discovery pacote/HS3Discovery
+          Copy-Item LEIA-ME.txt pacote/
+          Compress-Archive -Path pacote/* -DestinationPath HS3Companion.zip -Force
+
+      - name: Publicar release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.1.${{ github.run_number }}
+          name: HS3 Companion v0.1.${{ github.run_number }}
+          body: |
+            Baixe **HS3Companion.zip**, extraia e siga o LEIA-ME.txt.
+            Commit: ${{ github.sha }}
+          files: HS3Companion.zip

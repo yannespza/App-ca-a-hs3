@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HS3 Companion</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon-192.png">
+<meta name="theme-color" content="#2b1d12">
+<style>
+  :root {
+    --couro: #2b1d12;
+    --couro-2: #3b2818;
+    --madeira: #5a3b22;
+    --papel: #efe3c8;
+    --papel-2: #e2d2ad;
+    --tinta: #2a2118;
+    --musgo: #4f5d2f;
+    --musgo-claro: #7a8a48;
+    --laranja: #d9651e;
+    --vermelho: #9b2f1f;
+    --ouro: #c9a14a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; color: var(--papel);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background:
+      repeating-linear-gradient(90deg, rgba(0,0,0,.08) 0 2px, transparent 2px 140px),
+      repeating-linear-gradient(0deg, rgba(255,255,255,.02) 0 1px, transparent 1px 6px),
+      linear-gradient(180deg, var(--couro-2), var(--couro));
+  }
+  header {
+    display: flex; align-items: center; gap: 16px; padding: 14px 22px;
+    background: linear-gradient(180deg, #47301c, #2e1f12);
+    border-bottom: 3px solid var(--ouro); box-shadow: 0 4px 14px rgba(0,0,0,.5);
+  }
+  .logo {
+    font-family: Georgia, "Times New Roman", serif; font-weight: 700; font-size: 26px;
+    letter-spacing: 2px; text-transform: uppercase; color: var(--papel);
+    text-shadow: 2px 2px 0 #000;
+  }
+  .logo span { color: var(--laranja); }
+  .conexao { margin-left: auto; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  .led { width: 12px; height: 12px; border-radius: 50%; background: var(--vermelho); box-shadow: 0 0 8px var(--vermelho); }
+  .led.on { background: #6fbf3a; box-shadow: 0 0 10px #6fbf3a; }
+  .led.meio { background: var(--ouro); box-shadow: 0 0 10px var(--ouro); }
+  nav { display: flex; gap: 6px; padding: 10px 22px 0; flex-wrap: wrap; }
+  nav button {
+    font-family: Georgia, serif; font-size: 16px; letter-spacing: 1px; text-transform: uppercase;
+    background: var(--madeira); color: var(--papel); border: 2px solid #2a1a0d; border-bottom: none;
+    padding: 10px 18px; border-radius: 8px 8px 0 0; cursor: pointer; opacity: .75;
+  }
+  nav button.ativo { background: var(--papel); color: var(--tinta); opacity: 1; }
+  main { padding: 0 22px 22px; }
+  .painel {
+    display: none; background: var(--papel); color: var(--tinta); border-radius: 0 10px 10px 10px;
+    padding: 20px; min-height: 70vh; border: 2px solid #2a1a0d;
+    background-image: radial-gradient(rgba(120,80,30,.12) 1px, transparent 1px);
+    background-size: 7px 7px; box-shadow: inset 0 0 60px rgba(120,80,30,.35);
+  }
+  .painel.ativo { display: block; }
+  h2 { font-family: Georgia, serif; text-transform: uppercase; letter-spacing: 2px; margin: 0 0 14px;
+       border-bottom: 2px dashed var(--madeira); padding-bottom: 6px; }
+  h3 { font-family: Georgia, serif; margin: 18px 0 8px; }
+  .grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+  .cartao {
+    background: var(--papel-2); border: 2px solid var(--madeira); border-radius: 8px; padding: 14px;
+    box-shadow: 3px 3px 0 rgba(0,0,0,.25); position: relative;
+  }
+  .rotulo { font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; color: #6b5233; }
+  .valor { font-family: Georgia, serif; font-size: 30px; font-weight: 700; }
+  .sub { font-size: 13px; color: #6b5233; }
+  .aviso { background: #f6d9b8; border: 2px dashed var(--laranja); padding: 12px; border-radius: 8px; margin-bottom: 14px; }
+  .duas { display: grid; grid-template-columns: minmax(320px, 1fr) 1.2fr; gap: 18px; }
+  @media (max-width: 900px) { .duas { grid-template-columns: 1fr; } }
+  canvas { width: 100%; max-width: 520px; aspect-ratio: 1; display: block; margin: 0 auto;
+           border-radius: 50%; border: 6px solid var(--madeira); background: #3d4a26; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-family: Georgia, serif; border-bottom: 2px solid var(--madeira); padding: 6px 4px; }
+  td { border-bottom: 1px dashed #b49a6c; padding: 6px 4px; }
+  .seta { display: inline-block; font-weight: 700; color: var(--laranja); }
+  .missao {
+    background: #f7eed8; border: 2px solid var(--madeira); border-radius: 6px; padding: 14px 16px;
+    margin-bottom: 12px; box-shadow: 3px 3px 0 rgba(0,0,0,.2); position: relative;
+  }
+  .missao.feita { opacity: .8; background: #e4ead0; }
+  .missao .titulo { font-family: Georgia, serif; font-size: 20px; font-weight: 700; }
+  .carimbo {
+    position: absolute; right: 14px; top: 10px; transform: rotate(-8deg);
+    border: 3px solid var(--vermelho); color: var(--vermelho); padding: 2px 10px;
+    font-family: Georgia, serif; font-weight: 700; text-transform: uppercase; letter-spacing: 2px;
+  }
+  .carimbo.verde { border-color: var(--musgo); color: var(--musgo); }
+  .barra { height: 12px; background: #d2bf96; border-radius: 6px; overflow: hidden; margin: 8px 0; border: 1px solid var(--madeira); }
+  .barra div { height: 100%; background: linear-gradient(90deg, var(--musgo), var(--musgo-claro)); }
+  .recompensa { font-weight: 600; }
+  .btn { background: var(--madeira); color: var(--papel); border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+  .btn:hover { background: var(--laranja); }
+  .tag { display: inline-block; background: var(--musgo); color: var(--papel); border-radius: 4px; padding: 1px 7px; font-size: 12px; }
+  .vazio { color: #7a6243; font-style: italic; }
+  .breve { text-align: center; padding: 60px 20px; color: #6b5233; font-family: Georgia, serif; font-size: 20px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">Cabana do <span>Caçador</span></div>
+  <div class="conexao"><div id="led" class="led"></div><span id="conexao-txt">Procurando o jogo…</span></div>
+</header>
+<nav id="abas">
+  <button data-aba="status" class="ativo">Status</button>
+  <button data-aba="gps">GPS</button>
+  <button data-aba="missoes">Missões</button>
+  <button data-aba="estatisticas">Estatísticas</button>
+  <button data-aba="armario">Armário</button>
+  <button data-aba="loja">Loja</button>
+</nav>
+<main>
+  <section class="painel ativo" id="status">
+    <h2>Status do caçador</h2>
+    <div id="aviso"></div>
+    <div class="grade">
+      <div class="cartao"><div class="rotulo">Créditos</div><div class="valor" id="creditos">–</div><div class="sub">dinheiro do jogo</div></div>
+      <div class="cartao"><div class="rotulo">Reputação (reserva atual)</div><div class="valor" id="reputacao">–</div><div class="sub" id="sequencia">–</div></div>
+      <div class="cartao"><div class="rotulo">Pontos de campo</div><div class="valor" id="campo">–</div><div class="sub">reserva atual</div></div>
+      <div class="cartao"><div class="rotulo">Reserva</div><div class="valor" id="mapa" style="font-size:22px">–</div><div class="sub" id="posicao">–</div></div>
+    </div>
+    <h3>Missões em andamento</h3>
+    <div id="missoes-resumo"></div>
+    <h3>Últimos abates</h3>
+    <div id="abates-resumo"></div>
+  </section>
+
+  <section class="painel" id="gps">
+    <h2>GPS dos animais marcados</h2>
+    <div class="duas">
+      <div>
+        <canvas id="radar" width="600" height="600"></canvas>
+        <p class="sub" style="text-align:center">Você no centro, olhando para cima. Raio do radar: <b id="raio">–</b>.<br>
+        A posição é a do momento em que o animal foi marcado no binóculo.</p>
+      </div>
+      <div>
+        <table>
+          <thead><tr><th>Animal</th><th>Sexo</th><th>Genética</th><th>Distância</th><th>Direção</th><th>Há</th></tr></thead>
+          <tbody id="lista-marcados"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="painel" id="missoes">
+    <h2>Quadro de contratos</h2>
+    <p class="sub">As recompensas são pagas automaticamente no jogo quando a missão é concluída (você precisa estar dentro de uma reserva).</p>
+    <div id="lista-missoes"></div>
+  </section>
+
+  <section class="painel" id="estatisticas">
+    <h2>Diário de caça</h2>
+    <div class="grade" id="cartoes-stats"></div>
+    <div class="duas" style="margin-top:14px">
+      <div><h3>Abates por animal</h3><table><tbody id="stats-grupo"></tbody></table></div>
+      <div><h3>Abates por arma</h3><table><tbody id="stats-arma"></tbody></table></div>
+    </div>
+    <h3>Histórico</h3>
+    <table>
+      <thead><tr><th>Animal</th><th>Genética</th><th>Distância</th><th>Arma</th><th>Acerto</th><th>Destino</th></tr></thead>
+      <tbody id="historico"></tbody>
+    </table>
+  </section>
+
+  <section class="painel" id="armario">
+    <h2>Armário</h2>
+    <div class="breve">🪵 Em construção: armas, munições e equipamentos do seu inventário.</div>
+  </section>
+
+  <section class="painel" id="loja">
+    <h2>Loja de roupas</h2>
+    <div class="breve">🧥 Em construção: camuflagens com menos ruído e menos percepção dos animais.</div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const fmt = (n) => (n === null || n === undefined) ? "–" : Number(n).toLocaleString("pt-BR");
+const pct = (n) => (n === null || n === undefined) ? "–" : Math.round(n * 100) + "%";
+const metros = (n) => (n === null || n === undefined) ? "–" : (n >= 1000 ? (n/1000).toFixed(2) + " km" : Math.round(n) + " m");
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+document.querySelectorAll("#abas button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("#abas button").forEach(x => x.classList.toggle("ativo", x === b));
+  document.querySelectorAll(".painel").forEach(p => p.classList.toggle("ativo", p.id === b.dataset.aba));
+});
+
+function nomeMapa(m) {
+  if (!m) return "–";
+  const t = m.toLowerCase();
+  if (t.includes("texas")) return "Texas";
+  if (t.includes("colorado")) return "Colorado";
+  if (t.includes("hub") || t.includes("lodge")) return "Cabana (hub)";
+  return m;
+}
+
+function seta(graus) {
+  if (graus === null || graus === undefined) return "–";
+  const a = Math.abs(graus), lr = graus > 0 ? "direita" : "esquerda";
+  const lado = a < 15 ? "à frente" : a > 165 ? "atrás" : a > 110 ? `atrás, à ${lr}` : a < 60 ? `à frente, à ${lr}` : `à ${lr}`;
+  return `<span class="seta" style="transform:rotate(${graus}deg)">↑</span> ${lado}`;
+}
+
+function cartaoMissao(m, compacto) {
+  const feita = m.status !== "ativa";
+  const p = Math.min(100, 100 * m.progresso / m.meta);
+  let carimbo = "";
+  if (m.status === "paga") carimbo = `<div class="carimbo verde">Pago</div>`;
+  else if (m.status === "concluida") carimbo = `<div class="carimbo">${m.enviado ? "Pagando…" : "Concluída"}</div>`;
+  return `<div class="missao ${feita ? "feita" : ""}">
+    ${carimbo}
+    <div class="titulo">${esc(m.titulo)}</div>
+    ${compacto ? "" : `<div>${esc(m.descricao)}</div>`}
+    <div class="barra"><div style="width:${p}%"></div></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <span>${m.progresso}/${m.meta}</span>
+      <span class="recompensa">💰 ${fmt(m.creditos_pagos ?? m.creditos)} créditos · ⭐ ${fmt(m.reputacao)} reputação</span>
+      ${(!feita && !compacto) ? `<button class="btn" onclick="trocar('${m.id}')">Trocar</button>` : ""}
+    </div>
+  </div>`;
+}
+
+async function trocar(id) {
+  await fetch("/api/missoes/trocar", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({id})});
+  atualizar();
+}
+
+function desenharRadar(marcados) {
+  const cv = $("radar"), ctx = cv.getContext("2d"), W = cv.width, c = W / 2;
+  ctx.clearRect(0, 0, W, W);
+  const maxD = Math.max(100, ...marcados.map(m => m.distancia_m || 0));
+  const raio = Math.ceil(maxD / 100) * 100;
+  $("raio").textContent = metros(raio);
+  ctx.strokeStyle = "rgba(239,227,200,.35)"; ctx.lineWidth = 1;
+  for (let i = 1; i <= 4; i++) { ctx.beginPath(); ctx.arc(c, c, (c - 10) * i / 4, 0, Math.PI * 2); ctx.stroke(); }
+  ctx.beginPath(); ctx.moveTo(c, 10); ctx.lineTo(c, W - 10); ctx.moveTo(10, c); ctx.lineTo(W - 10, c); ctx.stroke();
+  ctx.fillStyle = "rgba(239,227,200,.7)"; ctx.font = "16px Georgia";
+  for (let i = 1; i <= 4; i++) ctx.fillText(metros(raio * i / 4), c + 4, c - (c - 10) * i / 4 + 16);
+  // jogador
+  ctx.fillStyle = "#d9651e"; ctx.beginPath(); ctx.moveTo(c, c - 14); ctx.lineTo(c - 9, c + 10); ctx.lineTo(c + 9, c + 10); ctx.closePath(); ctx.fill();
+  marcados.forEach(m => {
+    if (m.distancia_m == null || m.direcao == null) return;
+    const r = (c - 10) * Math.min(1, m.distancia_m / raio);
+    const a = (m.direcao - 90) * Math.PI / 180;
+    const x = c + r * Math.cos(a), y = c + r * Math.sin(a);
+    ctx.fillStyle = m.lendario ? "#c9a14a" : (m.sexo === 0 ? "#efe3c8" : "#e8a3a3");
+    ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "#2a2118"; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = "#efe3c8"; ctx.font = "15px Segoe UI";
+    ctx.fillText(`${m.especie_nome || m.grupo_nome} ${metros(m.distancia_m)}`, x + 11, y + 5);
+  });
+}
+
+async function atualizar() {
+  let d;
+  try { d = await (await fetch("/api/estado")).json(); }
+  catch { $("led").className = "led"; $("conexao-txt").textContent = "HS3Companion.exe fechado"; return; }
+
+  const st = d.estado || {};
+  $("led").className = "led " + (d.em_reserva ? "on" : d.conectado ? "meio" : "");
+  $("conexao-txt").textContent = d.em_reserva ? "Conectado · na reserva" : d.conectado ? "Conectado · fora da reserva" : "Jogo não detectado";
+
+  let aviso = "";
+  if (!d.pasta_mod_existe) aviso = `Pasta do mod não encontrada: <b>${esc(d.pasta_mod)}</b>. Ajuste em config.json, ao lado do HS3Companion.exe.`;
+  else if (!d.conectado) aviso = "Abra o jogo (com o UE4SS e o mod instalados) para os dados aparecerem.";
+  else if (!d.em_reserva) aviso = "Entre numa reserva para ver os dados ao vivo e receber recompensas.";
+  $("aviso").innerHTML = aviso ? `<div class="aviso">${aviso}</div>` : "";
+
+  const moedas = st.moedas || {};
+  $("creditos").textContent = fmt(moedas["Currency.Credits"]);
+  const rep = d.reputacao_mapa_atual;
+  $("reputacao").textContent = rep ? fmt(rep.valor) : "–";
+  $("sequencia").textContent = rep ? `sequência ${rep.sequencia}` : "–";
+  const campo = Object.entries(st.pontos_campo || {}).find(([k]) => st.mapa && k.toLowerCase().includes(nomeMapa(st.mapa).toLowerCase()));
+  $("campo").textContent = campo ? fmt(campo[1]) : "–";
+  $("mapa").textContent = nomeMapa(st.mapa);
+  $("posicao").textContent = st.pos ? `X ${Math.round(st.pos.x/100)} · Y ${Math.round(st.pos.y/100)} · alt ${Math.round(st.pos.z/100)} m` : "–";
+
+  const ativas = d.missoes.filter(m => m.status === "ativa");
+  $("missoes-resumo").innerHTML = ativas.map(m => cartaoMissao(m, true)).join("") || `<p class="vazio">Nenhuma missão.</p>`;
+  $("lista-missoes").innerHTML = d.missoes.map(m => cartaoMissao(m, false)).join("");
+
+  const linhaAbate = a => `<tr><td>${esc(a.especie_nome || a.grupo_nome)}</td><td>${pct(a.genetica)}</td><td>${metros(a.distancia_m)}</td>
+      <td>${esc(a.arma || "–")}</td><td>${esc(a.parte || "–")}</td><td>${esc(a.acao_nome || "–")}</td></tr>`;
+  $("abates-resumo").innerHTML = d.abates.length
+    ? `<table><tbody>${d.abates.slice(0, 5).map(linhaAbate).join("")}</tbody></table>` : `<p class="vazio">Nenhum abate registrado ainda.</p>`;
+  $("historico").innerHTML = d.abates.map(linhaAbate).join("") || `<tr><td colspan="6" class="vazio">Nenhum abate registrado ainda.</td></tr>`;
+
+  $("lista-marcados").innerHTML = d.marcados.map(m => `<tr>
+      <td>${m.lendario ? "👑 " : ""}${esc(m.especie_nome || m.grupo_nome)} <span class="tag">${esc(m.grupo_nome)}</span></td>
+      <td>${esc(m.sexo_nome)}</td><td>${pct(m.genetica)} <span class="sub">/ ${pct(m.potencial)}</span></td>
+      <td>${metros(m.distancia_m)}</td><td>${seta(m.direcao)}</td><td>${m.minutos} min</td></tr>`).join("")
+    || `<tr><td colspan="6" class="vazio">Marque animais com o binóculo para vê-los aqui.</td></tr>`;
+  desenharRadar(d.marcados);
+
+  const s = d.estatisticas;
+  $("cartoes-stats").innerHTML = [
+    ["Abates", fmt(s.total_abates)], ["Distância média", metros(s.distancia_media)],
+    ["Tiro mais longo", metros(s.distancia_maxima)],
+    ["Melhor genética", s.melhor_genetica ? `${pct(s.melhor_genetica.genetica)}` : "–"],
+    ["Missões concluídas", fmt(s.missoes_concluidas)], ["Créditos ganhos em missões", fmt(s.creditos_ganhos)],
+  ].map(([r, v]) => `<div class="cartao"><div class="rotulo">${r}</div><div class="valor">${v}</div></div>`).join("");
+  $("stats-grupo").innerHTML = s.por_grupo.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join("") || `<tr><td class="vazio">–</td></tr>`;
+  $("stats-arma").innerHTML = s.por_arma.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join("") || `<tr><td class="vazio">–</td></tr>`;
+}
+
+atualizar();
+setInterval(atualizar, 1000);
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
+</script>
+</body>
+</html>

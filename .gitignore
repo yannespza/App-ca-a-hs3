@@ -1,0 +1,6 @@
+__pycache__/
+bridge/build/
+bridge/dist/
+*.spec
+config.json
+dados_hs3.json

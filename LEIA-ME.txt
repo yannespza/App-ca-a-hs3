@@ -1,0 +1,28 @@
+HS3 COMPANION - Cabana do Caçador
+==================================
+
+O QUE TEM NESTE PACOTE
+- HS3Companion.exe  -> o programa que conecta o jogo ao app
+- HS3Discovery\     -> o mod do UE4SS (vai dentro da pasta do jogo)
+
+INSTALAÇÃO (só na primeira vez ou quando atualizar)
+1. Copie a pasta HS3Discovery para:
+   D:\SteamLibrary\steamapps\common\HS3\HS3\Binaries\Win64\ue4ss\Mods\
+   (substitua os arquivos se perguntar)
+2. Coloque o HS3Companion.exe onde quiser (ex.: Documentos\HS3Companion).
+
+COMO USAR
+1. Abra o jogo pela Steam.
+2. Abra o HS3Companion.exe. O app abre sozinho no navegador.
+3. Para instalar como aplicativo: no Chrome/Edge, clique no ícone de instalar
+   na barra de endereço (ou menu > Instalar app). Arraste a janela para o
+   segundo monitor.
+4. Deixe a janela preta do HS3Companion aberta enquanto joga.
+
+CONFIGURAÇÃO
+Na primeira execução é criado o arquivo config.json ao lado do .exe.
+Se o jogo estiver em outra pasta, ajuste "pasta_mod" nele.
+Seus dados (missões, abates) ficam em dados_hs3.json ao lado do .exe.
+
+O Windows pode avisar sobre "editor desconhecido" ao abrir o .exe:
+clique em "Mais informações" > "Executar assim mesmo".
