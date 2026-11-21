@@ -6,6 +6,7 @@ Só usa a biblioteca padrão do Python.
 """
 import json
 import re
+import urllib.parse
 import math
 import os
 import random
@@ -901,6 +902,55 @@ class Companion:
         with self.lock:
             return extras.armario(self.catalogo(), self.equipamento(), self.tabela_calibres(), nome_especie, self.dados["abates"])
 
+    # --- mochila
+    def dados_mochila(self, ids=None):
+        agora = time.time()
+        if agora - getattr(self, "_mochila_pedida", 0) > 10:
+            self._mochila_pedida = agora
+            self.enviar_comando(["mochila ler"])
+        dados = self.cache.json(self.caminho("jogo_dados.json"), None)
+        lida = self.cache.json(self.caminho("mochila.json"), None)
+        with self.lock:
+            ativas = self.por_status("ativa")
+            escolhidas = [m for m in ativas if not ids or m["id"] in ids]
+            if not dados:
+                return {"pronto": False}
+            r = extras.mochila(dados, self.tabela_calibres(), self.equipamento(), lida, escolhidas,
+                               nome_especie, grupo_de, nome_grupo)
+            r["pronto"] = True
+            r["ativas"] = [{"id": m["id"], "titulo": m["titulo"], "escolhida": m in escolhidas} for m in ativas]
+            r["no_jogo"] = bool(self.estado.get("mapa"))
+            return r
+
+    def acao_mochila(self, corpo):
+        acao = corpo.get("acao")
+        ok_id = lambda x: bool(x) and bool(re.fullmatch(r"[\w:.\-]+", str(x)))
+        if acao == "por" and ok_id(corpo.get("item")) and ok_id(corpo.get("tipo")):
+            self.enviar_comando([f"mochila por {corpo['item']} {corpo['tipo']} {int(corpo.get('idx') or 0)}"])
+        elif acao == "tirar" and ok_id(corpo.get("item")):
+            self.enviar_comando([f"mochila tirar {corpo['item']}"])
+        elif acao == "municao" and ok_id(corpo.get("arma")) and ok_id(corpo.get("municao")):
+            self.enviar_comando([f"mochila municao {corpo['arma']} {corpo['municao']}"])
+        elif acao == "montar":
+            sug = corpo.get("sugestao") or {}
+            linhas = []
+            for i, it in enumerate(sug.get("armas") or []):
+                if ok_id(it):
+                    linhas.append(f"mochila por {it} Inventory.Weapon {i}")
+            for i, it in enumerate(sug.get("objetos") or []):
+                if ok_id(it):
+                    linhas.append(f"mochila por {it} Inventory.Objects {i}")
+            for arma, mun in (sug.get("municao") or {}).items():
+                if ok_id(arma) and ok_id(mun):
+                    linhas.append(f"mochila municao {arma} {mun}")
+            if not linhas:
+                return {"ok": False, "erro": "Nada para montar."}
+            self.enviar_comando(linhas)
+        else:
+            return {"ok": False, "erro": "Ação inválida."}
+        self._mochila_pedida = 0
+        return {"ok": True}
+
     def dados_loja(self):
         with self.lock:
             r = extras.loja(self.catalogo(), self.equipamento())
@@ -1127,6 +1177,10 @@ class Handler(BaseHTTPRequestHandler):
         if caminho == "/api/pois":
             with APP.lock:
                 return self.responder(200, [{k: v for k, v in p.items() if not k.startswith("_")} for p in APP.pois()])
+        if caminho == "/api/mochila":
+            q = urllib.parse.parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
+            ids = [x for x in (q.get("missoes", [""])[0]).split(",") if x]
+            return self.responder(200, APP.dados_mochila(ids))
         if caminho == "/api/armario":
             return self.responder(200, APP.dados_armario())
         if caminho == "/api/loja":
@@ -1183,6 +1237,8 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/pino/remover":
             with APP.lock:
                 return self.responder(200, APP.remover_pino())
+        if p == "/api/mochila":
+            return self.responder(200, APP.acao_mochila(corpo))
         if p == "/api/comprar":
             return self.responder(200, APP.comprar(corpo.get("id")))
         if p == "/api/voltar":

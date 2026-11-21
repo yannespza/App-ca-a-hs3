@@ -1,5 +1,6 @@
 """Armário, loja de roupas, patente e enciclopédia (dados vindos do jogo)."""
 import json
+import re
 import os
 
 
@@ -451,4 +452,210 @@ def enciclopedia_jogo(dados, calibres, catalogo_equip, abates, vistos, nome_espe
             {"id": "itens", "nome": "Itens e acessórios", "itens": itens["itens"]},
             {"id": "guia", "nome": "Guia do jogo", "itens": sorted(guia, key=lambda x: (x["sub"], x["nome"]))},
         ],
+    }
+
+
+# ---------------------------------------------------------------- mochila por missão
+# O que cada chamador / isca / chamariz atrai (pelo nome do item no jogo).
+ATRAI = {
+    "Caller_Deer": ["cervo"], "Caller_Elk": ["alce"], "Caller_WildBoar": ["porco"],
+    "Caller_Predator": ["coiote", "lobo", "raposa", "felino"], "Caller_Turkey": ["peru"], "Caller_Pheasant": ["faisao"],
+    "Caller_Goose": ["ganso"], "Caller_Duck": ["pato"],
+    "UrineSpray_Wolf": ["lobo", "coiote"], "UrineSpray_WhitetailDeer": ["cervo"], "UrineSpray_MuleDeer": ["cervo"],
+    "UrineSpray_Elk": ["alce"], "UrineSpray_Rabbit": ["coelho"], "UrineSpray_Boar": ["porco"],
+    "DecoyWalkingTom": ["peru"], "DecoyMagnumFloater": ["pato", "ganso"], "DecoyMasterSeriesBossBuck": ["cervo"],
+    "DecoyLoneHowler": ["coiote", "lobo"], "DecoyElk": ["alce"],
+}
+TIPOS_MOCHILA = ("Inventory.Weapon", "Inventory.Objects", "Inventory.GPS")
+
+
+def _papel_objeto(item_id, tipo):
+    """Classifica um objeto da mochila: (papel, grupos atraídos)."""
+    n = item_id or ""
+    for chave, grupos in ATRAI.items():
+        if chave in n:
+            papel = "isca" if "Spray" in n else ("chamariz" if "Decoy" in n else "chamador")
+            return papel, grupos
+    if "ScentKiller" in n:
+        return "odor", []
+    if "WindPowder" in n:
+        return "vento", []
+    if "Blind" in tipo or "Stakeout" in n:
+        return "esconderijo", []
+    if "RangeFinder" in tipo or "Fusion" in n:
+        return "telemetro", []
+    if "Binoculars" in tipo:
+        return "binoculo", []
+    if "GPS" in tipo:
+        return "gps", []
+    return "outro", []
+
+
+def requisitos_missoes(missoes, grupo_nome):
+    grupos, qualquer = [], False
+    tipos = {m["tipo"] for m in missoes}
+    dist = [m for m in missoes if m["tipo"] == "distancia"]
+    for m in missoes:
+        if m.get("grupo"):
+            if m["grupo"] not in grupos:
+                grupos.append(m["grupo"])
+        elif m["tipo"] not in ("marcar", "visitar"):
+            qualquer = True
+    chips = [grupo_nome(g) for g in grupos] + (["Qualquer animal"] if qualquer and not grupos else [])
+    if dist:
+        chips += [f"Tiro de {m['dist_min']}–{m['dist_max']} m" for m in dist]
+    rotulos = {"calibre": "Calibre certo", "atrair": "Atrair (chamador/cheiro)", "nao_detectado": "Sem ser percebido",
+               "sem_torre": "Sem torre/espera", "marcar": "Marcar com binóculo", "genetica": "Genética alta"}
+    chips += [rotulos[t] for t in tipos if t in rotulos]
+    return {"grupos": grupos, "qualquer": qualquer or not grupos, "tipos": tipos,
+            "dist_min": min((m["dist_min"] for m in dist), default=0), "dist_max": max((m["dist_max"] for m in dist), default=0),
+            "chips": chips}
+
+
+def mochila(dados, calibres, equip, lida, missoes, nome_especie, grupo_de, grupo_nome):
+    """Itens que você tem, o que está na mochila e o que serve para as missões escolhidas."""
+    req = requisitos_missoes(missoes, grupo_nome)
+    comprados = {b["id"] for b in equip.get("comprados", [])}
+    itens = dados.get("itens", [])
+    por_def = {c.get("item"): c for c in itens}
+    img = lambda n: f"/api/img/{n}" if n else None
+
+    # espécies (tags) de cada grupo, pela tabela de calibres do jogo
+    especies_grupo = {}
+    for linha in calibres:
+        g = grupo_de(linha.get("animal"))[0]
+        especies_grupo.setdefault(g, []).append(linha)
+    alvo = [l for g in req["grupos"] for l in especies_grupo.get(g, [])]
+
+    def calibre_serve(cal):
+        """Calibre permitido para todas as espécies-alvo (ou para alguma, se o alvo for qualquer animal)."""
+        def ok(l):
+            return any(p == cal or p.startswith(cal + ".") for p in l.get("compativeis", []))
+        if alvo:
+            return all(ok(l) for l in alvo)
+        return any(ok(l) for l in calibres)
+
+    def tipo_arma(t):
+        t = t or ""
+        return "arco" if ("Bow" in t or "Crossbow" in t) else ("espingarda" if "Shotgun" in t else "rifle")
+
+    def arma_serve(c):
+        cals = calibres_item(c)
+        boas = [x for x in cals if calibre_serve(x)]
+        motivo = []
+        if not boas:
+            return False, "nenhum calibre desta arma é permitido para o alvo", []
+        ta = tipo_arma(c.get("tipo"))
+        if req["dist_min"] >= 300 and ta != "rifle":
+            return False, "tiro longo pede rifle", boas
+        if req["dist_min"] >= 100 and ta == "arco":
+            return False, "arco não alcança essa distância", boas
+        motivo.append("calibre " + ", ".join(nome_calibre(x) for x in boas))
+        return True, " · ".join(motivo), boas
+
+    na_mochila = {i["item"]: i for i in (lida or {}).get("itens", [])} or \
+        {m["item"]: {"item": m["item"], "tipo": m.get("tipo"), "idx": None} for m in equip.get("mochila", [])}
+    municao_atual = (lida or {}).get("municao", {})
+
+    possuidos = []
+    for c in itens:
+        tipo = c.get("tipo") or ""
+        if c.get("desativado") or not (c["id"] in comprados or c.get("padrao")):
+            continue
+        if not (tipo.startswith("Inventory.") or tipo.endswith("Attachments.Ammo")):
+            continue
+        d = {"id": c["id"], "item": c.get("item"), "nome": c.get("nome") or c["id"], "imagem": img(c.get("icone")),
+             "tipo": tipo, "na_mochila": c.get("item") in na_mochila}
+        if tipo.startswith("Inventory.Weapon"):
+            d["grupo"], d["slot"] = "Armas", "Inventory.Weapon"
+            d["serve"], d["motivo"], boas = arma_serve(c)
+            d["calibres"] = [{"id": x, "nome": nome_calibre(x), "serve": x in boas} for x in calibres_item(c)]
+            atual = municao_atual.get(c["id"])
+            if atual:
+                d["municao_atual"] = atual.split(":")[-1]
+        elif tipo.endswith("Attachments.Ammo"):
+            cals = calibres_item(c)
+            d["grupo"], d["slot"] = "Munição", None
+            d["calibre"] = cals[0] if cals else None
+            d["serve"] = bool(cals) and calibre_serve(cals[0])
+            d["motivo"] = "permitido para o alvo" if d["serve"] else "não permitido para o alvo"
+        else:
+            papel, atrai = _papel_objeto(c.get("item"), tipo)
+            d["slot"] = "Inventory.GPS" if papel == "gps" else "Inventory.Objects"
+            d["grupo"] = {"chamador": "Chamadores", "isca": "Iscas de cheiro", "chamariz": "Chamarizes", "odor": "Disfarce de odor",
+                          "vento": "Vento", "esconderijo": "Esconderijos", "telemetro": "Telêmetros", "binoculo": "Binóculos",
+                          "gps": "GPS"}.get(papel, "Outros")
+            d["papel"] = papel
+            alvo_atrai = [g for g in atrai if g in req["grupos"]]
+            if atrai:
+                d["serve"] = bool(alvo_atrai) or (not req["grupos"] and "atrair" in req["tipos"])
+                d["motivo"] = ("atrai " + ", ".join(grupo_nome(g) for g in (alvo_atrai or atrai)))
+            elif papel in ("odor", "vento", "esconderijo"):
+                d["serve"] = bool({"nao_detectado", "atrair"} & req["tipos"])
+                d["motivo"] = "ajuda a não ser percebido"
+            elif papel == "telemetro":
+                d["serve"] = "distancia" in req["tipos"]
+                d["motivo"] = "mede a distância do tiro"
+            elif papel in ("binoculo", "gps"):
+                d["serve"], d["motivo"] = True, "essencial"
+            else:
+                d["serve"], d["motivo"] = False, ""
+        possuidos.append(d)
+
+    # munição de cada arma: a que você tem e que serve
+    municoes = [p for p in possuidos if p["grupo"] == "Munição"]
+    for a in possuidos:
+        if a["grupo"] != "Armas":
+            continue
+        ids_cal = {x["id"] for x in a["calibres"]}
+        opcoes = [m for m in municoes if m.get("calibre") in ids_cal]
+        a["municoes"] = [{"id": m["id"], "nome": m["nome"], "serve": m["serve"], "atual": m["id"] == a.get("municao_atual")} for m in opcoes]
+
+    # sugestão de mochila
+    slots = dict((lida or {}).get("slots") or {})
+    slots.setdefault("Inventory.Weapon", 2)
+    slots.setdefault("Inventory.Objects", 6)
+    slots.setdefault("Inventory.GPS", 1)
+
+    def cargas(p):
+        m = re.search(r"×\s*(\d+)", p["nome"])
+        return int(m.group(1)) if m else 0
+
+    def melhor(lista, n):
+        lista = sorted(lista, key=lambda p: (not p["serve"], not p["na_mochila"], -cargas(p), p["nome"]))
+        return lista[:n]
+
+    armas = melhor([p for p in possuidos if p["grupo"] == "Armas" and p["serve"]], slots["Inventory.Weapon"])
+    objetos = []
+    prioridade = ["binoculo", "chamador", "isca", "chamariz", "telemetro", "odor", "esconderijo", "vento"]
+    for papel in prioridade:
+        cand = [p for p in possuidos if p.get("papel") == papel and p["serve"]]
+        quantos = 1 if papel in ("binoculo", "telemetro", "odor", "esconderijo", "vento") else 2
+        for p in melhor(cand, quantos):
+            if len(objetos) < slots["Inventory.Objects"] and p not in objetos:
+                objetos.append(p)
+    municao_sug = {}
+    for a in armas:
+        boa = next((m for m in a["municoes"] if m["serve"]), None)
+        if boa:
+            municao_sug[a["id"]] = boa["id"]
+    for p in possuidos:
+        p["sugerido"] = p in armas or p in objetos or p["id"] in municao_sug.values()
+
+    mochila_atual = []
+    for it, info in na_mochila.items():
+        c = por_def.get(it) or {}
+        p = next((x for x in possuidos if x["item"] == it), None)
+        mochila_atual.append({"item": it, "tipo": info.get("tipo"), "idx": info.get("idx"), "nome": c.get("nome") or it.split(":")[-1],
+                              "imagem": img(c.get("icone")), "serve": p["serve"] if p else None, "motivo": p["motivo"] if p else ""})
+    mochila_atual.sort(key=lambda x: (TIPOS_MOCHILA.index(x["tipo"]) if x["tipo"] in TIPOS_MOCHILA else 9, x["idx"] if x["idx"] is not None else 99))
+
+    grupos_ordem = ["Armas", "Munição", "Chamadores", "Iscas de cheiro", "Chamarizes", "Binóculos", "Telêmetros",
+                    "Disfarce de odor", "Esconderijos", "Vento", "GPS", "Outros"]
+    possuidos.sort(key=lambda p: (grupos_ordem.index(p["grupo"]) if p["grupo"] in grupos_ordem else 99, not p["serve"], p["nome"]))
+    return {
+        "missoes": [{"id": m["id"], "titulo": m["titulo"], "descricao": m.get("descricao")} for m in missoes],
+        "requisitos": req["chips"], "slots": slots, "lida_ts": (lida or {}).get("ts"), "mochila": mochila_atual,
+        "possuidos": possuidos,
+        "sugestao": {"armas": [a["item"] for a in armas], "objetos": [o["item"] for o in objetos], "municao": municao_sug},
     }

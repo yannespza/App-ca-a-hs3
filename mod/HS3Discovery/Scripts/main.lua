@@ -666,6 +666,20 @@ LoopAsync(1000, function()
                     local x, y, z = line:match("^teleport%s+(%S+)%s+(%S+)%s*(%S*)")
                     teleportar(tonumber(x), tonumber(y), tonumber(z) or 0)
                 elseif cmd == "export_map" then exportMap(); exportPois(); exportFog(); exportCalibres()
+                elseif cmd == "mochila" then
+                    -- mochila ler | mochila por <item> <tipo> <idx> | mochila tirar <item> | mochila municao <arma> <municao>
+                    local chunk, e = loadfile(DIR .. "Scripts\\mochila.lua")
+                    if not chunk then log("mochila.lua: " .. tostring(e)); return end
+                    local mo = chunk()
+                    local ctx = { DIR = DIR, log = log, emit = emit, writeFile = writeFile, json = jsonEncode, tagName = tagName }
+                    local p = {}
+                    for w in line:gmatch("%S+") do p[#p + 1] = w end
+                    local acao = p[2]
+                    if acao == "ler" then mo.ler(ctx)
+                    elseif acao == "por" and p[3] and p[4] and tonumber(p[5]) then mo.por(ctx, p[3], p[4], tonumber(p[5]))
+                    elseif acao == "tirar" and p[3] then mo.tirar(ctx, p[3])
+                    elseif acao == "municao" and p[3] and p[4] then mo.municao(ctx, p[3], p[4])
+                    else log("mochila: comando inválido: " .. line) end
                 elseif cmd == "script" and arg ~= "" and arg:match("^[%w_%-]+%.lua$") then
                     local chunk, e = loadfile(DIR .. "dev" .. "\\" .. arg)
                     if not chunk then log("script erro ao carregar: " .. tostring(e)); return end
