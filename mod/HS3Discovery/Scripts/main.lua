@@ -583,7 +583,33 @@ local function teleportar(x, y, z)
     log(string.format("teleporte para %.0f, %.0f", x, y))
 end
 
-local ultimoNivel, ticks = nil, 0
+-- dados do jogo para a enciclopédia (fauna, cães, armas, roupas, itens + imagens): roda uma vez por versão
+local exportador, exportando = nil, false
+local function exportarDados(forcar)
+    if exportando then return end
+    if not exportador then
+        local chunk, e = loadfile(DIR .. "Scripts\\exportar.lua")
+        if not chunk then log("exportar.lua: " .. tostring(e)); return end
+        exportador = chunk()
+    end
+    if not forcar then
+        local f = io.open(DIR .. "jogo_dados.json", "rb")
+        if f then
+            local cab = f:read(40) or ""; f:close()
+            if tonumber(cab:match('"versao":%s*(%d+)')) == exportador.VERSAO then return end
+        end
+    end
+    local marca = io.open(DIR .. "img\\.ok", "rb")
+    if marca then marca:close() else
+        os.execute('mkdir "' .. DIR .. 'img" 2>nul')
+        local m = io.open(DIR .. "img\\.ok", "wb"); if m then m:write("1"); m:close() end
+    end
+    exportando = true
+    exportador.iniciar({ DIR = DIR, log = log, writeFile = writeFile, json = jsonEncode, tagName = tagName, valid = valid,
+                         fim = function() exportando = false end })
+end
+
+local ultimoNivel, ticks, dadosChecados = nil, 0, false
 local function periodic()
     ticks = ticks + 1
     local _, _, curto = currentLevel()
@@ -595,7 +621,11 @@ local function periodic()
         local f2 = io.open(DIR .. "catalogo_v2.json", "rb")
         if f2 then f2:close() else pcall(iniciarCatalogo) end
     end
-    if catalogo then pcall(passoCatalogo) end
+    if catalogo then pcall(passoCatalogo)
+    elseif not dadosChecados and ultimoNivel and ticks > 15 then
+        dadosChecados = true
+        local ok, e = pcall(exportarDados, false); if not ok then log("exportarDados: " .. tostring(e)) end
+    end
     if ticks % 10 == 0 then pcall(writeEquipamento) end
     if ticks % 5 == 0 then pcall(writeAnimals) end
     if ticks % 60 == 0 then pcall(exportPois) end
@@ -631,6 +661,7 @@ LoopAsync(1000, function()
                 elseif cmd == "unpin" then clearPin()
                 elseif cmd == "comprar" and arg ~= "" then comprar(arg, ref)
                 elseif cmd == "catalogo" then iniciarCatalogo()
+                elseif cmd == "exportar_dados" then exportarDados(true)
                 elseif cmd == "teleport" then
                     local x, y, z = line:match("^teleport%s+(%S+)%s+(%S+)%s*(%S*)")
                     teleportar(tonumber(x), tonumber(y), tonumber(z) or 0)

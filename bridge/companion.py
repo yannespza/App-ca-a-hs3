@@ -5,6 +5,7 @@ paga recompensas escrevendo comandos em cmd.txt e serve o app em http://localhos
 Só usa a biblioteca padrão do Python.
 """
 import json
+import re
 import math
 import os
 import random
@@ -908,9 +909,13 @@ class Companion:
             return r
 
     def dados_enciclopedia(self):
+        dados = self.cache.json(self.caminho("jogo_dados.json"), None)
         with self.lock:
-            return extras.enciclopedia(self.tabela_calibres(), self.dados["abates"], self.dados["especies_vistas"],
-                                       nome_especie, grupo_de)
+            if dados:
+                return extras.enciclopedia_jogo(dados, self.tabela_calibres(), self.equipamento(), self.dados["abates"],
+                                                self.dados["especies_vistas"], nome_especie, grupo_de)
+            return {"pronto": False, "fichas": extras.enciclopedia(self.tabela_calibres(), self.dados["abates"], self.dados["especies_vistas"],
+                                       nome_especie, grupo_de)}
 
     def comprar(self, id_):
         with self.lock:
@@ -1128,6 +1133,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.responder(200, APP.dados_loja())
         if caminho == "/api/enciclopedia":
             return self.responder(200, APP.dados_enciclopedia())
+        if caminho.startswith("/api/img/"):
+            nome = caminho.rsplit("/", 1)[1]
+            path = APP.caminho(os.path.join("img", nome))
+            if not re.fullmatch(r"[\w\-]+\.png", nome) or not os.path.isfile(path):
+                return self.responder(404, {"erro": "sem imagem"})
+            with open(path, "rb") as f:
+                return self.responder(200, f.read(), "image/png", cache=True)
         if caminho == "/api/mapa.png":
             return self.arquivo_mod("mapa_{nivel}.png", "image/png")
         if caminho == "/api/nevoa.png":

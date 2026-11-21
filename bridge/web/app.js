@@ -410,18 +410,124 @@ async function comprarItem(id, nome, preco) {
   if (!r.ok) alert(r.erro); else setTimeout(renderLoja, 2500);
 }
 
+// ---------------------------------------------------------------- Diário de campo
+let diario = null, diarioCat = "animais", diarioSel = null, diarioBusca = "";
+const moedaFmt = (i) => i.preco == null ? "" : (i.moeda === "pontos de campo" ? `${fmt(i.preco)} pts de campo` : `$${fmt(i.preco)}`);
+const chips = (l, cls = "") => (l || []).map(x => `<span class="chip ${cls}">${esc(x)}</span>`).join("") || `<span class="item-sub">–</span>`;
+const quando = (ts) => ts ? new Date(ts * 1000).toLocaleDateString("pt-BR") : "";
+
+function fotoDiario(i, cat, grande) {
+  if (i.imagem) return `<img src="${i.imagem}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{innerHTML:this.dataset.sil}))" data-sil='${silhueta(i.grupo || "outro").replace(/'/g, "&#39;")}'>`;
+  if (cat === "animais") return silhueta(i.grupo || "outro");
+  const ic = { armas: "🎯", municao: "•", roupas: "🧥", itens: "🎒", caes: "🐕" }[cat] || "?";
+  return `<span class="ic-vazio${grande ? " g" : ""}">${ic}</span>`;
+}
+
 async function renderEnciclopedia() {
   const d = await (await fetch("/api/enciclopedia")).json();
-  if (!d.length) { $("painel-enciclopedia").innerHTML = `<p class="vazio">Entre numa reserva para carregar as espécies do jogo.</p>`; return; }
-  $("painel-enciclopedia").innerHTML = `<h3>Espécies do jogo (${d.length})</h3><div class="grade-itens">${d.map(f => `
-    <div class="item"><div class="ficha-esp"><div class="sil">${silhueta(f.grupo)}</div><div>
-      <div class="item-nome">${esc(f.nome)}${f.variante && f.variante !== f.nome ? ` <span class="item-sub">(${esc(f.variante)})</span>` : ""}</div>
-      <div class="item-sub">${esc(f.grupo_nome)} · vistos ${f.vistos} · abatidos ${f.abates}</div>
-      ${f.melhor_genetica != null ? `<div class="item-sub">Melhor genética ${pct(f.melhor_genetica)} · tiro mais longo ${metros(f.tiro_mais_longo)}</div>` : ""}
-    </div></div>
-    <div class="item-sub" style="margin-top:6px"><b>Calibres permitidos:</b> ${esc(f.calibres.join(", ") || "–")}</div>
-    ${f.proibidos.length ? `<div class="item-sub"><b>Proibidos:</b> ${esc(f.proibidos.join(", "))}</div>` : ""}
-    </div>`).join("")}</div>`;
+  if (!d.pronto) {
+    $("painel-enciclopedia").innerHTML = `<div class="diario-vazio"><h3>Diário de campo</h3>
+      <p>Os dados do diário (fotos, hábitos, calibres, armas, roupas, cães) são lidos do jogo uma única vez.
+      Entre numa reserva com o jogo aberto e espere uns 2 minutos — esta página se completa sozinha.</p></div>`;
+    setTimeout(() => { if (abaAtual === "enciclopedia") renderEnciclopedia(); }, 15000);
+    return;
+  }
+  diario = d;
+  desenharDiario();
+}
+
+function desenharDiario() {
+  const cat = diario.categorias.find(c => c.id === diarioCat) || diario.categorias[0];
+  const q = diarioBusca.trim().toLowerCase();
+  const lista = cat.itens.filter(i => !q || (i.nome + " " + (i.sub || i.cabecalho || "") + " " + (i.calibre || "")).toLowerCase().includes(q));
+  if (!diarioSel || !cat.itens.some(i => i.id === diarioSel)) diarioSel = (lista[0] || cat.itens[0] || {}).id;
+  const grupos = {};
+  lista.forEach(i => (grupos[i.cabecalho || i.sub || cat.nome] ||= []).push(i));
+  const menu = Object.entries(grupos).map(([g, its]) => `<div class="dm-grupo">${esc(g)} <small>${its.length}</small></div>` + its.map(i => `
+      <button class="dm-item ${i.id === diarioSel ? "sel" : ""}" data-id="${esc(i.id)}">
+        <span class="dm-foto">${fotoDiario(i, cat.id)}</span>
+        <span class="dm-nome">${esc(i.nome)}${i.tem ? ` <i class="dm-tem" title="Você tem">✔</i>` : ""}${i.abates ? ` <i class="dm-tem" title="Abatidos">${i.abates}</i>` : ""}</span>
+      </button>`).join("")).join("") || `<p class="item-sub" style="padding:8px">Nada encontrado.</p>`;
+  const it = cat.itens.find(i => i.id === diarioSel);
+  $("painel-enciclopedia").innerHTML = `<div class="diario">
+    <aside class="diario-menu">
+      <div class="dm-cats">${diario.categorias.map(c => `<button data-cat="${c.id}" class="${c.id === cat.id ? "ativo" : ""}">${esc(c.nome)} <small>${c.itens.length}</small></button>`).join("")}</div>
+      <input class="dm-busca" placeholder="Buscar…" value="${esc(diarioBusca)}">
+      <div class="dm-lista">${menu}</div>
+    </aside>
+    <article class="diario-pagina">${it ? (cat.id === "animais" ? paginaAnimal(it) : paginaItem(it, cat)) : ""}</article>
+  </div>`;
+  const p = $("painel-enciclopedia");
+  p.querySelectorAll(".dm-cats button").forEach(b => b.onclick = () => { diarioCat = b.dataset.cat; diarioSel = null; desenharDiario(); });
+  p.querySelectorAll(".dm-item").forEach(b => b.onclick = () => { diarioSel = b.dataset.id; desenharDiario(); p.querySelector(".diario-pagina").scrollTop = 0; });
+  const busca = p.querySelector(".dm-busca");
+  busca.oninput = () => { diarioBusca = busca.value; const pos = busca.selectionStart; desenharDiario(); const n = $("painel-enciclopedia").querySelector(".dm-busca"); n.focus(); n.setSelectionRange(pos, pos); };
+  const sel = p.querySelector(".dm-item.sel"); if (sel) sel.scrollIntoView({ block: "nearest" });
+}
+
+function secao(titulo, corpo) { return corpo ? `<section class="dp-sec"><h4>${esc(titulo)}</h4>${corpo}</section>` : ""; }
+function paragrafos(l) { return (l || []).filter(Boolean).map(t => `<p>${esc(t)}</p>`).join(""); }
+
+function paginaAnimal(a) {
+  const dados = [
+    a.preco_kg != null && ["Preço por kg", `$${a.preco_kg.toFixed(2)}`],
+    a.taxidermia != null && ["Taxidermia", `$${fmt(a.taxidermia)}`],
+    a.chamado_m && ["Chamado ouvido a", `${fmt(a.chamado_m)} m`],
+    a.tipo_caca && ["Tipo de caça", esc(a.tipo_caca)],
+  ].filter(Boolean);
+  const meus = [["Avistados", a.vistos], ["Abatidos", a.abates],
+    a.melhor_genetica != null && ["Melhor genética", pct(a.melhor_genetica)],
+    a.tiro_mais_longo && ["Tiro mais longo", metros(a.tiro_mais_longo)]].filter(Boolean);
+  return `<header class="dp-topo">
+      <div class="dp-foto animal">${fotoDiario(a, "animais", true)}</div>
+      <div><div class="dp-cab">${esc(a.cabecalho)}</div><h2>${esc(a.nome)}</h2>
+        <div>${(a.reservas || []).map(r => `<span class="chip latao">${esc(r)}</span>`).join("")}</div>
+        ${a.descricao ? `<p class="dp-desc">${esc(a.descricao)}</p>` : ""}</div>
+    </header>
+    <div class="dp-colunas">
+      <div>
+        ${secao(a.secoes_titulo || "Aparência e hábitos", paragrafos(a.secoes))}
+        ${secao(a.habitat_titulo || "Habitat / bioma preferido", paragrafos(a.habitat))}
+        ${secao("Calibres permitidos", chips(a.calibres))}
+        ${a.proibidos.length ? secao("Calibres proibidos (não conta / penaliza)", chips(a.proibidos, "vermelho")) : ""}
+        ${secao("Armas que servem", a.armas.length ? `<div class="dp-armas">${a.armas.map(w => `<span class="chip ${w.tem ? "" : "cinza"}" title="${w.tem ? "Você tem" : "Na loja"}">${w.tem ? "✔ " : ""}${esc(w.nome)} <small>${esc(w.calibre)}</small></span>`).join("")}</div>` : "")}
+      </div>
+      <div>
+        ${secao("Dados de caça", dados.length ? `<table class="dp-tab">${dados.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("")}</table>` : "")}
+        ${a.medalhas.length ? secao("Medalhas (pontuação do troféu)", `<table class="dp-tab">${a.medalhas.map(m => `<tr><td><span class="medalha ${esc(m.nome)}"></span>${esc(m.nome)}</td><td>${m.pontos}+</td></tr>`).join("")}</table>`) : ""}
+        ${secao("Seus registros", `<table class="dp-tab">${meus.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("")}</table>` +
+          (a.ultimos_abates.length ? `<div class="item-sub" style="margin-top:6px">${a.ultimos_abates.map(x => `${quando(x.ts)} · ${metros(x.distancia_m)} · ${x.calibre || "?"} · genética ${pct(x.genetica || 0)}`).join("<br>")}</div>` : ""))}
+        ${a.licencas.length ? secao("Licenças", `<div class="dp-licencas">${a.licencas.map(l => `<figure><img src="${l.imagem}" loading="lazy"><figcaption>${esc(l.reserva)}</figcaption></figure>`).join("")}</div>`) : ""}
+      </div>
+    </div>`;
+}
+
+function paginaItem(i, cat) {
+  const linhas = [
+    i.sub && ["Tipo", esc(i.sub)], i.raca && ["Raça", esc(i.raca)], i.marca && ["Marca", esc(i.marca)],
+    i.preco != null && ["Preço", moedaFmt(i)], i.cargas && ["Quantidade por compra", i.cargas],
+    i.calibre && ["Calibre", esc(i.calibre)],
+    ["Situação", i.em_uso ? "Em uso agora" : i.tem ? "Você tem" : "Não tem"],
+  ].filter(Boolean);
+  const compravel = !i.tem && i.preco && i.moeda === "créditos" && (cat.id === "roupas" || cat.id === "itens" || cat.id === "armas" || cat.id === "municao");
+  return `<header class="dp-topo">
+      <div class="dp-foto">${fotoDiario(i, cat.id, true)}</div>
+      <div><div class="dp-cab">${esc(cat.nome)} · ${esc(i.sub || "")}</div><h2>${esc(i.nome)}</h2>
+        ${i.tem ? `<span class="chip">✔ ${i.em_uso ? "Em uso" : "Você tem"}</span>` : ""}
+        ${i.descricao ? `<p class="dp-desc">${esc(i.descricao)}</p>` : ""}
+        ${compravel ? `<button class="btn-papel verde" onclick="comprarItem('${esc(i.id)}','${esc(i.nome).replace(/'/g, "")}',${i.preco})">Comprar ${moedaFmt(i)}</button>` : ""}</div>
+    </header>
+    <div class="dp-colunas">
+      <div>
+        ${secao("Ficha", `<table class="dp-tab">${linhas.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("")}</table>`)}
+        ${i.stats ? secao(`Camuflagem ${i.camuflagem}/100`, barraStat("Visual", i.stats.visual) + barraStat("Som", i.stats.som) + barraStat("Cheiro", i.stats.cheiro) + barraStat("Corrida", i.stats.corrida)) : ""}
+        ${i.atributos ? secao("Características", `<table class="dp-tab">${Object.entries(i.atributos).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join("")}</table>`) : ""}
+      </div>
+      <div>
+        ${(i.calibres || []).map(c => secao(`${cat.id === "armas" ? "Calibre " : ""}${c.nome} — espécies permitidas`, chips(c.especies)) +
+          (c.proibidas.length ? `<div class="dp-proib"><b>Proibido para:</b> ${chips(c.proibidas, "vermelho")}</div>` : "")).join("")}
+      </div>
+    </div>`;
 }
 
 function atualizarAba() {
