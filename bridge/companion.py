@@ -165,7 +165,13 @@ TEMPLATE_FALAS = {
     "sem_torre": "Torre é bom, mas caçador de verdade sabe andar pé-ante-pé. Contra o vento, devagar.",
     "marcar": "Preciso de um censo da fauna. Marca os bichos no binóculo e me conta o que viu.",
     "visitar": "Tem um lugar que ninguém do posto foi conferir ainda. Dá uma passada lá e me diz como está.",
+    "calibre": "Nada de ferir bicho com arma errada. Leve o calibre certo para a espécie e faça um abate limpo.",
+    "atrair": "Bicho que vem até você é bicho que não te viu. Use o chamariz ou o atrativo de cheiro e espere.",
+    "nao_detectado": "Quero um abate em que o animal nem saiba que você estava lá. Vento no rosto e paciência.",
 }
+
+FAIXAS_DISTANCIA = {"curta": (25, 50), "media": (100, 200), "longa": (300, 500)}
+ESTADOS_CALMOS = {1, 2, 4, 256, 512}   # parado, vagando, andando, comendo, dormindo
 
 
 def nome_grupo(chave):
@@ -175,7 +181,8 @@ def nome_grupo(chave):
 def normalizar_missao(m, dados, pois):
     """Valida/ajusta uma missão (vinda da IA ou do gerador) e devolve None se for inválida."""
     tipo = m.get("tipo")
-    if tipo not in ("abater_grupo", "abater_qualquer", "distancia", "genetica", "sem_torre", "marcar", "visitar"):
+    if tipo not in ("abater_grupo", "abater_qualquer", "distancia", "genetica", "sem_torre", "marcar", "visitar",
+                    "calibre", "atrair", "nao_detectado"):
         return None
     vistos = set(dados.get("grupos_vistos", [])) - {"outro"}
     saida = {"tipo": tipo, "titulo": str(m.get("titulo") or "Contrato")[:60],
@@ -190,9 +197,19 @@ def normalizar_missao(m, dados, pois):
         saida["meta"] = max(1, min(6, int(m.get("meta") or 2)))
         saida["descricao"] = f"Abata e recolha {saida['meta']} animais de qualquer espécie."
     elif tipo == "distancia":
-        saida["distancia"] = max(30, min(400, int(m.get("distancia") or 100)))
-        saida["meta"] = 1
-        saida["descricao"] = f"Abata um animal a {saida['distancia']} m ou mais."
+        faixa = str(m.get("faixa") or "").lower().replace("é", "e")
+        d = int(float(m.get("distancia") or 0))
+        if faixa not in FAIXAS_DISTANCIA:
+            faixa = "curta" if 0 < d <= 60 else ("longa" if d >= 300 else "media")
+        if faixa == "longa":
+            d = max(300, min(480, d or 300))
+            saida["dist_min"], saida["dist_max"] = d, 500
+            saida["descricao"] = f"Tiro longo: abata um animal a {d} m ou mais (limite do jogo: 500 m)."
+        else:
+            saida["dist_min"], saida["dist_max"] = FAIXAS_DISTANCIA[faixa]
+            nome = "curta" if faixa == "curta" else "média"
+            saida["descricao"] = f"Distância {nome}: abata um animal entre {saida['dist_min']} e {saida['dist_max']} m."
+        saida["faixa"], saida["distancia"], saida["meta"] = faixa, saida["dist_min"], 1
     elif tipo == "genetica":
         g = float(m.get("genetica") or 0.6)
         saida["genetica"] = round(max(0.3, min(0.9, g if g <= 1 else g / 100)), 2)
@@ -207,6 +224,17 @@ def normalizar_missao(m, dados, pois):
     elif tipo == "visitar":
         saida["meta"] = 1
         saida["descricao"] = "Vá até o local marcado no mapa."
+    elif tipo in ("calibre", "atrair", "nao_detectado"):
+        g = m.get("grupo") if m.get("grupo") in vistos else None
+        if g:
+            saida["grupo"] = g
+        saida["meta"] = max(1, min(3, int(m.get("meta") or 1)))
+        alvo = f"{saida['meta']} {nome_grupo(g).lower()}(s)" if g else (f"{saida['meta']} animais" if saida["meta"] > 1 else "um animal")
+        saida["descricao"] = {
+            "calibre": f"Abata {alvo} usando munição de calibre compatível com a espécie.",
+            "atrair": f"Abata {alvo} atraído por chamariz ou atrativo de cheiro.",
+            "nao_detectado": f"Abata {alvo} sem que ele perceba você (animal calmo no momento do tiro).",
+        }[tipo]
     poi = next((p for p in pois if str(p.get("hash")) == str(m.get("poi_hash"))), None)
     if tipo == "visitar" and not poi:
         return None
@@ -227,7 +255,12 @@ def gerar_missao_local(dados, pois):
     nao_desc = [p for p in pois if not p.get("descoberto") and p.get("categoria") in ("lugar", "torre", "acampamento")]
     opcoes = [
         {"tipo": "abater_qualquer", "titulo": "Carne para o posto", "meta": random.choice([2, 3])},
-        {"tipo": "distancia", "titulo": "Olho de lince", "distancia": random.choice([80, 120, 150, 200])},
+        {"tipo": "distancia", "titulo": "Tiro de perto", "faixa": "curta"},
+        {"tipo": "distancia", "titulo": "Olho de lince", "faixa": "media"},
+        {"tipo": "distancia", "titulo": "Tiro de elite", "faixa": "longa", "distancia": random.choice([300, 350, 400, 450, 500])},
+        {"tipo": "calibre", "titulo": "Arma certa, abate limpo"},
+        {"tipo": "atrair", "titulo": "Chamando o bicho"},
+        {"tipo": "nao_detectado", "titulo": "Fantasma do mato"},
         {"tipo": "genetica", "titulo": "Troféu de colecionador", "genetica": random.choice([0.55, 0.6, 0.7])},
         {"tipo": "sem_torre", "titulo": "Pé-ante-pé"},
         {"tipo": "marcar", "titulo": "Censo da fauna", "meta": random.choice([4, 6, 8])},
@@ -240,7 +273,9 @@ def gerar_missao_local(dados, pois):
         p = random.choice(nao_desc)
         opcoes.append({"tipo": "visitar", "titulo": f"Conferir {p['nome'].lower()}", "poi_hash": p["hash"]})
     m = random.choice(opcoes)
-    dif = {"abater_qualquer": 350 * m.get("meta", 1), "distancia": 300 + 6 * m.get("distancia", 0),
+    dif = {"abater_qualquer": 350 * m.get("meta", 1),
+           "distancia": {"curta": 500, "media": 900}.get(m.get("faixa"), 1200 + 4 * (m.get("distancia", 300) - 300)),
+           "calibre": 600, "atrair": 900, "nao_detectado": 1100,
            "genetica": int(3000 * m.get("genetica", 0)), "sem_torre": 700, "marcar": 120 * m.get("meta", 1),
            "abater_grupo": 450 * m.get("meta", 1), "visitar": 600}[m["tipo"]]
     m.update({"creditos": dif, "reputacao": max(10, dif // 30), "origem": "local"})
@@ -271,7 +306,15 @@ def avaliar_missoes(dados, evento):
             elif t == "abater_grupo":
                 conta = evento.get("grupo") == m["grupo"]
             elif t == "distancia":
-                conta = (evento.get("distancia_m") or 0) >= m["distancia"]
+                d = evento.get("distancia_m") or 0
+                conta = m.get("dist_min", m.get("distancia", 0)) <= d <= m.get("dist_max", 500)
+            elif t in ("calibre", "atrair", "nao_detectado") and (not m.get("grupo") or evento.get("grupo") == m["grupo"]):
+                if t == "calibre":
+                    conta = evento.get("calibre_compativel") is True
+                elif t == "atrair":
+                    conta = evento.get("atraido") is True
+                else:
+                    conta = evento.get("estado_animal") in ESTADOS_CALMOS
             elif t == "genetica":
                 conta = (evento.get("genetica") or 0) >= m["genetica"]
             elif t == "sem_torre":
@@ -503,6 +546,19 @@ class Companion:
             self._nevoa_cache = (path, mt, mapa.nevoa_png(path))
         return self._nevoa_cache[2]
 
+    def calibres(self):
+        """Tabela oficial do jogo: calibres compatíveis por espécie (só das espécies já vistas, para não pesar)."""
+        tabela = carregar_json(self.caminho("calibres.json"), [])
+        vistas = {m.get("especie") for m in self.dados["marcados"].values()} | {a.get("especie") for a in self.dados["abates"]}
+        vistas.discard(None)
+        saida = {}
+        for linha in tabela:
+            animal = linha.get("animal", "")
+            if not vistas or any(animal and (animal in v or v in animal) for v in vistas):
+                saida[nome_especie(animal) or animal] = {"compativeis": [c.split(".")[-1] for c in linha.get("compativeis", [])],
+                                                         "incompativeis": [c.split(".")[-1] for c in linha.get("incompativeis", [])]}
+        return dict(list(saida.items())[:12])
+
     def info_mapa(self):
         nivel = self.nivel()
         info = carregar_json(self.caminho(f"mapa_{nivel}.json"), {}) if nivel else {}
@@ -618,7 +674,11 @@ class Companion:
             "ultimos_abates": [{"especie": a.get("especie_nome"), "distancia_m": round(a.get("distancia_m") or 0),
                                 "arma": a.get("arma"), "municao": a.get("municao")} for a in self.dados["abates"][-5:]],
             "missoes_ativas": [m["titulo"] for m in self.por_status("ativa")],
+            "municoes_usadas": sorted({f"{a.get('municao')} ({a.get('calibre')})" for a in self.dados["abates"][-20:] if a.get("municao")}),
         }
+        cal = self.calibres()
+        if cal:
+            ctx["calibres_por_especie"] = cal
         if not curto:
             ctx["pontos_nao_descobertos"] = [{"hash": p["hash"], "nome": p["nome"], "distancia_m": round(p["_d"])} for p in nao_desc]
             ctx["pontos_descobertos_proximos"] = [{"hash": p["hash"], "nome": p["nome"], "distancia_m": round(p["_d"])} for p in desc]

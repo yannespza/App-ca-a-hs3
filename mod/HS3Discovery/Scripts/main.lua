@@ -191,6 +191,7 @@ end
 
 ------------------------------------------------------------------ eventos: binóculo
 local spottedHooked = false
+local especiePorId = {}   -- id do animal -> tag da espécie (vinda do binóculo)
 local function tryHookSpotted()
     if spottedHooked then return true end
     local w = FindFirstOf("B_AnimalSpottedNotification_C")
@@ -202,6 +203,7 @@ local function tryHookSpotted()
             pcall(function()
                 local p = payload:get()
                 local l = p.AnimalLocation
+                especiePorId[p.CreatureId] = { TagName = p.AnimalTag.TagName }
                 emit("marcado", {
                     id = p.CreatureId, especie = tagName(p.AnimalTag), sexo = p.AnimalSex,
                     lendario = p.LegendaryStatus, genetica = p.GeneticScore,
@@ -228,12 +230,26 @@ local function readKill(info)
         t.pos = { x = a.X, y = a.Y, z = a.Z }
     end)
     pcall(function() t.tiros = info.InfoList:GetArrayNum() end)
+    pcall(function() t.atraido = info.bIsUnderAttractionInfluence end)
     pcall(function()
         local shot = info.InfoList[1]
         t.arma = shot.WeaponId.PrimaryAssetName:ToString()
         t.municao = shot.ProjectileId.PrimaryAssetName:ToString()
         t.parte = shot.ComponentName:ToString()
         t.torre = shot.bWasShotFromHuntingStand
+        t.estado_animal = shot.AnimalState
+        t.postura = shot.PlayerStance
+        pcall(function()
+            local lib = StaticFindObject("/Script/HS3WeaponsRuntime.Default__HS3ProjectileFunctionLibrary")
+            local cal = lib:GetCaliberTagFromPrimaryAssetId(shot.ProjectileId)
+            t.calibre = tagName(cal)
+            local esp = especiePorId[t.id]
+            if esp and t.calibre then
+                local comp = StaticFindObject("/Script/HS3AnimalsRuntime.Default__CaliberCompatibilityFunctionLibrary")
+                t.calibre_compativel = comp:IsCaliberCompatibleWithAnimal({ TagName = FName(t.calibre) }, esp)
+                t.especie = tagName(esp)
+            end
+        end)
         local o = shot.ProjectileOrigin
         t.origem = { x = o.X, y = o.Y, z = o.Z }
     end)
@@ -348,6 +364,27 @@ local function exportFog()
     end)
 end
 
+local function exportCalibres()
+    local tabela = {}
+    for _, dt in ipairs(FindAllOf("DataTable") or {}) do
+        pcall(function()
+            local rs = dt.RowStruct:GetFName():ToString()
+            if rs == "CaliberCompatibility" then
+                dt:ForEachRow(function(nome, linha)
+                    local compat, incompat = {}, {}
+                    pcall(function() linha.CompatibleCalibers.GameplayTags:ForEach(function(_, e) compat[#compat + 1] = tagName(e:get()) end) end)
+                    pcall(function() linha.IncompatibleCalibers.GameplayTags:ForEach(function(_, e) incompat[#incompat + 1] = tagName(e:get()) end) end)
+                    tabela[#tabela + 1] = { animal = tostring(nome), compativeis = compat, incompativeis = incompat }
+                end)
+            end
+        end)
+    end
+    if #tabela > 0 then
+        writeFile(DIR .. "calibres.json", jsonEncode(tabela))
+        log("tabela de calibres exportada: " .. #tabela .. " linhas")
+    end
+end
+
 local function writeAnimals()
     local lista = {}
     for _, a in ipairs(FindAllOf("AnimalCharacter") or {}) do
@@ -390,7 +427,7 @@ local function periodic()
         ultimoNivel = curto
         local f = io.open(DIR .. "mapa_" .. curto .. ".png", "rb")
         if f then f:close() else pcall(exportMap) end
-        pcall(exportPois); pcall(exportFog)
+        pcall(exportPois); pcall(exportFog); pcall(exportCalibres)
     end
     if ticks % 5 == 0 then pcall(writeAnimals) end
     if ticks % 60 == 0 then pcall(exportPois); pcall(exportFog) end
@@ -423,7 +460,7 @@ LoopAsync(1000, function()
                     local x, y, z = line:match("^pin%s+(%S+)%s+(%S+)%s*(%S*)")
                     setPin(tonumber(x), tonumber(y), tonumber(z) or 0)
                 elseif cmd == "unpin" then clearPin()
-                elseif cmd == "export_map" then exportMap(); exportPois(); exportFog()
+                elseif cmd == "export_map" then exportMap(); exportPois(); exportFog(); exportCalibres()
                 elseif cmd == "script" and arg ~= "" and arg:match("^[%w_%-]+%.lua$") then
                     local chunk, e = loadfile(DIR .. "dev" .. "\\" .. arg)
                     if not chunk then log("script erro ao carregar: " .. tostring(e)); return end

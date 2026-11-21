@@ -1,5 +1,7 @@
 """Integração com o Ollama: personagem, missões geradas por IA e dicas de caça."""
 import json
+import os
+import subprocess
 import time
 import urllib.request
 
@@ -37,7 +39,28 @@ REGRAS_JOGO = """Regras e diretrizes de Hunting Simulator 3 que você conhece:
 - Patos e aves aquáticas ficam perto de água; porcos-do-mato andam em grupo em áreas de mato e lama; cervos-de-cauda-branca usam bordas de mata.
 - Estruturas de caça (torres/esperas) reduzem a chance de ser detectado; caçar a pé exige mais cuidado.
 - Recompensas: créditos (dinheiro), reputação com o vendedor e pontos de campo. Venda de carne e troféus depende da qualidade do abate.
-- Medalhas de troféu dependem da genética e da pontuação do animal."""
+- Medalhas de troféu dependem da genética e da pontuação do animal.
+
+Equipamento e balística (o jogo define calibres compatíveis por espécie; quando o contexto trouxer "calibres_por_especie",
+use exatamente essa tabela e não invente calibres):
+- Usar calibre incompatível com a espécie gera multa e/ou abate ruim; o jogo avisa ao sair do acampamento se a arma não serve
+  para as licenças que você tem. Leve sempre ao menos uma arma compatível com cada licença.
+- Aves (patos, perus): espingarda com chumbo adequado ao tamanho da ave. Caça média (cervos, porcos-do-mato): rifle de calibre médio.
+- A distância efetiva depende da arma e da mira: espingarda é para curta distância; rifle com luneta para média e longa.
+  No jogo, desafios de tiro nunca passam de 500 m.
+- Luneta, bipé e a postura (deitado/agachado) dão estabilidade em tiros longos; segure a respiração antes de atirar.
+
+Não ser detectado:
+- O animal tem estados: calmo (parado, vagando, comendo, dormindo), investigando (algo chamou a atenção) e fugindo.
+  O melhor abate é com o animal calmo; se ele está investigando, pare e espere.
+- Vento a favor (no seu rosto), roupa adequada ao bioma, movimentos lentos, sem correr, agachado ou rastejando na aproximação final.
+- O cheiro do caçador aparece no mapa; produtos de redução de cheiro ajudam.
+
+Atrair o animal:
+- Chamarizes (callers) imitam vocalizações da espécie e trazem o bicho até você; use poucas vezes e espere em silêncio.
+- Atrativos de cheiro atraem pela direção do vento: coloque contra o vento de onde o animal deve vir.
+- Iscas e chamarizes funcionam melhor de uma espera/torre ou com boa cobertura, no amanhecer e entardecer.
+- Patos respondem a chamarizes e decoys perto da água; perus a chamadas de acasalamento; cervos a chamadas de grunhido."""
 
 
 class Ollama:
@@ -47,6 +70,7 @@ class Ollama:
         self.ok = False
         self.erro = None
         self.verificado_em = 0
+        self.tentou_abrir_em = 0
 
     def _url(self, caminho):
         return self.cfg.get("ollama_url", "http://localhost:11434").rstrip("/") + caminho
@@ -69,7 +93,27 @@ class Ollama:
         except Exception:
             self.ok, self.modelo = False, None
             self.erro = "Ollama não está rodando"
+            self.abrir_ollama()
         return self.ok
+
+    def abrir_ollama(self):
+        """Tenta abrir o Ollama sozinho (no máximo a cada 2 minutos)."""
+        if time.time() - self.tentou_abrir_em < 120 or os.name != "nt":
+            return
+        self.tentou_abrir_em = time.time()
+        base = os.environ.get("LOCALAPPDATA", "")
+        for exe in (os.path.join(base, "Programs", "Ollama", "ollama app.exe"),
+                    os.path.join(base, "Programs", "Ollama", "ollama.exe")):
+            if os.path.isfile(exe):
+                try:
+                    args = [exe] if exe.endswith("app.exe") else [exe, "serve"]
+                    env = {k: v for k, v in os.environ.items() if not k.startswith(("_PYI", "_MEI"))}
+                    subprocess.Popen(args, env=env, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                                     | getattr(subprocess, "DETACHED_PROCESS", 0))
+                    self.erro = "Abrindo o Ollama…"
+                except Exception:
+                    pass
+                return
 
     def status(self):
         return {"ok": self.ok, "modelo": self.modelo, "erro": self.erro}
@@ -90,11 +134,15 @@ class Ollama:
 TIPOS_MISSAO = {
     "abater_grupo": "abater N animais de um grupo (campo 'grupo' obrigatório, 'meta' = N)",
     "abater_qualquer": "abater N animais de qualquer espécie ('meta' = N)",
-    "distancia": "abater 1 animal a pelo menos D metros ('distancia' = D entre 50 e 300)",
+    "distancia": ("abate à distância. Use 'faixa': 'curta' (25 a 50 m), 'media' (100 a 200 m) ou 'longa' (acima de 300 m; "
+                  "nesse caso defina 'distancia' exata entre 300 e 500 — nunca acima de 500 m, limite do jogo)"),
     "genetica": "abater 1 animal com genética mínima G ('genetica' = G entre 0.4 e 0.85)",
     "sem_torre": "abater 1 animal a pé, sem usar torre/espera",
     "marcar": "marcar N animais diferentes com o binóculo ('meta' = N entre 3 e 10)",
     "visitar": "ir até um ponto de interesse ('poi_hash' obrigatório, de preferência um ainda não descoberto)",
+    "calibre": "abater com munição de calibre compatível com a espécie ('grupo' opcional; cite na fala o calibre certo usando a tabela do contexto)",
+    "atrair": "abater um animal atraído por chamariz (caller) ou atrativo de cheiro ('grupo' opcional)",
+    "nao_detectado": "abater um animal sem ser detectado, com o bicho calmo no momento do tiro ('grupo' opcional)",
 }
 
 
@@ -102,7 +150,7 @@ def gerar_missoes(ollama, contexto, quantidade=3):
     sistema = PERSONA + "\n\n" + REGRAS_JOGO + """
 
 Agora você vai oferecer contratos de caça ao jogador. Responda SOMENTE com JSON no formato:
-{"missoes": [{"tipo": "...", "titulo": "...", "fala": "...", "grupo": "...", "meta": 1, "distancia": 0, "genetica": 0,
+{"missoes": [{"tipo": "...", "titulo": "...", "fala": "...", "grupo": "...", "meta": 1, "faixa": "", "distancia": 0, "genetica": 0,
   "poi_hash": 0, "creditos": 0, "reputacao": 0}]}
 Regras:
 - "tipo" deve ser um destes: """ + "; ".join(f"{k} = {v}" for k, v in TIPOS_MISSAO.items()) + """
