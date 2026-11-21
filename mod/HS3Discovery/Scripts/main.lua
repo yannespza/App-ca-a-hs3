@@ -68,6 +68,9 @@ local function emit(kind, data)
 end
 
 ------------------------------------------------------------------ leitura do estado
+-- Listas dentro de listas (pontos de campo por mapa, reputação por mapa e vendedor) são lidas só a cada
+-- 10 s e guardadas como números: ler esse tipo de dado o tempo todo já fechou o jogo (ver mochila.lua).
+local lentos = { quando = 0, pontos_campo = nil, reputacao = nil }
 local function readState()
     local s = { ok = false, ts = os.time() }
     local pc = FindFirstOf("HS3PlayerController")
@@ -99,36 +102,43 @@ local function readState()
                 if n then s.moedas[n] = it.CurrencyAmount end
             end)
         end)
-        s.pontos_campo = {}
+    end
+    local lerLentos = os.time() - lentos.quando >= 10
+    if lerLentos and valid(store) then
+        local pontos = {}
         pcall(function()
             store.LevelSpecificCurrencies:ForEach(function(k, v)
                 local name = k:get().PrimaryAssetName:ToString()
                 v:get().Currencies:ForEach(function(_, e)
                     local it = e:get()
                     if tagName(it.CurrencyType) == "Currency.Level.FieldPoints" then
-                        s.pontos_campo[name] = it.CurrencyAmount
+                        pontos[name] = it.CurrencyAmount
                     end
                 end)
             end)
         end)
+        lentos.pontos_campo = pontos
     end
 
     -- reputação por mapa
-    local rep = FindFirstOf("HS3ReputationSaveSlotChunk")
-    if valid(rep) then
-        s.reputacao = {}
+    local rep = lerLentos and FindFirstOf("HS3ReputationSaveSlotChunk")
+    if rep and valid(rep) then
+        local lista = {}
         pcall(function()
             rep.ReputationSaveDataPerMap:ForEach(function(k, v)
                 local name = k:get().PrimaryAssetName:ToString()
                 v:get().ReputationPerVendor:ForEach(function(vk, vv)
                     local d = vv:get()
-                    s.reputacao[#s.reputacao + 1] = {
+                    lista[#lista + 1] = {
                         mapa = name, vendedor = tagName(vk:get()),
                         valor = d.Reputation, sequencia = d.ReputationStreak }
                 end)
             end)
         end)
+        lentos.reputacao = lista
     end
+    if lerLentos then lentos.quando = os.time() end
+    s.pontos_campo, s.reputacao = lentos.pontos_campo, lentos.reputacao
 
     pcall(function()
         local q = FindFirstOf("NavigationPlayerStateComponent").QuickWaypoint
@@ -164,7 +174,19 @@ local function credits()
     return v
 end
 
+local pagos = {}   -- referências já pagas nesta sessão (evita pagar duas vezes o mesmo contrato)
+local function jaPago(recurso, ref)
+    if not ref or ref == "" then return false end
+    local k = recurso .. ":" .. ref
+    if pagos[k] then log("pagamento repetido ignorado: " .. k); return true end
+    pagos[k] = true
+    return false
+end
+
 local function giveCredits(amount, ref)
+    if jaPago("creditos", ref) then
+        emit("recompensa", { recurso = "creditos", valor = amount, ok = true, ref = ref, repetido = true }); return
+    end
     local before = credits()
     local lib = StaticFindObject("/Script/HS3CoreRuntime.Default__HS3StoreFunctionLibrary")
     local pc = FindFirstOf("HS3PlayerController")
@@ -192,6 +214,9 @@ local function repSalva(mapaCurto)
 end
 
 local function giveReputation(amount, ref)
+    if jaPago("reputacao", ref) then
+        emit("recompensa", { recurso = "reputacao", valor = amount, ok = true, ref = ref, repetido = true }); return
+    end
     local rm = FindFirstOf("HS3PlayerControllerComponent_ReputationManager")
     local tag = { TagName = FName(VENDOR) }
     local before, after
@@ -653,6 +678,8 @@ local ultimoNivel, ticks = nil, 0
 local function periodic()
     ticks = ticks + 1
     local _, _, curto = currentLevel()
+    -- o acampamento (Hub) e o menu não são reservas: nada de exportar mapa/pontos/névoa ali
+    if curto and (curto:find("Hub") or curto:find("Menu")) then curto = nil end
     if curto and curto ~= ultimoNivel and FindFirstOf("HS3PlayerController") then
         ultimoNivel = curto
         local f = io.open(DIR .. "mapa_" .. curto .. ".png", "rb")
@@ -676,10 +703,10 @@ local function periodic()
     end
     pcall(passoMochila)
     if ticks % 10 == 3 and #filaMochila == 0 then lerContratosJogo() end
-    if ticks % 10 == 0 then pcall(writeEquipamento) end
+    if ticks % 15 == 0 then pcall(writeEquipamento) end
     if ticks % 5 == 0 then pcall(writeAnimals) end
-    if ticks % 60 == 0 then pcall(exportPois) end
-    if ticks % 180 == 0 then pcall(exportFog) end   -- névoa a cada 3 min (leitura mais pesada)
+    if curto and ticks % 300 == 0 then pcall(exportPois) end   -- pontos descobertos a cada 5 min (e ao entrar na reserva)
+    if curto and ticks % 600 == 0 then pcall(exportFog) end    -- névoa a cada 10 min (leitura pesada: 524 mil bytes)
 end
 
 -- utilidades disponíveis para scripts de desenvolvimento (pasta dev\)
@@ -741,6 +768,19 @@ LoopAsync(1000, function()
     end
     return false
 end)
+
+-- registro muito grande: guarda só o fim
+do
+    local f = io.open(LOG_FILE, "rb")
+    if f then
+        local tam = f:seek("end")
+        if tam > 300000 then
+            f:seek("set", tam - 60000)
+            local fim = f:read("*a"); f:close()
+            local g = io.open(LOG_FILE, "wb"); if g then g:write((fim:gsub("^[^\n]*\n", ""))); g:close() end
+        else f:close() end
+    end
+end
 
 -- comandos que sobraram de uma sessão anterior (jogo fechado) não são executados
 do

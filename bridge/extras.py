@@ -89,47 +89,6 @@ def especies_por_calibre(calibres):
     return mapa
 
 
-def armario(catalogo, equip, calibres, nome_especie, abates):
-    por_item = {c.get("item"): c for c in catalogo}
-    por_id = {c.get("id"): c for c in catalogo}
-    comprados = {b["id"]: b.get("cargas") for b in equip.get("comprados", [])}
-    esp_cal = especies_por_calibre(calibres)
-    calibre_por_arma = {}
-    for a in abates:
-        if a.get("arma") and a.get("calibre"):
-            calibre_por_arma[a["arma"]] = a["calibre"]
-
-    def info(c, extra=None):
-        cat, rot = tipo_item(c.get("tipo"))
-        d = {"id": c.get("id"), "nome": c.get("nome") or c.get("id"), "categoria": cat, "rotulo": rot,
-             "preco": c.get("preco"), "marca": (c.get("marca") or "").split(".")[-1].replace("None", ""),
-             "descricao": c.get("descricao")}
-        cal = (c.get("calibre") if c.get("calibre") not in (None, "None") else None) or next((t for t in c.get("compat") or [] if t and t.startswith("Inventory.Ammo")), None)
-        if not cal:
-            cal = calibre_por_arma.get((c.get("item") or "").split(":")[-1])
-        if cal:
-            d["calibre"] = nome_calibre(cal)
-            d["especies"] = sorted({nome_especie(a) for a in esp_cal.get(cal, []) if a})
-        d.update(extra or {})
-        return d
-
-    mochila = []
-    for m in equip.get("mochila", []):
-        c = por_item.get(m.get("item"))
-        if c:
-            mochila.append(info(c, {"cargas": m.get("cargas")}))
-        else:
-            nome = (m.get("item") or "").split(":")[-1].replace("ID_", "").replace("_", " ")
-            mochila.append({"nome": nome, "rotulo": (m.get("tipo") or "").split(".")[-1]})
-    possuidos = []
-    for sid, cargas in comprados.items():
-        c = por_id.get(sid)
-        if c and tipo_item(c.get("tipo"))[0]:
-            possuidos.append(info(c, {"cargas": cargas}))
-    possuidos.sort(key=lambda x: (x["categoria"] or "", x["nome"]))
-    return {"mochila": mochila, "possuidos": possuidos}
-
-
 def loja(catalogo, equip):
     comprados = {b["id"] for b in equip.get("comprados", [])}
     vestidos = {r.get("item") for r in equip.get("roupa", [])}
@@ -178,29 +137,6 @@ def patente(abates, missoes):
             "progresso": round(progresso, 3), "nivel": PATENTES.index(atual) + 1}
 
 
-def enciclopedia(calibres, abates, vistos, nome_especie, grupo_de):
-    fichas = []
-    for linha in calibres:
-        tag = linha.get("animal") or ""
-        if tag.endswith(".Hub"):
-            continue
-        mortos = [a for a in abates if a.get("especie") == tag]
-        dist = [a.get("distancia_m") for a in mortos if a.get("distancia_m")]
-        g, gnome = grupo_de(tag)
-        fichas.append({
-            "tag": tag, "nome": nome_especie(tag), "grupo": g, "grupo_nome": gnome,
-            "variante": tag.split(".")[-1] if tag.split(".")[-1] in ("Texas", "Colorado") else None,
-            "calibres": [nome_calibre(c) for c in linha.get("compativeis", [])],
-            "proibidos": [nome_calibre(c) for c in linha.get("incompativeis", [])],
-            "vistos": vistos.get(tag, 0), "abates": len(mortos),
-            "melhor_genetica": max((a.get("genetica") or 0 for a in mortos), default=None),
-            "tiro_mais_longo": max(dist) if dist else None,
-        })
-    fichas.sort(key=lambda f: (-(f["abates"] + f["vistos"]), f["grupo_nome"], f["nome"]))
-    return fichas
-
-
-# ---------------------------------------------------------------- enciclopédia (diário de campo)
 CABECALHOS = {
     "BigGame": "Caça grossa", "SmallGame": "Caça miúda", "Predators": "Predadores", "Predator": "Predadores",
     "Birds": "Aves", "Bird": "Aves", "UplandBirds": "Aves de campo", "Waterfowl": "Aves aquáticas", "Varmint": "Pragas",

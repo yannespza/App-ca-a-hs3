@@ -5,7 +5,7 @@ O QUE TEM NESTE PACOTE
 - HS3Companion.exe  -> o programa que conecta o jogo ao app
 - HS3Discovery\     -> o mod do UE4SS (vai dentro da pasta do jogo)
 
-INSTALAÇÃO (só na primeira vez ou quando atualizar)
+INSTALAÇÃO (só na primeira vez; depois use o botão "Procurar atualização" do app)
 1. Copie a pasta HS3Discovery para:
    D:\SteamLibrary\steamapps\common\HS3\HS3\Binaries\Win64\ue4ss\Mods\
    (substitua os arquivos se perguntar)

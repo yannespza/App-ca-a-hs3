@@ -1,23 +1,27 @@
-# HS3 Companion – Cabana do Caçador
+# HS3 Companion – app companheiro do Hunting Simulator 3
 
-App companheiro para **Hunting Simulator 3** (PC, uso pessoal e offline).
+Uso pessoal e offline (PC, Steam). Três partes:
 
-- **mod/** – mod UE4SS (Lua) que lê o estado do jogo, registra marcações e abates e paga recompensas pelas funções oficiais do jogo.
-- **bridge/** – `HS3Companion.exe` (Python, só biblioteca padrão): lê os arquivos do mod, gera e valida missões e serve o app em `http://localhost:8765`.
-- **bridge/web/** – app web instalável (PWA).
+| Pasta | O que é |
+|---|---|
+| `mod/HS3Discovery/` | Mod UE4SS (Lua) que roda dentro do jogo: lê o estado, registra marcações e abates, paga recompensas e executa comandos do app. |
+| `bridge/` | `HS3Companion.exe` (Python, só biblioteca padrão + certifi): lê os arquivos do mod, gera e confere os contratos e serve o app em `http://localhost:8765`. |
+| `bridge/web/` | O app (HTML/CSS/JS, Leaflet para o mapa). |
+| `tools/dev-mod/` | Scripts de teste usados durante o desenvolvimento (não vão no pacote). Rodam no jogo com o comando `script <arquivo>.lua` em `cmd.txt`, a partir da pasta `HS3Discovery\dev\`. |
 
-O executável é gerado automaticamente pelo GitHub Actions a cada push na `main` e publicado em **Releases** como `HS3Companion.zip`.
+O executável é gerado pelo GitHub Actions a cada push na `main` e publicado em **Releases** (`HS3Companion.zip`).
+O botão "Procurar atualização" do app baixa a versão nova, troca o `.exe` e copia o mod para a pasta do jogo.
 
-## Canal mod ↔ ponte
+## Arquivos do mod (pasta `HS3Discovery`)
 | Arquivo | Quem escreve | Conteúdo |
 |---|---|---|
-| `state.json` | mod, a cada 1 s | moedas, reputação, mapa, posição, direção |
-| `events.jsonl` | mod | `marcado`, `abate`, `abate_final`, `recompensa` |
-| `cmd.txt` | ponte | `add_credits N ref`, `add_rep N ref` |
+| `Scripts\main.lua` | — | carregado ao abrir o jogo (estado a cada 1 s, eventos, comandos) |
+| `Scripts\mochila.lua`, `contratos.lua`, `hud.lua`, `exportar.lua`, `nitido.lua` | — | recarregados a cada uso (dá para corrigir com o jogo aberto) |
+| `state.json` | mod, 1 s | créditos, reputação, mapa, posição, pino |
+| `events.jsonl` | mod | `marcado`, `abate`, `recompensa`, `compra`, `mochila` |
+| `animais.json`, `equipamento.json`, `mochila.json`, `armas.json`, `contratos_jogo.json` | mod | animais vivos, inventário/roupa, mochila, munição e acessórios das armas da mochila, contratos do jogo |
+| `mapa_*.png/json`, `pois_*.json`, `nevoa_*.bin`, `calibres.json`, `catalogo_v2.json`, `jogo_dados.json`, `img\` | mod | mapa, pontos, névoa, tabela de calibres, loja, diário de campo e imagens |
+| `cmd.txt` | app | comandos (`add_credits`, `add_rep`, `pin`, `teleport`, `comprar`, `mochila …`, `exportar_dados`, `nitido`) |
+| `hud.txt` | app | contratos do app para a caixa de objetivos do jogo |
 
-## Fase 1 – descobertas (21/11/2026)
-- Mapa do Texas: `/HS3DefaultMaps/Terrain/Texas_a/Map/ZoomLevel1/T_Texas_a_MiniMap` (4096², exportável via render target + `ExportRenderTarget`). Mundo = 1.224.000 cm de lado, centrado em 0: `u = X/1224000 + 0.5`, `v = Y/1224000 + 0.5` (X → direita, Y → baixo).
-- Névoa: `NavigationSaveData.FogOfWarLists[nível].FogArray` = 2048×2048 bits (1 bpp, ordem little-endian) nos primeiros 524.288 bytes; 1 = explorado.
-- Pontos de interesse: `NavigationContentComponent.NavigationActorDataMap` (tipo → lista com Hash/Transform); estado em `NavigationSaveData.DiscoverStatusLists` (`Map.UI.POI.Discovered`).
-- Animais vivos: `AnimalCharacter.EcoSimCreatureId` = id do binóculo; posição por `K2_GetActorLocation`.
-- Pino rápido no jogo: `NavigationPlayerStateComponent:Server_AddQuickWaypoint(NavigationIconData:DA_QuickWaypoint_MapIconData, Transform)`.
+Descobertas técnicas e o que já fechou o jogo: documento do projeto `descobertas-tecnicas-hs3.md`.

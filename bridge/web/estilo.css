@@ -226,7 +226,6 @@ button, input, select { font: inherit; color: inherit; }
 .msg { padding: 9px 12px; border-radius: 12px; max-width: 90%; white-space: pre-wrap; }
 .msg.user { align-self: flex-end; background: var(--blaze); color: #1b0d04; border-bottom-right-radius: 4px; }
 .msg.assistant { align-self: flex-start; background: var(--casca-2); border: 1px solid var(--linha); border-bottom-left-radius: 4px; }
-.msg.pensando { opacity: .7; font-style: italic; }
 .chat-form { display: flex; gap: 6px; margin-top: 10px; }
 .chat-form input { flex: 1; min-width: 0; padding: 9px 12px; border-radius: 9px; border: 1px solid var(--linha-2); background: #101916; }
 .chat-form input::placeholder { color: #75837a; }
@@ -274,9 +273,6 @@ button, input, select { font: inherit; color: inherit; }
 .chip { display: inline-block; font-size: 12px; font-weight: 600; background: var(--musgo-esc); color: #e9f2dc; padding: 2px 9px; border-radius: 10px; margin: 2px 4px 2px 0; }
 .chip.cinza { background: var(--casca-2); color: var(--liquen); } .chip.vermelho { background: #5c2318; color: #f3c3b6; } .chip.latao { background: #5a4519; color: var(--ambar); }
 .chip small { opacity: .8; }
-.ficha-esp { display: flex; gap: 10px; }
-.ficha-esp .sil { width: 54px; height: 54px; background: var(--casca-2); border-radius: 8px; display: grid; place-items: center; flex: none; }
-.ficha-esp .sil svg { width: 46px; height: 46px; fill: var(--nevoa); }
 
 /* ---------- diário de campo ---------- */
 #painel-enciclopedia.ativo { display: flex; padding: 0; overflow: hidden; }

@@ -9,7 +9,6 @@ import re
 import urllib.parse
 import math
 import os
-import random
 import sys
 import threading
 import time
@@ -25,7 +24,6 @@ from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import extras
-import ia
 import missoes
 import mapa
 
@@ -63,14 +61,11 @@ CONFIG_PADRAO = {
     "abrir_navegador": True,
     "missoes_ativas": 6,
     "ofertas": 8,
-    "usar_ia": False,              # a IA (Ollama) usa muita memória junto com o jogo; desligada por padrão
-    "ollama_url": "http://localhost:11434",
-    "ollama_modelo": "",
-    "ollama_usar_gpu": False,
     "voltar_ao_ultimo_local": True,
     "contratos_no_jogo": True,
     "limite_diario_creditos": 20000,
     "github_token": "",
+    "versao_config": 2,
 }
 
 # ------------------------------------------------------------------ catálogo
@@ -148,7 +143,6 @@ def nome_especie(tag):
 
 
 SEXO = {0: "Macho", 1: "Fêmea", 2: "Indefinido"}
-RESULTADO_OK = {0, 1, 2, 3}
 ACOES = {0: "Descartado", 1: "Vendido (danificado)", 2: "Vendido", 3: "Taxidermia"}
 
 
@@ -171,11 +165,11 @@ def salvar_json(path, dados):
 def carregar_config():
     cfg = dict(CONFIG_PADRAO)
     salvo = carregar_json(CONFIG_PATH, {})
-    cfg.update(salvo)
-    # versões antigas gravaram 3/3 no config.json: passa para os novos limites
-    if salvo.get("missoes_ativas", 6) <= 3 and "usar_ia" not in salvo:
+    cfg.update({k: v for k, v in salvo.items() if k in CONFIG_PADRAO})   # descarta opções antigas (Ollama etc.)
+    if salvo.get("versao_config", 1) < 2:
+        # versões antigas gravaram 3 ofertas / 3 ativos: passa para os limites novos
         cfg["missoes_ativas"], cfg["ofertas"] = CONFIG_PADRAO["missoes_ativas"], CONFIG_PADRAO["ofertas"]
-    if not os.path.exists(CONFIG_PATH) or "usar_ia" not in salvo:
+    if cfg != {k: v for k, v in salvo.items()}:
         salvar_json(CONFIG_PATH, cfg)
     return cfg
 
@@ -198,131 +192,11 @@ def direcao(jogador, alvo, yaw):
 
 
 # ------------------------------------------------------------------ missões
-TEMPLATE_FALAS = {
-    "abater_grupo": "Tem um fazendeiro reclamando de {grupo} na propriedade dele. Resolve isso pra mim, mas com tiro limpo.",
-    "abater_qualquer": "A câmara fria do posto está vazia, parceiro. Traz carne boa, de preferência sem estragar com tiro ruim.",
-    "distancia": "Quero ver essa pontaria. Tiro longo exige paciência: confira o vento e respire antes de apertar o gatilho.",
-    "genetica": "Um colecionador quer um troféu de qualidade. Use o binóculo e não atire no primeiro que aparecer.",
-    "sem_torre": "Torre é bom, mas caçador de verdade sabe andar pé-ante-pé. Contra o vento, devagar.",
-    "marcar": "Preciso de um censo da fauna. Marca os bichos no binóculo e me conta o que viu.",
-    "visitar": "Tem um lugar que ninguém do posto foi conferir ainda. Dá uma passada lá e me diz como está.",
-    "calibre": "Nada de ferir bicho com arma errada. Leve o calibre certo para a espécie e faça um abate limpo.",
-    "atrair": "Bicho que vem até você é bicho que não te viu. Use o chamariz ou o atrativo de cheiro e espere.",
-    "nao_detectado": "Quero um abate em que o animal nem saiba que você estava lá. Vento no rosto e paciência.",
-}
-
-FAIXAS_DISTANCIA = {"curta": (25, 50), "media": (100, 200), "longa": (300, 500)}
 ESTADOS_CALMOS = {1, 2, 4, 256, 512}   # parado, vagando, andando, comendo, dormindo
 
 
 def nome_grupo(chave):
     return dict((g[0], g[1]) for g in GRUPOS).get(chave, chave)
-
-
-def normalizar_missao(m, dados, pois):
-    """Valida/ajusta uma missão (vinda da IA ou do gerador) e devolve None se for inválida."""
-    tipo = m.get("tipo")
-    if tipo not in ("abater_grupo", "abater_qualquer", "distancia", "genetica", "sem_torre", "marcar", "visitar",
-                    "calibre", "atrair", "nao_detectado"):
-        return None
-    vistos = set(dados.get("grupos_vistos", [])) - {"outro"}
-    saida = {"tipo": tipo, "titulo": str(m.get("titulo") or "Contrato")[:60],
-             "fala": str(m.get("fala") or TEMPLATE_FALAS[tipo]).strip()[:500]}
-    if tipo == "abater_grupo":
-        if m.get("grupo") not in vistos:
-            return None
-        saida["grupo"] = m["grupo"]
-        saida["meta"] = max(1, min(5, int(m.get("meta") or 1)))
-        saida["descricao"] = f"Abata e recolha {saida['meta']} {nome_grupo(saida['grupo']).lower()}(s)."
-    elif tipo == "abater_qualquer":
-        saida["meta"] = max(1, min(6, int(m.get("meta") or 2)))
-        saida["descricao"] = f"Abata e recolha {saida['meta']} animais de qualquer espécie."
-    elif tipo == "distancia":
-        faixa = str(m.get("faixa") or "").lower().replace("é", "e")
-        d = int(float(m.get("distancia") or 0))
-        if faixa not in FAIXAS_DISTANCIA:
-            faixa = "curta" if 0 < d <= 60 else ("longa" if d >= 300 else "media")
-        if faixa == "longa":
-            d = max(300, min(480, d or 300))
-            saida["dist_min"], saida["dist_max"] = d, 500
-            saida["descricao"] = f"Tiro longo: abata um animal a {d} m ou mais (limite do jogo: 500 m)."
-        else:
-            saida["dist_min"], saida["dist_max"] = FAIXAS_DISTANCIA[faixa]
-            nome = "curta" if faixa == "curta" else "média"
-            saida["descricao"] = f"Distância {nome}: abata um animal entre {saida['dist_min']} e {saida['dist_max']} m."
-        saida["faixa"], saida["distancia"], saida["meta"] = faixa, saida["dist_min"], 1
-    elif tipo == "genetica":
-        g = float(m.get("genetica") or 0.6)
-        saida["genetica"] = round(max(0.3, min(0.9, g if g <= 1 else g / 100)), 2)
-        saida["meta"] = 1
-        saida["descricao"] = f"Abata um animal com genética de {int(saida['genetica'] * 100)}% ou mais."
-    elif tipo == "sem_torre":
-        saida["meta"] = 1
-        saida["descricao"] = "Abata um animal sem estar numa torre ou espera."
-    elif tipo == "marcar":
-        saida["meta"] = max(2, min(12, int(m.get("meta") or 5)))
-        saida["descricao"] = f"Marque {saida['meta']} animais diferentes com o binóculo."
-    elif tipo == "visitar":
-        saida["meta"] = 1
-        saida["descricao"] = "Vá até o local marcado no mapa."
-    elif tipo in ("calibre", "atrair", "nao_detectado"):
-        g = m.get("grupo") if m.get("grupo") in vistos else None
-        if g:
-            saida["grupo"] = g
-        saida["meta"] = max(1, min(3, int(m.get("meta") or 1)))
-        alvo = f"{saida['meta']} {nome_grupo(g).lower()}(s)" if g else (f"{saida['meta']} animais" if saida["meta"] > 1 else "um animal")
-        saida["descricao"] = {
-            "calibre": f"Abata {alvo} usando munição de calibre compatível com a espécie.",
-            "atrair": f"Abata {alvo} atraído por chamariz ou atrativo de cheiro.",
-            "nao_detectado": f"Abata {alvo} sem que ele perceba você (animal calmo no momento do tiro).",
-        }[tipo]
-    poi = next((p for p in pois if str(p.get("hash")) == str(m.get("poi_hash"))), None)
-    if tipo == "visitar" and not poi:
-        return None
-    if poi:
-        saida["local"] = {"x": poi["x"], "y": poi["y"], "z": poi.get("z", 0), "nome": poi["nome"], "hash": poi["hash"]}
-        if tipo == "visitar":
-            saida["descricao"] = f"Vá até: {poi['nome']}."
-    saida["creditos"] = max(200, min(4000, int(m.get("creditos") or 600)))
-    saida["reputacao"] = max(5, min(100, int(m.get("reputacao") or 20)))
-    saida.update({"id": uuid.uuid4().hex[:8], "status": "oferta", "progresso": 0, "contados": [],
-                  "criada": time.time(), "origem": m.get("origem", "ia")})
-    return saida
-
-
-def gerar_missao_local(dados, pois):
-    """Gerador simples (quando o Ollama não está disponível)."""
-    vistos = list(set(dados.get("grupos_vistos", [])) - {"outro"})
-    nao_desc = [p for p in pois if not p.get("descoberto") and p.get("categoria") in ("lugar", "torre", "acampamento")]
-    opcoes = [
-        {"tipo": "abater_qualquer", "titulo": "Carne para o posto", "meta": random.choice([2, 3])},
-        {"tipo": "distancia", "titulo": "Tiro de perto", "faixa": "curta"},
-        {"tipo": "distancia", "titulo": "Olho de lince", "faixa": "media"},
-        {"tipo": "distancia", "titulo": "Tiro de elite", "faixa": "longa", "distancia": random.choice([300, 350, 400, 450, 500])},
-        {"tipo": "calibre", "titulo": "Arma certa, abate limpo"},
-        {"tipo": "atrair", "titulo": "Chamando o bicho"},
-        {"tipo": "nao_detectado", "titulo": "Fantasma do mato"},
-        {"tipo": "genetica", "titulo": "Troféu de colecionador", "genetica": random.choice([0.55, 0.6, 0.7])},
-        {"tipo": "sem_torre", "titulo": "Pé-ante-pé"},
-        {"tipo": "marcar", "titulo": "Censo da fauna", "meta": random.choice([4, 6, 8])},
-    ]
-    if vistos:
-        g = random.choice(vistos)
-        opcoes.append({"tipo": "abater_grupo", "titulo": f"Praga de {nome_grupo(g).lower()}", "grupo": g,
-                       "meta": random.choice([1, 2, 3])})
-    if nao_desc:
-        p = random.choice(nao_desc)
-        opcoes.append({"tipo": "visitar", "titulo": f"Conferir {p['nome'].lower()}", "poi_hash": p["hash"]})
-    m = random.choice(opcoes)
-    dif = {"abater_qualquer": 350 * m.get("meta", 1),
-           "distancia": {"curta": 500, "media": 900}.get(m.get("faixa"), 1200 + 4 * (m.get("distancia", 300) - 300)),
-           "calibre": 600, "atrair": 900, "nao_detectado": 1100,
-           "genetica": int(3000 * m.get("genetica", 0)), "sem_torre": 700, "marcar": 120 * m.get("meta", 1),
-           "abater_grupo": 450 * m.get("meta", 1), "visitar": 600}[m["tipo"]]
-    m.update({"creditos": dif, "reputacao": max(10, dif // 30), "origem": "local"})
-    if m["tipo"] == "abater_grupo":
-        m["fala"] = TEMPLATE_FALAS["abater_grupo"].format(grupo=nome_grupo(m["grupo"]).lower())
-    return normalizar_missao(m, dados, pois)
 
 
 ARMA_TIPOS = {}   # "ID_Browning_XBolt_EV" -> "rifle" | "espingarda" | "arco" | "curta_arma" (preenchido com jogo_dados.json)
@@ -598,10 +472,8 @@ class Companion:
             if m.get("status") == "concluida" and (m.get("pago") or {}).get("creditos"):
                 m["status"] = "paga"
             m.setdefault("aceita_em", m.get("criada", 0))
-            m.setdefault("fala", TEMPLATE_FALAS.get(m.get("tipo"), ""))
-        self.ollama = ia.Ollama(self.cfg)
+            m.setdefault("fala", "")
         self.gerando = False
-        self.respondendo = False
         self._pois_cache = (None, 0, [])
         self._nevoa_cache = (None, 0, b"")
         self.salvar_pendente = False
@@ -689,19 +561,6 @@ class Companion:
             self._nevoa_cache = (path, mt, mapa.nevoa_png(path))
         return self._nevoa_cache[2]
 
-    def calibres(self):
-        """Tabela oficial do jogo: calibres compatíveis por espécie (só das espécies já vistas, para não pesar)."""
-        tabela = carregar_json(self.caminho("calibres.json"), [])
-        vistas = {m.get("especie") for m in self.dados["marcados"].values()} | {a.get("especie") for a in self.dados["abates"]}
-        vistas.discard(None)
-        saida = {}
-        for linha in tabela:
-            animal = linha.get("animal", "")
-            if not vistas or any(animal and (animal in v or v in animal) for v in vistas):
-                saida[nome_especie(animal) or animal] = {"compativeis": [c.split(".")[-1] for c in linha.get("compativeis", [])],
-                                                         "incompativeis": [c.split(".")[-1] for c in linha.get("incompativeis", [])]}
-        return dict(list(saida.items())[:12])
-
     def info_mapa(self):
         nivel = self.nivel()
         info = carregar_json(self.caminho(f"mapa_{nivel}.json"), {}) if nivel else {}
@@ -768,7 +627,7 @@ class Companion:
                     m.setdefault("pago", {})[ev.get("recurso")] = bool(ev.get("ok"))
                     # o dinheiro é a recompensa principal; a reputação é registrada mas não trava o contrato
                     if m["pago"].get("creditos") and "reputacao" in m["pago"]:
-                        m["status"] = "paga"
+                        m["status"], m["pago_em"] = "paga", time.time()
         return []
 
     def pagar_pendentes(self):
@@ -776,8 +635,23 @@ class Companion:
             return
         hoje = date.today().isoformat()
         dia = self.dados["pagamentos_dia"]
+        agora = time.time()
         for m in self.dados["missoes"]:
-            if m["status"] != "concluida" or m.get("enviado"):
+            if m["status"] != "concluida":
+                continue
+            if m.get("enviado"):
+                # sem confirmação do jogo (ex.: o jogo fechou antes de ler o comando): manda de novo
+                pago = m.get("pago") or {}
+                if agora - m["enviado"] > 60 and not pago.get("creditos"):
+                    if m.get("tentativas", 1) >= 3:
+                        m["status"], m["pago_em"], m["sem_confirmacao"] = "paga", agora, True
+                        continue
+                    m["tentativas"] = m.get("tentativas", 1) + 1
+                    linhas = [f"add_credits {m.get('creditos_pagos', 0)} {m['id']}"] if m.get("creditos_pagos") else []
+                    if "reputacao" not in pago:
+                        linhas.append(f"add_rep {m['reputacao']} {m['id']}")
+                    if linhas and self.enviar_comando(linhas):
+                        m["enviado"] = agora
                 continue
             pago_hoje = dia.get(hoje, 0)
             cred = min(m["creditos"], max(0, self.cfg["limite_diario_creditos"] - pago_hoje))
@@ -805,46 +679,6 @@ class Companion:
         self.gerando = True
         threading.Thread(target=self._gerar_ofertas, args=(faltam,), daemon=True).start()
 
-    def contexto(self, curto=False):
-        st = self.estado
-        pos = st.get("pos")
-        rep = next((r for r in st.get("reputacao", []) or [] if self.nivel() and self.nivel() in (r.get("mapa") or "")), None)
-        pois = self.pois()
-        for p in pois:
-            p["_d"] = distancia_m(pos, p) or 0
-        nao_desc = sorted((p for p in pois if not p["descoberto"]), key=lambda p: p["_d"])[:12]
-        desc = sorted((p for p in pois if p["descoberto"] and p["categoria"] in ("lugar", "torre", "acampamento")),
-                      key=lambda p: p["_d"])[:8]
-        ctx = {
-            "reserva": "Texas" if "Texas" in (self.nivel() or "") else ("Colorado" if "Colorado" in (self.nivel() or "") else self.nivel()),
-            "creditos": (st.get("moedas") or {}).get("Currency.Credits"),
-            "reputacao": rep and rep.get("valor"),
-            "grupos_disponiveis": {g: nome_grupo(g) for g in self.dados["grupos_vistos"] if g != "outro"},
-            "animais_marcados_recentes": [
-                {"especie": m.get("especie_nome"), "grupo": m.get("grupo"), "sexo": m.get("sexo_nome"),
-                 "genetica": round(m.get("genetica") or 0, 2)} for m in list(self.dados["marcados"].values())[-8:]],
-            "ultimos_abates": [{"especie": a.get("especie_nome"), "distancia_m": round(a.get("distancia_m") or 0),
-                                "arma": a.get("arma"), "municao": a.get("municao")} for a in self.dados["abates"][-5:]],
-            "missoes_ativas": [m["titulo"] for m in self.por_status("ativa")],
-            "municoes_usadas": sorted({f"{a.get('municao')} ({a.get('calibre')})" for a in self.dados["abates"][-20:] if a.get("municao")}),
-        }
-        cal = self.calibres()
-        if cal:
-            ctx["calibres_por_especie"] = cal
-        try:
-            arm = extras.armario(self.catalogo(), self.equipamento(), self.tabela_calibres(), nome_especie, self.dados["abates"])
-            ctx["mochila_atual"] = [f"{i['nome']}" + (f" ({i['calibre']})" if i.get("calibre") else "") for i in arm["mochila"]]
-            lj = extras.loja(self.catalogo(), self.equipamento())
-            ctx["roupa_atual"] = [f"{i['nome']} (camuflagem {i['camuflagem']}/100)" for i in lj["vestidos"]]
-            if lj.get("deteccao"):
-                ctx["percepcao_dos_animais_agora"] = {k: f"{round(v * 100)}%" for k, v in lj["deteccao"].items() if k != "na_estrutura"}
-        except Exception:
-            pass
-        if not curto:
-            ctx["pontos_nao_descobertos"] = [{"hash": p["hash"], "nome": p["nome"], "distancia_m": round(p["_d"])} for p in nao_desc]
-            ctx["pontos_descobertos_proximos"] = [{"hash": p["hash"], "nome": p["nome"], "distancia_m": round(p["_d"])} for p in desc]
-        return ctx
-
     def info_gerador(self):
         """Espécies que vivem na reserva atual e tipos de arma que você tem (para o gerador de contratos)."""
         dados = self.cache.json(self.caminho("jogo_dados.json"), None) or {}
@@ -867,32 +701,13 @@ class Companion:
 
     def _gerar_ofertas(self, n):
         try:
-            novas = []
-            if self.cfg.get("usar_ia") and self.ollama.verificar():
-                try:
-                    with self.lock:
-                        ctx = self.contexto()
-                    for m in ia.gerar_missoes(self.ollama, ctx, n):
-                        with self.lock:
-                            nm = normalizar_missao(dict(m, origem="ia"), self.dados, self.pois())
-                        if nm:
-                            novas.append(nm)
-                except Exception as e:
-                    print("IA falhou ao gerar missões:", e)
-            if len(novas) < n:
-                grupos, armas = self.info_gerador()
-                with self.lock:
-                    novas += missoes.gerar(self.dados, self.pois(), nome_grupo, grupos, armas, n - len(novas))
-            tentativas = 0
-            while len(novas) < n and tentativas < 20:
-                tentativas += 1
-                with self.lock:
-                    nm = gerar_missao_local(self.dados, self.pois())
-                if nm:
-                    novas.append(nm)
+            grupos, armas = self.info_gerador()
             with self.lock:
+                novas = missoes.gerar(self.dados, self.pois(), nome_grupo, grupos, armas, n)
                 self.dados["missoes"].extend(novas[:n])
                 self.salvar_pendente = True
+        except Exception as e:
+            print("erro ao gerar contratos:", e)
         finally:
             self.gerando = False
 
@@ -941,35 +756,16 @@ class Companion:
         self.salvar_pendente = True
         return {"ok": True}
 
-    # --- chat com o NPC
+    # --- dicas do Earl (respostas prontas, sem IA)
     def conversar(self, texto):
-        texto = (texto or "").strip()[:800]
+        texto = (texto or "").strip()[:300]
         if not texto:
             return {"ok": False}
+        resposta = missoes.dica(texto)
         with self.lock:
-            self.dados["chat"].append({"role": "user", "content": texto, "ts": time.time()})
-            historico = [{"role": c["role"], "content": c["content"]} for c in self.dados["chat"][-12:-1]]
-            ctx = self.contexto(curto=True)
-        if not self.cfg.get("usar_ia"):
-            resposta = missoes.dica(texto)
-            with self.lock:
-                self.dados["chat"] = (self.dados["chat"] + [{"role": "assistant", "content": resposta, "ts": time.time()}])[-40:]
-                self.salvar_pendente = True
-            return {"ok": True, "resposta": resposta}
-        self.respondendo = True
-        try:
-            resposta = ia.conversar(self.ollama, historico, texto, ctx)
-        except Exception as e:
-            if "memória" in str(e):
-                resposta = ("(O Velho Earl não pode responder agora: o PC está com pouca memória livre e a IA "
-                            "poderia fechar o jogo. Feche outros programas ou pergunte de novo depois.)")
-            else:
-                resposta = ("(O Velho Earl está sem rádio agora: abra o Ollama no seu PC para ele responder.) "
-                            "Enquanto isso, lembre: contra o vento, devagar, e tiro só com o bicho de lado.")
-        finally:
-            self.respondendo = False
-        with self.lock:
-            self.dados["chat"] = (self.dados["chat"] + [{"role": "assistant", "content": resposta, "ts": time.time()}])[-40:]
+            agora = time.time()
+            self.dados["chat"] = (self.dados["chat"] + [{"role": "user", "content": texto, "ts": agora},
+                                                        {"role": "assistant", "content": resposta, "ts": agora}])[-40:]
             self.salvar_pendente = True
         return {"ok": True, "resposta": resposta}
 
@@ -1005,7 +801,7 @@ class Companion:
         return {"ok": True}
 
     def configurar(self, chave, valor):
-        if chave in ("voltar_ao_ultimo_local", "ollama_usar_gpu", "contratos_no_jogo"):
+        if chave in ("voltar_ao_ultimo_local", "contratos_no_jogo"):
             self.cfg[chave] = bool(valor)
             salvar_json(CONFIG_PATH, self.cfg)
             return {"ok": True}
@@ -1020,10 +816,6 @@ class Companion:
 
     def tabela_calibres(self):
         return self.cache.json(self.caminho("calibres.json"), [])
-
-    def dados_armario(self):
-        with self.lock:
-            return extras.armario(self.catalogo(), self.equipamento(), self.tabela_calibres(), nome_especie, self.dados["abates"])
 
     # --- mochila
     # --- contratos do próprio jogo (lidos pelo mod em contratos_jogo.json)
@@ -1154,8 +946,7 @@ class Companion:
             if dados:
                 return extras.enciclopedia_jogo(dados, self.tabela_calibres(), self.equipamento(), self.dados["abates"],
                                                 self.dados["especies_vistas"], nome_especie, grupo_de)
-            return {"pronto": False, "fichas": extras.enciclopedia(self.tabela_calibres(), self.dados["abates"], self.dados["especies_vistas"],
-                                       nome_especie, grupo_de)}
+            return {"pronto": False}
 
     def comprar(self, id_):
         with self.lock:
@@ -1283,7 +1074,7 @@ class Companion:
                 rastreados.append(item)
             rastreados.sort(key=lambda x: x["distancia_m"] if x["distancia_m"] is not None else 1e9)
             rep = next((r for r in st.get("reputacao", []) or [] if self.nivel() and self.nivel() in (r.get("mapa") or "")), None)
-            missoes = self.dados["missoes"]
+            lista = self.dados["missoes"]
             return {
                 "versao": VERSAO,
                 "atualizacao": ATUALIZADOR.info() if ATUALIZADOR else None,
@@ -1294,24 +1085,20 @@ class Companion:
                 "mapa": self.info_mapa(),
                 "pino_app": self.dados.get("pino_app"),
                 "rastreados": rastreados,
-                "ofertas": [m for m in missoes if m["status"] == "oferta"],
-                "ativas": [m for m in missoes if m["status"] == "ativa"],
+                "ofertas": [m for m in lista if m["status"] == "oferta"],
+                "ativas": [m for m in lista if m["status"] == "ativa"],
                 "contratos_jogo": self.contratos_jogo(),
-                "finalizadas": [m for m in missoes if m["status"] in ("concluida", "paga")][-8:][::-1],
+                "finalizadas": [m for m in lista if m["status"] in ("concluida", "paga")][-8:][::-1],
                 "gerando": self.gerando,
                 "abates": self.dados["abates"][-30:][::-1],
                 "estatisticas": self.estatisticas(),
-                "npc": ia.NPC,
-                "patente": extras.patente(self.dados["abates"], missoes),
+                "npc": missoes.NPC,
+                "patente": extras.patente(self.dados["abates"], lista),
                 "aviso_teleporte": self.aviso_teleporte,
                 "config": {"voltar_ao_ultimo_local": self.cfg.get("voltar_ao_ultimo_local"),
-                           "ollama_usar_gpu": self.cfg.get("ollama_usar_gpu"),
                            "contratos_no_jogo": self.cfg.get("contratos_no_jogo", True)},
                 "tem_local_salvo": bool(getattr(self, "anterior", None)),
-                "ollama": self.ollama.status(),
-                "usar_ia": bool(self.cfg.get("usar_ia")),
                 "chat": [{"role": c["role"], "content": c["content"]} for c in self.dados["chat"][-20:]],
-                "respondendo": self.respondendo,
                 "pasta_mod": self.cfg["pasta_mod"],
                 "pasta_mod_existe": os.path.isdir(self.cfg["pasta_mod"]),
             }
@@ -1352,16 +1139,27 @@ def iniciar_nova_instancia(exe, args):
         subprocess.Popen([exe] + args, env=env, creationflags=flags, close_fds=True, cwd=os.path.dirname(exe))
 
 
-def limpar_antigos():
+def _apagar(pasta, teste):
     try:
-        for nome in os.listdir(BASE_DIR):
-            if nome.endswith(".old"):
+        for nome in os.listdir(pasta):
+            if teste(nome):
                 try:
-                    os.remove(os.path.join(BASE_DIR, nome))
+                    os.remove(os.path.join(pasta, nome))
                 except OSError:
                     pass
     except OSError:
         pass
+
+
+def limpar_antigos(pasta_mod=None):
+    """Apaga sobras de versões antigas: executáveis velhos e arquivos que o mod não usa mais."""
+    _apagar(BASE_DIR, lambda n: n.endswith(".old") or n in ("HS3Companion_novo.exe", "ATUALIZAR.cmd"))
+    copia = os.path.join(BASE_DIR, "HS3Discovery")   # cópia do mod que sobra ao extrair o zip à mão
+    if os.path.isfile(os.path.join(copia, "Scripts", "main.lua")) and os.path.normcase(os.path.abspath(copia)) != os.path.normcase(os.path.abspath(pasta_mod or "")):
+        shutil.rmtree(copia, ignore_errors=True)
+    if pasta_mod and os.path.isdir(pasta_mod):
+        # catálogo antigo (v1) e exportações feitas no acampamento (Hub não é reserva)
+        _apagar(pasta_mod, lambda n: n == "catalogo.json" or "_L_Hub." in n or n.endswith(".tmp"))
 
 
 def porta_em_uso(porta):
@@ -1410,8 +1208,6 @@ class Handler(BaseHTTPRequestHandler):
             q = urllib.parse.parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
             ids = [x for x in (q.get("missoes", [""])[0]).split(",") if x]
             return self.responder(200, APP.dados_mochila(ids))
-        if caminho == "/api/armario":
-            return self.responder(200, APP.dados_armario())
         if caminho == "/api/loja":
             return self.responder(200, APP.dados_loja())
         if caminho == "/api/enciclopedia":
@@ -1516,6 +1312,7 @@ def main():
         abrir_janela(url)
         return
     APP = Companion()
+    limpar_antigos(APP.cfg.get("pasta_mod"))
     ATUALIZADOR = Atualizador(APP.cfg)
     threading.Thread(target=ATUALIZADOR.loop, daemon=True).start()
     porta = APP.cfg["porta"]

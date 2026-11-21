@@ -224,15 +224,14 @@ async function acao(tipo, id) {
 }
 
 // ------------------------------------------------------------------ chat
-let chatQtd = -1, chatPendente = false;
+let chatQtd = -1;
 function renderChat(d) {
   const msgs = d.chat || [];
-  if (msgs.length === chatQtd && chatPendente === d.respondendo) return;
-  chatQtd = msgs.length; chatPendente = d.respondendo;
+  if (msgs.length === chatQtd) return;
+  chatQtd = msgs.length;
   const log = $("chat-log");
   log.innerHTML = (msgs.length ? "" : `<div class="msg assistant">Pergunte sobre vento, calibre, chamador, distância, roupa ou uma espécie (cervo, javali, pato, peru…) que eu te dou a dica, rapaz.</div>`)
-    + msgs.map(m => `<div class="msg ${m.role}">${esc(m.content)}</div>`).join("")
-    + (d.respondendo ? `<div class="msg assistant pensando">Earl está pensando…</div>` : "");
+    + msgs.map(m => `<div class="msg ${m.role === "user" ? "user" : "assistant"}">${esc(m.content)}</div>`).join("");
   log.scrollTop = log.scrollHeight;
 }
 $("chat-form").onsubmit = async (e) => {
@@ -241,7 +240,6 @@ $("chat-form").onsubmit = async (e) => {
   if (!t) return;
   $("chat-txt").value = "";
   post("/api/chat", { texto: t }).then(atualizar);
-  setTimeout(atualizar, 300);
 };
 
 // ------------------------------------------------------------------ atualização do programa
@@ -333,9 +331,7 @@ async function atualizar() {
   $("npc-nome").textContent = npc.nome;
   $("npc-funcao").textContent = npc.funcao;
   $("npc-frase").textContent = "“" + npc.frase + "”";
-  $("npc-apelido").textContent = npc.apelido;
   renderOfertas(d); renderAtivas(d); renderChat(d);
-  $("ollama-status").textContent = !d.usar_ia ? "Dicas prontas do Earl, sem IA: não usa memória do PC." : d.ollama.ok ? `IA: ${d.ollama.modelo}` : `IA desligada: ${d.ollama.erro || "Ollama não encontrado"} (contratos simples continuam funcionando)`;
 
   // telemetria
   const prox = (d.rastreados || []).find(a => a.distancia_m !== null);
@@ -392,14 +388,6 @@ async function voltarAgora() { const r = await post("/api/voltar"); if (!r.ok) m
 
 function barraStat(nome, v) {
   return `<div class="st"><span>${nome}</span><span class="b"><i style="width:${Math.max(0, Math.min(100, v))}%"></i></span><b>${Math.round(v)}</b></div>`;
-}
-
-function cartaoItem(i) {
-  const tags = [i.rotulo && `<span class="item-tag cinza">${esc(i.rotulo)}</span>`, i.calibre && `<span class="item-tag latao">${esc(i.calibre)}</span>`,
-    (i.cargas > 1) && `<span class="item-tag">×${i.cargas}</span>`].filter(Boolean).join("");
-  const esp = i.especies && i.especies.length ? `<div class="item-sub">Serve para: ${esc(i.especies.slice(0, 8).join(", "))}${i.especies.length > 8 ? "…" : ""}</div>` : "";
-  return `<div class="item"><div class="item-nome">${esc(i.nome)}</div><div>${tags}</div>${esp}
-    ${i.marca ? `<div class="item-sub">${esc(i.marca)}</div>` : ""}</div>`;
 }
 
 // ---------------------------------------------------------------- Mochila
@@ -574,7 +562,8 @@ function moEscolher(tipo, idx) {
       <span class="mo-opcao-sub">${ja ? "já está na mochila" : esc(i.motivo || i.grupo)}</span>${i.serve && !ja ? `<span class="mo-selo sim">✔ serve</span>` : ""}
     </button>`;
   };
-  const servem = lista.filter(i => i.serve), outros = lista.filter(i => !i.serve);
+  const porUso = (a, b) => naMochila.has(a.item) - naMochila.has(b.item);   // o que já está na mochila vai para o fim
+  const servem = lista.filter(i => i.serve).sort(porUso), outros = lista.filter(i => !i.serve).sort(porUso);
   moModal(`<header class="mo-jan-topo"><div><h3>Escolher ${T.classe === "armas" ? "arma" : T.classe === "gps" ? "GPS" : "equipamento"}</h3>
       <small>${T.nome} · espaço ${idx + 1}${atual ? ` · hoje: ${esc(atual.nome)}` : ""}</small></div>
       <input class="mo-busca" placeholder="Procurar…" oninput="moFiltrar(this.value)"><button class="mo-x" onclick="moFecharModal()">✕</button></header>

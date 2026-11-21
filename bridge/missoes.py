@@ -9,6 +9,15 @@ import random
 import time
 import uuid
 
+NPC = {
+    "id": "earl",
+    "nome": "Earl Whitaker",
+    "apelido": "Velho Earl",
+    "funcao": "Guia de caça e contratador da região",
+    "retrato": "/img/npc_earl.png",
+    "frase": "O vento não mente, garoto. Quem mente é caçador apressado.",
+}
+
 ESTADOS_CALMOS = {1, 2, 4, 256, 512}   # parado, vagando, andando, comendo, dormindo
 
 # dificuldade (créditos por animal) de cada grupo
@@ -113,7 +122,8 @@ FAIXAS = {"curta": [(10, 40), (15, 50), (20, 50)], "media": [(80, 150), (100, 20
 
 
 def _g(nome):
-    return nome.lower()
+    """'Pato / marreca' -> 'pato' (texto mais natural nos contratos)."""
+    return nome.split(" / ")[0].lower()
 
 
 def _arma_tipo(tipo):
@@ -221,7 +231,7 @@ def _um(grupos, pois, nome_grupo, armas_tipos):
     elif forma == "variedade":
         titulo = random.choice(TITULOS_VARIEDADE)
     elif grupo:
-        titulo = random.choice(TITULOS_GRUPO).format(g=nome, G=nome_grupo(grupo))
+        titulo = random.choice(TITULOS_GRUPO).format(g=nome, G=nome[:1].upper() + nome[1:])
     else:
         titulo = random.choice(TITULOS_QUALQUER)
     fala = " ".join(x for x in [
