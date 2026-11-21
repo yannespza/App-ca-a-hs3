@@ -177,6 +177,20 @@ local function giveCredits(amount, ref)
     emit("recompensa", { recurso = "creditos", valor = amount, ok = success, antes = before, depois = after, ref = ref, erro = (not ok) and tostring(err) or nil })
 end
 
+local function repSalva(mapaCurto)
+    -- reputação gravada no save (por mapa) para o vendedor
+    local chunk = FindFirstOf("HS3ReputationSaveSlotChunk")
+    local alvo
+    chunk.ReputationSaveDataPerMap:ForEach(function(k, v)
+        if k:get().PrimaryAssetName:ToString():find(mapaCurto, 1, true) then
+            v:get().ReputationPerVendor:ForEach(function(vk, vv)
+                if tagName(vk:get()) == VENDOR then alvo = vv:get() end
+            end)
+        end
+    end)
+    return alvo
+end
+
 local function giveReputation(amount, ref)
     local rm = FindFirstOf("HS3PlayerControllerComponent_ReputationManager")
     local tag = { TagName = FName(VENDOR) }
@@ -184,9 +198,21 @@ local function giveReputation(amount, ref)
     pcall(function() before = rm:GetReputationForVendor(tag) end)
     local ok, err = pcall(function() rm:Client_AddReputationForVendor(tag, amount) end)
     pcall(function() after = rm:GetReputationForVendor(tag) end)
-    local success = ok and before ~= nil and after ~= nil and after > before
-    log(string.format("add_rep %d: %s (%s -> %s)", amount, success and "OK" or "FALHOU", tostring(before), tostring(after)))
-    emit("recompensa", { recurso = "reputacao", valor = amount, ok = success, antes = before, depois = after, ref = ref, erro = (not ok) and tostring(err) or nil })
+    local metodo = "oficial"
+    if not (before and after and after > before) then
+        -- plano B: escreve direto na reputação salva do mapa atual (o jogo grava no save normalmente)
+        local okB, errB = pcall(function()
+            local mapa = FindFirstOf("HS3PlayerController").Pawn:GetFullName():match("/([^/%.]+)%.")
+            local d = repSalva(mapa)
+            d.Reputation = d.Reputation + amount
+        end)
+        pcall(function() after = rm:GetReputationForVendor(tag) end)
+        metodo = "direto"
+        if not okB then err = errB end
+    end
+    local success = before ~= nil and after ~= nil and after > before
+    log(string.format("add_rep %d (%s): %s (%s -> %s)", amount, metodo, success and "OK" or "FALHOU", tostring(before), tostring(after)))
+    emit("recompensa", { recurso = "reputacao", valor = amount, ok = success, antes = before, depois = after, ref = ref, erro = (not success) and tostring(err) or nil })
 end
 
 ------------------------------------------------------------------ eventos: binóculo
@@ -430,7 +456,8 @@ local function periodic()
         pcall(exportPois); pcall(exportFog); pcall(exportCalibres)
     end
     if ticks % 5 == 0 then pcall(writeAnimals) end
-    if ticks % 60 == 0 then pcall(exportPois); pcall(exportFog) end
+    if ticks % 60 == 0 then pcall(exportPois) end
+    if ticks % 180 == 0 then pcall(exportFog) end   -- névoa a cada 3 min (leitura mais pesada)
 end
 
 -- utilidades disponíveis para scripts de desenvolvimento (pasta dev\)

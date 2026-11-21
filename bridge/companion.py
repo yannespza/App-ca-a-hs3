@@ -60,6 +60,7 @@ CONFIG_PADRAO = {
     "ofertas": 3,
     "ollama_url": "http://localhost:11434",
     "ollama_modelo": "",
+    "ollama_usar_gpu": False,
     "limite_diario_creditos": 20000,
     "github_token": "",
 }
@@ -478,6 +479,8 @@ class Companion:
             d.setdefault(chave, padrao)
         # missões da versão antiga continuam valendo como ativas
         for m in d["missoes"]:
+            if m.get("status") == "concluida" and (m.get("pago") or {}).get("creditos"):
+                m["status"] = "paga"
             m.setdefault("aceita_em", m.get("criada", 0))
             m.setdefault("fala", TEMPLATE_FALAS.get(m.get("tipo"), ""))
         self.ollama = ia.Ollama(self.cfg)
@@ -635,7 +638,8 @@ class Companion:
             for m in d["missoes"]:
                 if m["id"] == ev.get("ref"):
                     m.setdefault("pago", {})[ev.get("recurso")] = bool(ev.get("ok"))
-                    if all(m["pago"].get(r) for r in ("creditos", "reputacao")):
+                    # o dinheiro é a recompensa principal; a reputação é registrada mas não trava o contrato
+                    if m["pago"].get("creditos") and "reputacao" in m["pago"]:
                         m["status"] = "paga"
         return []
 

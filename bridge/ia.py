@@ -118,11 +118,14 @@ class Ollama:
     def status(self):
         return {"ok": self.ok, "modelo": self.modelo, "erro": self.erro}
 
-    def chat(self, mensagens, formato_json=False, temperatura=0.8, timeout=180):
+    def chat(self, mensagens, formato_json=False, temperatura=0.8, timeout=420, max_tokens=700):
         if not self.verificar():
             raise RuntimeError(self.erro or "Ollama indisponível")
         corpo = {"model": self.modelo, "messages": mensagens, "stream": False,
-                 "options": {"temperature": temperatura, "num_ctx": 8192}}
+                 "keep_alive": "3m", "options": {"temperature": temperatura, "num_ctx": 6144, "num_predict": max_tokens}}
+        if not self.cfg.get("ollama_usar_gpu"):
+            # por padrão a IA roda no processador para não disputar a placa de vídeo com o jogo
+            corpo["options"]["num_gpu"] = 0
         if formato_json:
             corpo["format"] = "json"
         req = urllib.request.Request(self._url("/api/chat"), data=json.dumps(corpo).encode("utf-8"),
@@ -163,7 +166,7 @@ Regras:
     usuario = "Contexto do jogador (JSON):\n" + json.dumps(contexto, ensure_ascii=False) + \
               f"\n\nCrie {quantidade} contratos diferentes."
     texto = ollama.chat([{"role": "system", "content": sistema}, {"role": "user", "content": usuario}],
-                        formato_json=True, temperatura=0.9)
+                        formato_json=True, temperatura=0.9, max_tokens=1200)
     dados = json.loads(texto)
     return dados.get("missoes", dados if isinstance(dados, list) else [])
 
@@ -172,4 +175,4 @@ def conversar(ollama, historico, pergunta, contexto):
     sistema = PERSONA + "\n\n" + REGRAS_JOGO + "\n\nSituação atual do caçador (use se for útil):\n" + \
         json.dumps(contexto, ensure_ascii=False)
     msgs = [{"role": "system", "content": sistema}] + historico[-10:] + [{"role": "user", "content": pergunta}]
-    return ollama.chat(msgs, temperatura=0.7).strip()
+    return ollama.chat(msgs, temperatura=0.7, max_tokens=450).strip()

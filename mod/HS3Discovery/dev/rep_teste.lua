@@ -1,0 +1,25 @@
+local out = {}
+local function add(k, v) out[#out+1] = k .. ": " .. tostring(v) end
+local rm = FindFirstOf("HS3PlayerControllerComponent_ReputationManager")
+local tag = { TagName = FName("NPC.Vendor.SportsShooter") }
+pcall(function() add("rep", rm:GetReputationForVendor(tag)) end)
+pcall(function() add("nivel", rm:GetReputationLevelForVendor(tag)) end)
+pcall(function() add("progresso", rm:GetReputationProgressForVendor(tag)) end)
+pcall(function() add("streak", rm:GetReputationStreakForVendor(tag)) end)
+local cm = FindFirstOf("HS3PlayerStateComponent_ContractManager")
+pcall(function() add("todos_contratos_rep_ok", cm:HasCompletedAllCurrentReputationContractForVendor(tag)) end)
+local ok, e = pcall(function() rm:Client_AddReputationForVendor(tag, 10) end)
+add("add10", ok and "ok" or e)
+pcall(function() add("rep_depois", rm:GetReputationForVendor(tag)) end)
+local ds = FindFirstOf("HS3ContractDeveloperSettings") or StaticFindObject("/Script/HS3CoreRuntime.Default__HS3ContractDeveloperSettings")
+pcall(function()
+    ds.ReputationLevelDefinitions:ForEach(function(i, e)
+        local d = e:get()
+        add("nivel_def", d.ReputationLevel .. " req=" .. tostring(d.RequiredReputation or d.ReputationRequired or "?"))
+    end)
+end)
+pcall(function() add("req_nivel2", ds:GetRequiredReputationAmountForLevel(2)) end)
+pcall(function() add("req_nivel3", ds:GetRequiredReputationAmountForLevel(3)) end)
+pcall(function() add("nivel_de_230", ds:GetLevelForReputationAmount(230)) end)
+local f = io.open(HS3.dir .. "dev\\resultado_rep.txt", "w"); f:write(table.concat(out, "\n")); f:close()
+return #out
