@@ -227,7 +227,7 @@ $("chat-form").onsubmit = async (e) => {
 };
 
 // ------------------------------------------------------------------ atualização do programa
-let ultimaAtualizacao = null, atualizando = false;
+let ultimaAtualizacao = null, atualizando = false, versaoAntes = null;
 function mostrarAtualizacao(a, versao) {
   ultimaAtualizacao = a;
   $("versao").textContent = "v" + versao;
@@ -243,7 +243,7 @@ async function clicarAtualizar() {
   const a = ultimaAtualizacao;
   if (a && a.disponivel) {
     if (!confirm(`Atualizar para a versão ${a.nova}?\n\nO programa reinicia sozinho em alguns segundos. A parte do mod vale na próxima vez que você abrir o jogo.`)) return;
-    atualizando = true;
+    atualizando = true; versaoAntes = ultimoEstado && ultimoEstado.versao;
     await post("/api/atualizar");
   } else {
     $("btn-atualizar").textContent = "Verificando…";
@@ -274,7 +274,7 @@ async function atualizar() {
     $("conexao-txt").textContent = atualizando ? "Atualizando, aguarde…" : "HS3Companion.exe fechado";
     return;
   }
-  if (atualizando && d.atualizacao && d.atualizacao.estado === "parado" && !d.atualizacao.disponivel) { location.reload(); return; }
+  if (atualizando && versaoAntes && d.versao !== versaoAntes) { location.reload(); return; }
   ultimoEstado = d;
   mostrarAtualizacao(d.atualizacao, d.versao);
   const st = d.estado || {};
