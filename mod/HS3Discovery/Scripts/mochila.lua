@@ -128,6 +128,23 @@ function M.municao(ctx, armaLoja, municaoLoja)
     ctx.emit("mochila", { acao = "municao", arma = armaLoja, municao = municaoLoja })
 end
 
+-- acessório (mira, silenciador, freio de boca, bipé): montar usa a mesma função da munição
+function M.acessorio(ctx, armaLoja, acessorioLoja)
+    if not M.pronto() then ctx.log("mochila: fora da reserva, ignorado"); return end
+    local ch = chunkArmas(); if not ch then ctx.log("acessório: sem dados de armas"); return end
+    ctx.log("acessório: " .. armaLoja .. " <- " .. acessorioLoja)
+    ch:UpdateAttachmentForWeapon(id("HS3StoreItemAsset", armaLoja), id("HS3StoreItemAsset", acessorioLoja))
+    ctx.emit("mochila", { acao = "acessorio", arma = armaLoja, acessorio = acessorioLoja })
+end
+
+function M.tirarAcessorio(ctx, armaLoja, acessorioLoja)
+    if not M.pronto() then ctx.log("mochila: fora da reserva, ignorado"); return end
+    local ch = chunkArmas(); if not ch then ctx.log("acessório: sem dados de armas"); return end
+    ctx.log("acessório: tirando " .. acessorioLoja .. " de " .. armaLoja)
+    ch:RemoveAttachmentForWeaponId(id("HS3StoreItemAsset", armaLoja), id("HS3StoreItemAsset", acessorioLoja))
+    ctx.emit("mochila", { acao = "tirar_acessorio", arma = armaLoja, acessorio = acessorioLoja })
+end
+
 -- grava no save do jogo e relê (chamado uma vez no fim de uma série de trocas)
 function M.salvar(ctx)
     if not M.pronto() then return end

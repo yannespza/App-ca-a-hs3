@@ -63,6 +63,25 @@ Atrair o animal:
 - Patos respondem a chamarizes e decoys perto da água; perus a chamadas de acasalamento; cervos a chamadas de grunhido."""
 
 
+def memoria_livre():
+    """Memória RAM livre no Windows (bytes), ou None se não der para saber."""
+    try:
+        import ctypes
+
+        class MEMORYSTATUSEX(ctypes.Structure):
+            _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong), ("ullTotalPhys", ctypes.c_ulonglong),
+                        ("ullAvailPhys", ctypes.c_ulonglong), ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                        ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong), ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+        st = MEMORYSTATUSEX()
+        st.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+        if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(st)):
+            return None
+        # o que ainda cabe: RAM livre e o que sobra do limite (RAM + arquivo de paginação)
+        return min(st.ullAvailPhys + 512 * 1024 ** 2, st.ullAvailPageFile)
+    except Exception:
+        return None
+
+
 class Ollama:
     def __init__(self, cfg):
         self.cfg = cfg
@@ -81,7 +100,9 @@ class Ollama:
         self.verificado_em = time.time()
         try:
             with urllib.request.urlopen(self._url("/api/tags"), timeout=3) as r:
-                modelos = [m["name"] for m in json.load(r).get("models", [])]
+                lista = json.load(r).get("models", [])
+                modelos = [m["name"] for m in lista]
+                self.tamanhos = {m["name"]: int(m.get("size") or 0) for m in lista}
             pedido = self.cfg.get("ollama_modelo") or ""
             if pedido and any(m == pedido or m.startswith(pedido + ":") for m in modelos):
                 self.modelo = next(m for m in modelos if m == pedido or m.startswith(pedido + ":"))
@@ -121,8 +142,15 @@ class Ollama:
     def chat(self, mensagens, formato_json=False, temperatura=0.8, timeout=420, max_tokens=700):
         if not self.verificar():
             raise RuntimeError(self.erro or "Ollama indisponível")
+        # O jogo já usa muita memória: a IA só roda se couber com folga (senão o jogo fecha por falta de memória).
+        livre = memoria_livre()
+        precisa = getattr(self, "tamanhos", {}).get(self.modelo, 5 * 1024 ** 3) + int(2.5 * 1024 ** 3)
+        if livre is not None and livre < precisa:
+            self.erro = f"IA pausada: pouca memória livre ({livre / 1024 ** 3:.1f} GB). Contratos simples continuam."
+            raise RuntimeError(self.erro)
         corpo = {"model": self.modelo, "messages": mensagens, "stream": False,
-                 "keep_alive": "3m", "options": {"temperature": temperatura, "num_ctx": 6144, "num_predict": max_tokens}}
+                 # descarrega o modelo logo depois de responder, para devolver a memória ao jogo
+                 "keep_alive": "10s", "options": {"temperature": temperatura, "num_ctx": 4096, "num_predict": max_tokens}}
         if not self.cfg.get("ollama_usar_gpu"):
             # por padrão a IA roda no processador para não disputar a placa de vídeo com o jogo
             corpo["options"]["num_gpu"] = 0

@@ -639,6 +639,8 @@ local function passoMochila()
         if acao == "por" and p[3] and p[4] and tonumber(p[5]) then mo.por(ctx, p[3], p[4], math.tointeger(tonumber(p[5])) or 0)
         elseif acao == "tirar" and p[3] then mo.tirar(ctx, p[3])
         elseif acao == "municao" and p[3] and p[4] then mo.municao(ctx, p[3], p[4])
+        elseif acao == "acessorio" and p[3] and p[4] and mo.acessorio then mo.acessorio(ctx, p[3], p[4])
+        elseif acao == "tirar_acessorio" and p[3] and p[4] and mo.tirarAcessorio then mo.tirarAcessorio(ctx, p[3], p[4])
         else log("mochila: comando inválido: " .. line) end
     end)
 end

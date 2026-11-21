@@ -556,7 +556,9 @@ def mochila(dados, calibres, equip, lida, missoes, nome_especie, grupo_de, grupo
 
     na_mochila = {i["item"]: i for i in (lida or {}).get("itens", [])} or \
         {m["item"]: {"item": m["item"], "tipo": m.get("tipo"), "idx": None} for m in equip.get("mochila", [])}
-    municao_atual = (lida or {}).get("municao", {})
+    municao_atual = (lida or {}).get("municao") or {}
+    if not isinstance(municao_atual, dict):
+        municao_atual = {}
 
     possuidos = []
     for c in itens:
@@ -607,6 +609,9 @@ def mochila(dados, calibres, equip, lida, missoes, nome_especie, grupo_de, grupo
                 d["serve"], d["motivo"] = False, ""
         possuidos.append(d)
 
+    # acessórios (miras, silenciadores, freios de boca, bipé) que você tem
+    acessorios_seus = [c for c in itens if (c.get("tipo") or "").startswith(PREFIXO_ACESSORIO) and not c["tipo"].endswith(".Ammo")
+                       and c.get("compat") and not c.get("desativado") and (c["id"] in comprados or c.get("padrao"))]
     # munição de cada arma: a que você tem e que serve
     municoes = [p for p in possuidos if p["grupo"] == "Munição"]
     for a in possuidos:
@@ -617,6 +622,7 @@ def mochila(dados, calibres, equip, lida, missoes, nome_especie, grupo_de, grupo
         opcoes = [m for m in municoes if cabe(m.get("calibre"))]
         opcoes.sort(key=lambda m: (not m["serve"], m["nome"]))
         a["municoes"] = [{"id": m["id"], "nome": m["nome"], "serve": m["serve"], "atual": m["id"] == a.get("municao_atual")} for m in opcoes]
+        a["acessorios"] = acessorios_da_arma(por_id.get(a["id"]) or {}, municao_atual.get(a["id"]), acessorios_seus, req, por_id)
 
     # sugestão de mochila
     slots = dict((lida or {}).get("slots") or {})
@@ -659,6 +665,7 @@ def mochila(dados, calibres, equip, lida, missoes, nome_especie, grupo_de, grupo
              "grupo": p["grupo"] if p else None, "id": c.get("id")}
         if p and p["grupo"] == "Armas":
             e["municoes"], e["calibres"], e["municao_atual"] = p.get("municoes", []), p.get("calibres", []), p.get("municao_atual")
+            e["acessorios"] = p.get("acessorios", [])
         mochila_atual.append(e)
     mochila_atual.sort(key=lambda x: (TIPOS_MOCHILA.index(x["tipo"]) if x["tipo"] in TIPOS_MOCHILA else 9, x["idx"] if x["idx"] is not None else 99))
 
@@ -672,6 +679,52 @@ def mochila(dados, calibres, equip, lida, missoes, nome_especie, grupo_de, grupo
         "possuidos": possuidos, "sugestao": sugestao,
         "plano": plano_mochila(sugestao, lida, slots, por_def, possuidos),
     }
+
+
+PREFIXO_ACESSORIO = "Cosmetics.Weapons.Attachments."
+ENCAIXES = [("Cosmetics.Weapons.Attachments.Scope", "Mira"), ("Cosmetics.Weapons.Attachments.FrontBarrel", "Ponta do cano"),
+            ("Cosmetics.Weapons.Attachments.UnderBarrel", "Bipé")]
+
+
+def _zoom_max(nome):
+    m = re.search(r"(\d+(?:[.,]\d+)?)\s*[-–]\s*(\d+)\s*x", nome or "")
+    return int(m.group(2)) if m else 1
+
+
+def acessorios_da_arma(arma, montados, seus, req, por_id):
+    """Encaixes que a arma aceita, o que está montado em cada um e as opções que você tem."""
+    compat = [t for t in (arma.get("compat") or []) if t.startswith(PREFIXO_ACESSORIO)]
+    montados = montados if isinstance(montados, list) else []
+    img = lambda n: f"/api/img/{n}" if n else None
+    saida = []
+    for base, nome in ENCAIXES:
+        aceitos = [t for t in compat if t == base or t.startswith(base + ".")]
+        if not aceitos:
+            continue
+        cabe = lambda c: any(c["tipo"] == t or c["tipo"].startswith(t + ".") for t in aceitos)
+        opcoes = [c for c in seus if cabe(c)]
+        atual = next((m for m in montados if (por_id.get(m) or {}).get("tipo", "").startswith(base)), None)
+        if atual and not any(c["id"] == atual for c in opcoes) and por_id.get(atual):
+            opcoes.append(por_id[atual])          # montado na arma, mesmo que não apareça como comprado
+
+        def recomendado(c):
+            t = c["tipo"]
+            if t.endswith("Suppressor") and "nao_detectado" in req["tipos"]:
+                return "silencia o tiro: bom para não ser percebido"
+            if base.endswith("Scope") and req["dist_min"] >= 200 and _zoom_max(c.get("nome")) >= 12:
+                return f"aumento de até {_zoom_max(c.get('nome'))}x: bom para tiro longo"
+            if t.endswith("Bipod") and req["dist_min"] >= 200:
+                return "apoio firme para tiro longo"
+            return None
+        lista = []
+        for c in sorted(opcoes, key=lambda c: (c["tipo"], _zoom_max(c.get("nome")), c.get("nome") or "")):
+            lista.append({"id": c["id"], "nome": c.get("nome") or c["id"], "imagem": img(c.get("icone")),
+                          "tipo": "Silenciador" if c["tipo"].endswith("Suppressor") else ("Freio de boca" if c["tipo"].endswith("MuzzleBrake")
+                                                                                        else ("Bipé" if "Bipod" in c["tipo"] else "Mira")),
+                          "atual": c["id"] == atual, "recomendado": recomendado(c)})
+        atual_nome = next((o["nome"] for o in lista if o["atual"]), None)
+        saida.append({"encaixe": base, "nome": nome, "atual": atual, "atual_nome": atual_nome, "opcoes": lista})
+    return saida
 
 
 def plano_mochila(sug, lida, slots, por_def, possuidos):

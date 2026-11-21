@@ -900,9 +900,13 @@ class Companion:
         self.respondendo = True
         try:
             resposta = ia.conversar(self.ollama, historico, texto, ctx)
-        except Exception:
-            resposta = ("(O Velho Earl está sem rádio agora: abra o Ollama no seu PC para ele responder.) "
-                        "Enquanto isso, lembre: contra o vento, devagar, e tiro só com o bicho de lado.")
+        except Exception as e:
+            if "memória" in str(e):
+                resposta = ("(O Velho Earl não pode responder agora: o PC está com pouca memória livre e a IA "
+                            "poderia fechar o jogo. Feche outros programas ou pergunte de novo depois.)")
+            else:
+                resposta = ("(O Velho Earl está sem rádio agora: abra o Ollama no seu PC para ele responder.) "
+                            "Enquanto isso, lembre: contra o vento, devagar, e tiro só com o bicho de lado.")
         finally:
             self.respondendo = False
         with self.lock:
@@ -1043,6 +1047,10 @@ class Companion:
             linhas = [f"mochila tirar {corpo['item']}"]
         elif acao == "municao" and ok_id(corpo.get("arma")) and ok_id(corpo.get("municao")):
             linhas = [f"mochila municao {corpo['arma']} {corpo['municao']}"]
+        elif acao == "acessorio" and ok_id(corpo.get("arma")) and ok_id(corpo.get("acessorio")):
+            linhas = [f"mochila acessorio {corpo['arma']} {corpo['acessorio']}"]
+        elif acao == "tirar_acessorio" and ok_id(corpo.get("arma")) and ok_id(corpo.get("acessorio")):
+            linhas = [f"mochila tirar_acessorio {corpo['arma']} {corpo['acessorio']}"]
         elif acao == "montar":
             ids = [str(x) for x in (corpo.get("missoes") or [])] or None
             plano = self.dados_mochila(ids).get("plano") or []

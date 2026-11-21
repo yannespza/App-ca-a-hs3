@@ -486,11 +486,13 @@ async function renderArmario(forcar) {
               ${it.municoes.map(m => `<option value="${esc(m.id)}" ${m.atual ? "selected" : ""}>${m.serve ? "✔" : "✖"} ${esc(m.nome)}</option>`).join("")}
             </select></label>` : `<div class="mo-aviso">Você não tem munição para esta arma</div>`;
       }
+      const aces = (it.acessorios || []).length ? `<div class="mo-aces">${it.acessorios.map(e =>
+          `<span class="${e.atual ? "tem" : ""}"><em>${esc(e.nome)}</em>${e.atual ? esc(e.atual_nome || "montado") : "nada"}</span>`).join("")}</div>` : "";
       cel.push(`<div class="mo-slot ${it.serve ? "serve" : it.serve === false ? "nao" : ""}">
           ${moFoto(it, T.classe === "armas" ? "larga" : "")}
           <div class="mo-slot-info"><div class="mo-slot-nome">${esc(it.nome)}</div>${moSelo(it)}
-            ${it.motivo ? `<small class="mo-motivo">${esc(it.motivo)}</small>` : ""}${mun}${sug}</div>
-          ${pode ? `<div class="mo-slot-botoes"><button onclick="moEscolher('${T.tipo}',${k})">Trocar</button>
+            ${it.motivo ? `<small class="mo-motivo">${esc(it.motivo)}</small>` : ""}${mun}${aces}${sug}</div>
+          ${pode ? `<div class="mo-slot-botoes">${(it.acessorios || []).length ? `<button class="aces" onclick="moAcessorios('${esc(it.item)}')">Acessórios</button>` : ""}<button onclick="moEscolher('${T.tipo}',${k})">Trocar</button>
             <button class="sec" onclick="moAcao({acao:'tirar',item:'${esc(it.item)}'})">Tirar</button></div>` : ""}
         </div>`);
     }
@@ -591,6 +593,28 @@ function moCat(btn, c) {
   moFiltroCat = c;
   btn.parentElement.querySelectorAll("button").forEach(b => b.classList.toggle("on", b === btn));
   moAplicarFiltro();
+}
+function moAcessorios(item) {
+  const a = mochilaDados.mochila.find(x => x.item === item);
+  if (!a) return;
+  const secao = (e) => {
+    const sem = `<button class="mo-opcao ${!e.atual ? "montado" : ""}" ${!e.atual ? "disabled" : `onclick="moAcessorio('${esc(a.id)}','${esc(e.atual)}',true)"`}>
+        <div class="mo-foto"><span class="mo-foto-ini">∅</span></div><span class="mo-opcao-nome">Sem ${esc(e.nome.toLowerCase())}</span>
+        <span class="mo-opcao-sub">${!e.atual ? "assim está agora" : "tira o que está montado"}</span></button>`;
+    return `<h4>${esc(e.nome)} <small>${e.atual ? "montado: " + esc(e.atual_nome || "") : "nada montado"}</small></h4>
+      <div class="mo-opcoes">${sem}${e.opcoes.map(o => `<button class="mo-opcao ${o.atual ? "montado" : ""} ${o.recomendado ? "serve" : ""}"
+          ${o.atual ? "disabled" : `onclick="moAcessorio('${esc(a.id)}','${esc(o.id)}')"`} title="${esc(o.recomendado || "")}">
+        ${moFoto(o)}<span class="mo-opcao-nome">${esc(o.nome)}</span><span class="mo-opcao-sub">${esc(o.tipo)}</span>
+        ${o.atual ? `<span class="mo-selo sim">montado</span>` : o.recomendado ? `<span class="mo-selo rec">recomendado</span>` : ""}</button>`).join("")
+        || `<p class="mo-dica">Você não tem acessórios deste tipo. Compre na loja do jogo.</p>`}</div>`;
+  };
+  moModal(`<header class="mo-jan-topo"><div><h3>Acessórios da arma</h3><small>${esc(a.nome)} · clique para montar; a troca vale no jogo na hora</small></div>
+      <button class="mo-x" onclick="moFecharModal()">✕</button></header>
+    <div class="mo-jan-corpo">${a.acessorios.map(secao).join("")}</div>`);
+}
+function moAcessorio(arma, acessorio, tirar) {
+  moFecharModal();
+  moAcao({ acao: tirar ? "tirar_acessorio" : "acessorio", arma, acessorio });
 }
 function moPor(item, tipo, idx) { moFecharModal(); moAcao({ acao: "por", item, tipo, idx }); }
 
