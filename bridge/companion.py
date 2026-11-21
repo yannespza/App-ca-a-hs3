@@ -21,6 +21,9 @@ import zipfile
 from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import ia
+import mapa
+
 
 # ------------------------------------------------------------------ caminhos
 if getattr(sys, "frozen", False):
@@ -54,6 +57,9 @@ CONFIG_PADRAO = {
     "porta": 8765,
     "abrir_navegador": True,
     "missoes_ativas": 3,
+    "ofertas": 3,
+    "ollama_url": "http://localhost:11434",
+    "ollama_modelo": "",
     "limite_diario_creditos": 20000,
     "github_token": "",
 }
@@ -70,7 +76,7 @@ GRUPOS = [
     ("cervo", "Cervo", ["deer", "cervidae"]),
     ("alce", "Wapiti / Alce", ["elk", "moose", "wapiti"]),
     ("antilocapra", "Antilocapra", ["pronghorn"]),
-    ("porco", "Porco-do-mato", ["hog", "boar", "suidae", "javelina", "peccary"]),
+    ("porco", "Porco-do-mato", ["hog", "boar", "pig", "suidae", "javelina", "peccary"]),
     ("coiote", "Coiote", ["coyote"]),
     ("lobo", "Lobo", ["wolf"]),
     ("raposa", "Raposa", ["fox"]),
@@ -151,68 +157,108 @@ def direcao(jogador, alvo, yaw):
 
 
 # ------------------------------------------------------------------ missões
-def gerar_missao(dados, evitar_tipos=()):
-    vistos = set(dados.get("grupos_vistos", []))
-    vistos.discard("outro")
-    opcoes = []
+TEMPLATE_FALAS = {
+    "abater_grupo": "Tem um fazendeiro reclamando de {grupo} na propriedade dele. Resolve isso pra mim, mas com tiro limpo.",
+    "abater_qualquer": "A câmara fria do posto está vazia, parceiro. Traz carne boa, de preferência sem estragar com tiro ruim.",
+    "distancia": "Quero ver essa pontaria. Tiro longo exige paciência: confira o vento e respire antes de apertar o gatilho.",
+    "genetica": "Um colecionador quer um troféu de qualidade. Use o binóculo e não atire no primeiro que aparecer.",
+    "sem_torre": "Torre é bom, mas caçador de verdade sabe andar pé-ante-pé. Contra o vento, devagar.",
+    "marcar": "Preciso de um censo da fauna. Marca os bichos no binóculo e me conta o que viu.",
+    "visitar": "Tem um lugar que ninguém do posto foi conferir ainda. Dá uma passada lá e me diz como está.",
+}
 
-    for chave in vistos:
-        nome = dict((g[0], g[1]) for g in GRUPOS).get(chave, chave)
-        n = random.choice([1, 2, 3])
-        opcoes.append({
-            "tipo": "abater_grupo", "grupo": chave, "meta": n,
-            "titulo": f"Abater {n} {nome.lower()}{'s' if n > 1 else ''}",
-            "descricao": f"Abata e recolha {n} animal(is) do grupo {nome}.",
-            "creditos": 400 * n, "reputacao": 20 * n,
-        })
-    d = random.choice([50, 100, 150, 200])
-    opcoes.append({
-        "tipo": "distancia", "meta": 1, "distancia": d,
-        "titulo": f"Tiro de {d} m",
-        "descricao": f"Abata qualquer animal a {d} metros ou mais.",
-        "creditos": 300 + d * 6, "reputacao": 15 + d // 10,
-    })
-    n = random.choice([3, 5, 8])
-    opcoes.append({
-        "tipo": "marcar", "meta": n,
-        "titulo": f"Olho de águia: marcar {n} animais",
-        "descricao": f"Marque {n} animais diferentes com o binóculo.",
-        "creditos": 120 * n, "reputacao": 5 * n,
-    })
-    g = random.choice([0.5, 0.6, 0.7])
-    opcoes.append({
-        "tipo": "genetica", "meta": 1, "genetica": g,
-        "titulo": f"Troféu de genética {int(g * 100)}%+",
-        "descricao": f"Abata um animal com genética de {int(g * 100)}% ou mais.",
-        "creditos": int(1500 * g * 2), "reputacao": int(60 * g),
-    })
-    n = random.choice([2, 3, 4])
-    opcoes.append({
-        "tipo": "abater_qualquer", "meta": n,
-        "titulo": f"Dia de caça: {n} abates",
-        "descricao": f"Abata e recolha {n} animais de qualquer espécie.",
-        "creditos": 350 * n, "reputacao": 15 * n,
-    })
-    opcoes.append({
-        "tipo": "sem_torre", "meta": 1,
-        "titulo": "Caçada a pé",
-        "descricao": "Abata um animal sem estar numa torre/espera.",
-        "creditos": 700, "reputacao": 30,
-    })
 
-    ativos = {m.get("tipo") + str(m.get("grupo", "")) for m in dados["missoes"] if m["status"] == "ativa"}
-    candidatas = [o for o in opcoes if (o["tipo"] + str(o.get("grupo", ""))) not in ativos and o["tipo"] not in evitar_tipos]
-    m = dict(random.choice(candidatas or opcoes))
-    m.update({"id": uuid.uuid4().hex[:8], "status": "ativa", "progresso": 0,
-              "criada": time.time(), "contados": []})
-    return m
+def nome_grupo(chave):
+    return dict((g[0], g[1]) for g in GRUPOS).get(chave, chave)
+
+
+def normalizar_missao(m, dados, pois):
+    """Valida/ajusta uma missão (vinda da IA ou do gerador) e devolve None se for inválida."""
+    tipo = m.get("tipo")
+    if tipo not in ("abater_grupo", "abater_qualquer", "distancia", "genetica", "sem_torre", "marcar", "visitar"):
+        return None
+    vistos = set(dados.get("grupos_vistos", [])) - {"outro"}
+    saida = {"tipo": tipo, "titulo": str(m.get("titulo") or "Contrato")[:60],
+             "fala": str(m.get("fala") or TEMPLATE_FALAS[tipo]).strip()[:500]}
+    if tipo == "abater_grupo":
+        if m.get("grupo") not in vistos:
+            return None
+        saida["grupo"] = m["grupo"]
+        saida["meta"] = max(1, min(5, int(m.get("meta") or 1)))
+        saida["descricao"] = f"Abata e recolha {saida['meta']} {nome_grupo(saida['grupo']).lower()}(s)."
+    elif tipo == "abater_qualquer":
+        saida["meta"] = max(1, min(6, int(m.get("meta") or 2)))
+        saida["descricao"] = f"Abata e recolha {saida['meta']} animais de qualquer espécie."
+    elif tipo == "distancia":
+        saida["distancia"] = max(30, min(400, int(m.get("distancia") or 100)))
+        saida["meta"] = 1
+        saida["descricao"] = f"Abata um animal a {saida['distancia']} m ou mais."
+    elif tipo == "genetica":
+        g = float(m.get("genetica") or 0.6)
+        saida["genetica"] = round(max(0.3, min(0.9, g if g <= 1 else g / 100)), 2)
+        saida["meta"] = 1
+        saida["descricao"] = f"Abata um animal com genética de {int(saida['genetica'] * 100)}% ou mais."
+    elif tipo == "sem_torre":
+        saida["meta"] = 1
+        saida["descricao"] = "Abata um animal sem estar numa torre ou espera."
+    elif tipo == "marcar":
+        saida["meta"] = max(2, min(12, int(m.get("meta") or 5)))
+        saida["descricao"] = f"Marque {saida['meta']} animais diferentes com o binóculo."
+    elif tipo == "visitar":
+        saida["meta"] = 1
+        saida["descricao"] = "Vá até o local marcado no mapa."
+    poi = next((p for p in pois if str(p.get("hash")) == str(m.get("poi_hash"))), None)
+    if tipo == "visitar" and not poi:
+        return None
+    if poi:
+        saida["local"] = {"x": poi["x"], "y": poi["y"], "z": poi.get("z", 0), "nome": poi["nome"], "hash": poi["hash"]}
+        if tipo == "visitar":
+            saida["descricao"] = f"Vá até: {poi['nome']}."
+    saida["creditos"] = max(200, min(4000, int(m.get("creditos") or 600)))
+    saida["reputacao"] = max(5, min(100, int(m.get("reputacao") or 20)))
+    saida.update({"id": uuid.uuid4().hex[:8], "status": "oferta", "progresso": 0, "contados": [],
+                  "criada": time.time(), "origem": m.get("origem", "ia")})
+    return saida
+
+
+def gerar_missao_local(dados, pois):
+    """Gerador simples (quando o Ollama não está disponível)."""
+    vistos = list(set(dados.get("grupos_vistos", [])) - {"outro"})
+    nao_desc = [p for p in pois if not p.get("descoberto") and p.get("categoria") in ("lugar", "torre", "acampamento")]
+    opcoes = [
+        {"tipo": "abater_qualquer", "titulo": "Carne para o posto", "meta": random.choice([2, 3])},
+        {"tipo": "distancia", "titulo": "Olho de lince", "distancia": random.choice([80, 120, 150, 200])},
+        {"tipo": "genetica", "titulo": "Troféu de colecionador", "genetica": random.choice([0.55, 0.6, 0.7])},
+        {"tipo": "sem_torre", "titulo": "Pé-ante-pé"},
+        {"tipo": "marcar", "titulo": "Censo da fauna", "meta": random.choice([4, 6, 8])},
+    ]
+    if vistos:
+        g = random.choice(vistos)
+        opcoes.append({"tipo": "abater_grupo", "titulo": f"Praga de {nome_grupo(g).lower()}", "grupo": g,
+                       "meta": random.choice([1, 2, 3])})
+    if nao_desc:
+        p = random.choice(nao_desc)
+        opcoes.append({"tipo": "visitar", "titulo": f"Conferir {p['nome'].lower()}", "poi_hash": p["hash"]})
+    m = random.choice(opcoes)
+    dif = {"abater_qualquer": 350 * m.get("meta", 1), "distancia": 300 + 6 * m.get("distancia", 0),
+           "genetica": int(3000 * m.get("genetica", 0)), "sem_torre": 700, "marcar": 120 * m.get("meta", 1),
+           "abater_grupo": 450 * m.get("meta", 1), "visitar": 600}[m["tipo"]]
+    m.update({"creditos": dif, "reputacao": max(10, dif // 30), "origem": "local"})
+    if m["tipo"] == "abater_grupo":
+        m["fala"] = TEMPLATE_FALAS["abater_grupo"].format(grupo=nome_grupo(m["grupo"]).lower())
+    return normalizar_missao(m, dados, pois)
+
+
+def dentro(pos, local, raio_m=60):
+    d = distancia_m(pos, local)
+    return d is not None and d <= raio_m
 
 
 def avaliar_missoes(dados, evento):
-    """Atualiza o progresso das missões ativas com um evento (abate confirmado ou marcação)."""
+    """Atualiza o progresso das missões ativas com um evento (abate confirmado, marcação ou posição)."""
     concluidas = []
     for m in dados["missoes"]:
-        if m["status"] != "ativa" or evento.get("ts", 0) < m["criada"] - 2:
+        if m["status"] != "ativa" or evento.get("ts", 0) < m.get("aceita_em", m["criada"]) - 2:
             continue
         chave = f"{evento['tipo']}:{evento.get('id')}"
         if chave in m["contados"]:
@@ -232,6 +278,8 @@ def avaliar_missoes(dados, evento):
                 conta = evento.get("torre") is False
         elif evento["tipo"] == "marcado" and t == "marcar":
             conta = True
+        elif evento["tipo"] == "posicao" and t == "visitar":
+            conta = dentro(evento.get("pos"), m.get("local"))
         if conta:
             m["contados"].append(chave)
             m["progresso"] = len(m["contados"])
@@ -361,25 +409,32 @@ class Companion:
         self.estado_lido_em = 0
         self.dados = carregar_json(DADOS_PATH, {})
         d = self.dados
-        d.setdefault("missoes", [])
-        d.setdefault("abates", [])
-        d.setdefault("marcados", {})
-        d.setdefault("grupos_vistos", [])
-        d.setdefault("pendentes", {})
-        d.setdefault("eventos_offset", 0)
-        d.setdefault("pagamentos_dia", {})
-        d.setdefault("recompensas", [])
-        self.completar_missoes()
+        for chave, padrao in (("missoes", []), ("abates", []), ("marcados", {}), ("grupos_vistos", []),
+                              ("eventos_offset", 0), ("pagamentos_dia", {}), ("recompensas", []),
+                              ("chat", []), ("pino_app", None), ("posicoes", {})):
+            d.setdefault(chave, padrao)
+        # missões da versão antiga continuam valendo como ativas
+        for m in d["missoes"]:
+            m.setdefault("aceita_em", m.get("criada", 0))
+            m.setdefault("fala", TEMPLATE_FALAS.get(m.get("tipo"), ""))
+        self.ollama = ia.Ollama(self.cfg)
+        self.gerando = False
+        self.respondendo = False
+        self._pois_cache = (None, 0, [])
+        self._nevoa_cache = (None, 0, b"")
+        self.salvar_pendente = False
 
     # --- arquivos do mod
     def caminho(self, nome):
         return os.path.join(self.cfg["pasta_mod"], nome)
 
+    def nivel(self):
+        return self.estado.get("mapa")
+
     def ler_estado(self):
         try:
             with open(self.caminho("state.json"), "r", encoding="utf-8") as f:
-                st = json.load(f)
-            self.estado = st
+                self.estado = json.load(f)
             self.estado_lido_em = os.path.getmtime(self.caminho("state.json"))
         except Exception:
             pass
@@ -415,13 +470,58 @@ class Companion:
                 pass
         return eventos
 
+    def ler_animais(self):
+        try:
+            with open(self.caminho("animais.json"), encoding="utf-8") as f:
+                vivos = json.load(f)
+        except Exception:
+            return
+        marcados = self.dados["marcados"]
+        for a in vivos.get("animais", []):
+            id_ = str(a.get("id"))
+            if id_ in marcados:
+                self.dados["posicoes"][id_] = {"x": a["x"], "y": a["y"], "z": a["z"], "yaw": a.get("yaw"),
+                                               "ts": vivos.get("ts", time.time())}
+
+    def pois(self):
+        nivel = self.nivel()
+        if not nivel:
+            return []
+        path = self.caminho(f"pois_{nivel}.json")
+        try:
+            mt = os.path.getmtime(path)
+        except OSError:
+            return []
+        if self._pois_cache[0] != path or self._pois_cache[1] != mt:
+            self._pois_cache = (path, mt, mapa.carregar_pois(path))
+        return self._pois_cache[2]
+
+    def nevoa_png(self, nivel):
+        path = self.caminho(f"nevoa_{nivel}.bin")
+        mt = os.path.getmtime(path)
+        if self._nevoa_cache[0] != path or self._nevoa_cache[1] != mt:
+            self._nevoa_cache = (path, mt, mapa.nevoa_png(path))
+        return self._nevoa_cache[2]
+
+    def info_mapa(self):
+        nivel = self.nivel()
+        info = carregar_json(self.caminho(f"mapa_{nivel}.json"), {}) if nivel else {}
+        info.setdefault("tamanho_mundo", 1224000)
+        info["imagem"] = bool(nivel) and os.path.exists(self.caminho(f"mapa_{nivel}.png"))
+        info["nevoa"] = bool(nivel) and os.path.exists(self.caminho(f"nevoa_{nivel}.bin"))
+        try:
+            info["nevoa_versao"] = int(os.path.getmtime(self.caminho(f"nevoa_{nivel}.bin")))
+        except OSError:
+            info["nevoa_versao"] = 0
+        info["nivel"] = nivel
+        return info
+
     def enviar_comando(self, linhas):
-        path = self.caminho("cmd.txt")
-        with open(path, "a", encoding="utf-8") as f:
+        with open(self.caminho("cmd.txt"), "a", encoding="utf-8") as f:
             for l in linhas:
                 f.write(l + "\n")
 
-    # --- processamento
+    # --- processamento de eventos
     def registrar_grupo(self, chave):
         if chave and chave not in self.dados["grupos_vistos"]:
             self.dados["grupos_vistos"].append(chave)
@@ -431,17 +531,14 @@ class Companion:
         tipo = ev.get("tipo")
         if tipo == "marcado":
             chave, nome = grupo_de(ev.get("especie"))
-            ev["grupo"], ev["grupo_nome"] = chave, nome
-            ev["especie_nome"] = nome_especie(ev.get("especie"))
-            ev["sexo_nome"] = SEXO.get(ev.get("sexo"), "?")
-            ev["visto_em"] = time.time()
+            ev.update({"grupo": chave, "grupo_nome": nome, "especie_nome": nome_especie(ev.get("especie")),
+                       "sexo_nome": SEXO.get(ev.get("sexo"), "?"), "visto_em": time.time(), "reserva": self.nivel()})
             novo = str(ev.get("id")) not in d["marcados"]
             d["marcados"][str(ev.get("id"))] = ev
             self.registrar_grupo(chave)
             if novo:
                 return avaliar_missoes(d, {"tipo": "marcado", "id": ev.get("id"), "ts": time.time()})
         elif tipo in ("abate", "abate_final"):
-            # O abate é confirmado no popup do animal abatido (o mesmo animal só conta uma vez).
             id_ = str(ev.get("id"))
             if any(str(a.get("id")) == id_ for a in d["abates"]):
                 return []
@@ -450,17 +547,17 @@ class Companion:
             especie = (marc or {}).get("especie")
             chave, nome = grupo_de(especie or ab.get("classe"))
             ab.update({"grupo": chave, "grupo_nome": nome, "especie": especie,
-                       "especie_nome": nome_especie(especie) or nome,
-                       "acao_nome": ACOES.get(ab.get("acao"), "Recolhido"), "ts": time.time()})
+                       "especie_nome": nome_especie(especie) or nome, "sexo_nome": (marc or {}).get("sexo_nome"),
+                       "acao_nome": ACOES.get(ab.get("acao"), "Recolhido"), "ts": time.time(), "reserva": self.nivel()})
             self.registrar_grupo(chave)
             d["abates"].append(ab)
+            d["marcados"].pop(id_, None)
+            d["posicoes"].pop(id_, None)
             return avaliar_missoes(d, dict(ab, tipo="abate_confirmado"))
         elif tipo == "recompensa":
-            d["recompensas"].append(ev)
-            d["recompensas"] = d["recompensas"][-100:]
-            ref = ev.get("ref")
+            d["recompensas"] = (d["recompensas"] + [ev])[-100:]
             for m in d["missoes"]:
-                if m["id"] == ref:
+                if m["id"] == ev.get("ref"):
                     m.setdefault("pago", {})[ev.get("recurso")] = bool(ev.get("ok"))
                     if all(m["pago"].get(r) for r in ("creditos", "reputacao")):
                         m["status"] = "paga"
@@ -476,45 +573,173 @@ class Companion:
                 continue
             pago_hoje = dia.get(hoje, 0)
             cred = min(m["creditos"], max(0, self.cfg["limite_diario_creditos"] - pago_hoje))
-            linhas = []
-            if cred > 0:
-                linhas.append(f"add_credits {cred} {m['id']}")
-            else:
+            linhas = [f"add_credits {cred} {m['id']}"] if cred > 0 else []
+            if cred <= 0:
                 m.setdefault("pago", {})["creditos"] = True
             linhas.append(f"add_rep {m['reputacao']} {m['id']}")
             self.enviar_comando(linhas)
             dia[hoje] = pago_hoje + cred
             m["enviado"] = time.time()
             m["creditos_pagos"] = cred
+            if self.dados.get("pino_app") and self.dados["pino_app"].get("missao") == m["id"]:
+                self.remover_pino()
 
-    def completar_missoes(self):
-        ativas = [m for m in self.dados["missoes"] if m["status"] == "ativa"]
-        while len(ativas) < self.cfg["missoes_ativas"]:
-            m = gerar_missao(self.dados)
-            self.dados["missoes"].append(m)
-            ativas.append(m)
-        # mantém histórico curto
-        fim = [m for m in self.dados["missoes"] if m["status"] != "ativa"]
-        if len(fim) > 60:
-            remover = {m["id"] for m in fim[:-60]}
-            self.dados["missoes"] = [m for m in self.dados["missoes"] if m["id"] not in remover]
+    # --- missões
+    def por_status(self, *status):
+        return [m for m in self.dados["missoes"] if m["status"] in status]
 
+    def manter_ofertas(self):
+        if self.gerando or not self.nivel():
+            return
+        faltam = self.cfg["ofertas"] - len(self.por_status("oferta"))
+        if faltam <= 0:
+            return
+        self.gerando = True
+        threading.Thread(target=self._gerar_ofertas, args=(faltam,), daemon=True).start()
+
+    def contexto(self, curto=False):
+        st = self.estado
+        pos = st.get("pos")
+        rep = next((r for r in st.get("reputacao", []) or [] if self.nivel() and self.nivel() in (r.get("mapa") or "")), None)
+        pois = self.pois()
+        for p in pois:
+            p["_d"] = distancia_m(pos, p) or 0
+        nao_desc = sorted((p for p in pois if not p["descoberto"]), key=lambda p: p["_d"])[:12]
+        desc = sorted((p for p in pois if p["descoberto"] and p["categoria"] in ("lugar", "torre", "acampamento")),
+                      key=lambda p: p["_d"])[:8]
+        ctx = {
+            "reserva": "Texas" if "Texas" in (self.nivel() or "") else ("Colorado" if "Colorado" in (self.nivel() or "") else self.nivel()),
+            "creditos": (st.get("moedas") or {}).get("Currency.Credits"),
+            "reputacao": rep and rep.get("valor"),
+            "grupos_disponiveis": {g: nome_grupo(g) for g in self.dados["grupos_vistos"] if g != "outro"},
+            "animais_marcados_recentes": [
+                {"especie": m.get("especie_nome"), "grupo": m.get("grupo"), "sexo": m.get("sexo_nome"),
+                 "genetica": round(m.get("genetica") or 0, 2)} for m in list(self.dados["marcados"].values())[-8:]],
+            "ultimos_abates": [{"especie": a.get("especie_nome"), "distancia_m": round(a.get("distancia_m") or 0),
+                                "arma": a.get("arma"), "municao": a.get("municao")} for a in self.dados["abates"][-5:]],
+            "missoes_ativas": [m["titulo"] for m in self.por_status("ativa")],
+        }
+        if not curto:
+            ctx["pontos_nao_descobertos"] = [{"hash": p["hash"], "nome": p["nome"], "distancia_m": round(p["_d"])} for p in nao_desc]
+            ctx["pontos_descobertos_proximos"] = [{"hash": p["hash"], "nome": p["nome"], "distancia_m": round(p["_d"])} for p in desc]
+        return ctx
+
+    def _gerar_ofertas(self, n):
+        try:
+            novas = []
+            if self.ollama.verificar():
+                try:
+                    with self.lock:
+                        ctx = self.contexto()
+                    for m in ia.gerar_missoes(self.ollama, ctx, n):
+                        with self.lock:
+                            nm = normalizar_missao(dict(m, origem="ia"), self.dados, self.pois())
+                        if nm:
+                            novas.append(nm)
+                except Exception as e:
+                    print("IA falhou ao gerar missões:", e)
+            while len(novas) < n:
+                with self.lock:
+                    nm = gerar_missao_local(self.dados, self.pois())
+                if nm:
+                    novas.append(nm)
+            with self.lock:
+                self.dados["missoes"].extend(novas[:n])
+                self.salvar_pendente = True
+        finally:
+            self.gerando = False
+
+    def acao_missao(self, acao, id_):
+        with self.lock:
+            m = next((x for x in self.dados["missoes"] if x["id"] == id_), None)
+            if not m:
+                return {"ok": False, "erro": "missão não encontrada"}
+            if acao == "aceitar" and m["status"] == "oferta":
+                if len(self.por_status("ativa")) >= self.cfg["missoes_ativas"]:
+                    return {"ok": False, "erro": f"Você já tem {self.cfg['missoes_ativas']} contratos ativos. Abandone um antes."}
+                m["status"], m["aceita_em"] = "ativa", time.time()
+                if m.get("local"):
+                    self._pino(m["local"], m["titulo"], m["id"])
+            elif acao == "recusar" and m["status"] == "oferta":
+                m["status"] = "recusada"
+            elif acao == "abandonar" and m["status"] == "ativa":
+                m["status"] = "abandonada"
+                if (self.dados.get("pino_app") or {}).get("missao") == id_:
+                    self.remover_pino()
+            elif acao == "focar" and m["status"] == "ativa":
+                if not m.get("local"):
+                    return {"ok": False, "erro": "Esta missão não tem local no mapa."}
+                self._pino(m["local"], m["titulo"], m["id"])
+            else:
+                return {"ok": False, "erro": "ação inválida"}
+            self.salvar_pendente = True
+        return {"ok": True}
+
+    # --- pinos
+    def _pino(self, pos, rotulo="Pino", missao=None):
+        self.dados["pino_app"] = {"x": pos["x"], "y": pos["y"], "z": pos.get("z", 0), "rotulo": rotulo,
+                                  "missao": missao, "ts": time.time()}
+        self.enviar_comando([f"pin {pos['x']:.0f} {pos['y']:.0f} {pos.get('z', 0):.0f}"])
+        self.salvar_pendente = True
+
+    def pino(self, x, y, rotulo="Meu pino"):
+        with self.lock:
+            z = (self.estado.get("pos") or {}).get("z", 0)
+            self._pino({"x": float(x), "y": float(y), "z": z}, rotulo)
+        return {"ok": True}
+
+    def remover_pino(self):
+        self.dados["pino_app"] = None
+        self.enviar_comando(["unpin"])
+        self.salvar_pendente = True
+        return {"ok": True}
+
+    # --- chat com o NPC
+    def conversar(self, texto):
+        texto = (texto or "").strip()[:800]
+        if not texto:
+            return {"ok": False}
+        with self.lock:
+            self.dados["chat"].append({"role": "user", "content": texto, "ts": time.time()})
+            historico = [{"role": c["role"], "content": c["content"]} for c in self.dados["chat"][-12:-1]]
+            ctx = self.contexto(curto=True)
+        self.respondendo = True
+        try:
+            resposta = ia.conversar(self.ollama, historico, texto, ctx)
+        except Exception:
+            resposta = ("(O Velho Earl está sem rádio agora: abra o Ollama no seu PC para ele responder.) "
+                        "Enquanto isso, lembre: contra o vento, devagar, e tiro só com o bicho de lado.")
+        finally:
+            self.respondendo = False
+        with self.lock:
+            self.dados["chat"] = (self.dados["chat"] + [{"role": "assistant", "content": resposta, "ts": time.time()}])[-40:]
+            self.salvar_pendente = True
+        return {"ok": True, "resposta": resposta}
+
+    # --- ciclo
     def ciclo(self):
         with self.lock:
             self.ler_estado()
+            self.ler_animais()
             mudou = False
             for ev in self.ler_eventos():
                 self.processar(ev)
                 mudou = True
-            antes = len(self.dados["missoes"])
+            if self.em_reserva():
+                if avaliar_missoes(self.dados, {"tipo": "posicao", "id": "local", "pos": self.estado["pos"], "ts": time.time()}):
+                    mudou = True
             self.pagar_pendentes()
-            self.completar_missoes()
-            # limpa marcações com mais de 2 h
             limite = time.time() - 7200
             self.dados["marcados"] = {k: v for k, v in self.dados["marcados"].items() if v.get("visto_em", 0) > limite}
-            if mudou or len(self.dados["missoes"]) != antes or any(
-                    m["status"] == "concluida" for m in self.dados["missoes"]):
+            self.dados["posicoes"] = {k: v for k, v in self.dados["posicoes"].items() if k in self.dados["marcados"]}
+            fim = [m for m in self.dados["missoes"] if m["status"] not in ("ativa", "oferta")]
+            if len(fim) > 60:
+                remover = {m["id"] for m in fim[:-60]}
+                self.dados["missoes"] = [m for m in self.dados["missoes"] if m["id"] not in remover]
+            if mudou or self.salvar_pendente or any(m["status"] == "concluida" for m in self.dados["missoes"]):
                 salvar_json(DADOS_PATH, self.dados)
+                self.salvar_pendente = False
+        self.manter_ofertas()
 
     def loop(self):
         while True:
@@ -523,17 +748,6 @@ class Companion:
             except Exception as e:  # nunca derruba a ponte
                 print("erro no ciclo:", e)
             time.sleep(1)
-
-    # --- API
-    def trocar_missao(self, id_):
-        with self.lock:
-            for m in self.dados["missoes"]:
-                if m["id"] == id_ and m["status"] == "ativa":
-                    m["status"] = "trocada"
-                    self.completar_missoes()
-                    salvar_json(DADOS_PATH, self.dados)
-                    return True
-        return False
 
     def estatisticas(self):
         ab = self.dados["abates"]
@@ -559,35 +773,49 @@ class Companion:
         with self.lock:
             st = self.estado
             pos, yaw = st.get("pos"), st.get("yaw")
-            marcados = []
-            for m in self.dados["marcados"].values():
-                item = dict(m)
-                item["distancia_m"] = distancia_m(pos, m.get("pos"))
-                item["direcao"] = direcao(pos, m.get("pos"), yaw)
-                item["minutos"] = round((time.time() - m.get("visto_em", time.time())) / 60, 1)
-                marcados.append(item)
-            marcados.sort(key=lambda x: x["distancia_m"] if x["distancia_m"] is not None else 1e9)
-            mapa = st.get("mapa")
-            rep = [r for r in st.get("reputacao", []) or []]
+            agora = time.time()
+            rastreados = []
+            for id_, m in self.dados["marcados"].items():
+                if m.get("reserva") and self.nivel() and m["reserva"] != self.nivel():
+                    continue
+                item = {k: v for k, v in m.items() if k not in ("seq",)}
+                viva = self.dados["posicoes"].get(id_)
+                if viva and agora - viva["ts"] < 20:
+                    item["pos"], item["ao_vivo"], item["yaw"] = {"x": viva["x"], "y": viva["y"], "z": viva["z"]}, True, viva.get("yaw")
+                else:
+                    item["ao_vivo"] = False
+                    if viva:
+                        item["pos"] = {"x": viva["x"], "y": viva["y"], "z": viva["z"]}
+                item["distancia_m"] = distancia_m(pos, item.get("pos"))
+                item["direcao"] = direcao(pos, item.get("pos"), yaw)
+                item["minutos"] = round((agora - m.get("visto_em", agora)) / 60, 1)
+                rastreados.append(item)
+            rastreados.sort(key=lambda x: x["distancia_m"] if x["distancia_m"] is not None else 1e9)
+            rep = next((r for r in st.get("reputacao", []) or [] if self.nivel() and self.nivel() in (r.get("mapa") or "")), None)
+            missoes = self.dados["missoes"]
             return {
                 "versao": VERSAO,
                 "atualizacao": ATUALIZADOR.info() if ATUALIZADOR else None,
                 "conectado": self.conectado(),
                 "em_reserva": self.em_reserva(),
                 "estado": st,
-                "reputacao_mapa_atual": next((r for r in rep if mapa and mapa in (r.get("mapa") or "")), None),
-                "marcados": marcados,
-                "missoes": [m for m in self.dados["missoes"] if m["status"] == "ativa"]
-                + [m for m in self.dados["missoes"] if m["status"] in ("concluida", "paga")][-8:][::-1],
+                "reputacao_mapa_atual": rep,
+                "mapa": self.info_mapa(),
+                "pino_app": self.dados.get("pino_app"),
+                "rastreados": rastreados,
+                "ofertas": [m for m in missoes if m["status"] == "oferta"],
+                "ativas": [m for m in missoes if m["status"] == "ativa"],
+                "finalizadas": [m for m in missoes if m["status"] in ("concluida", "paga")][-8:][::-1],
+                "gerando": self.gerando,
                 "abates": self.dados["abates"][-30:][::-1],
                 "estatisticas": self.estatisticas(),
+                "npc": ia.NPC,
+                "ollama": self.ollama.status(),
+                "chat": [{"role": c["role"], "content": c["content"]} for c in self.dados["chat"][-20:]],
+                "respondendo": self.respondendo,
                 "pasta_mod": self.cfg["pasta_mod"],
                 "pasta_mod_existe": os.path.isdir(self.cfg["pasta_mod"]),
             }
-
-
-APP = None
-ATUALIZADOR = None
 
 
 def abrir_janela(url):
@@ -642,6 +870,9 @@ def porta_em_uso(porta):
     with socket.socket() as sk:
         return sk.connect_ex(("127.0.0.1", porta)) == 0
 
+APP = None
+ATUALIZADOR = None
+
 TIPOS = {".html": "text/html; charset=utf-8", ".js": "application/javascript", ".css": "text/css",
          ".json": "application/json", ".webmanifest": "application/manifest+json",
          ".png": "image/png", ".svg": "image/svg+xml", ".jpg": "image/jpeg", ".woff2": "font/woff2"}
@@ -651,27 +882,46 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
-    def responder(self, codigo, corpo, tipo="application/json"):
+    def responder(self, codigo, corpo, tipo="application/json", cache=False):
         if isinstance(corpo, (dict, list)):
             corpo = json.dumps(corpo, ensure_ascii=False).encode("utf-8")
         self.send_response(codigo)
         self.send_header("Content-Type", tipo)
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", "max-age=86400" if cache else "no-store")
         self.send_header("Content-Length", str(len(corpo)))
         self.end_headers()
         self.wfile.write(corpo)
+
+    def arquivo_mod(self, nome, tipo):
+        nivel = (APP.nivel() or "").replace("/", "")
+        path = APP.caminho(nome.format(nivel=nivel))
+        if not nivel or not os.path.isfile(path):
+            return self.responder(404, {"erro": "não encontrado"})
+        with open(path, "rb") as f:
+            return self.responder(200, f.read(), tipo)
 
     def do_GET(self):
         caminho = self.path.split("?")[0]
         if caminho == "/api/estado":
             return self.responder(200, APP.snapshot())
+        if caminho == "/api/pois":
+            with APP.lock:
+                return self.responder(200, [{k: v for k, v in p.items() if not k.startswith("_")} for p in APP.pois()])
+        if caminho == "/api/mapa.png":
+            return self.arquivo_mod("mapa_{nivel}.png", "image/png")
+        if caminho == "/api/nevoa.png":
+            try:
+                return self.responder(200, APP.nevoa_png(APP.nivel()), "image/png")
+            except Exception:
+                return self.responder(404, {"erro": "sem névoa"})
         if caminho == "/":
             caminho = "/index.html"
         arq = os.path.normpath(os.path.join(WEB_DIR, caminho.lstrip("/")))
         if not arq.startswith(os.path.normpath(WEB_DIR)) or not os.path.isfile(arq):
             return self.responder(404, {"erro": "não encontrado"})
         with open(arq, "rb") as f:
-            self.responder(200, f.read(), TIPOS.get(os.path.splitext(arq)[1], "application/octet-stream"))
+            ext = os.path.splitext(arq)[1]
+            self.responder(200, f.read(), TIPOS.get(ext, "application/octet-stream"), cache=ext in (".png", ".jpg", ".woff2"))
 
     def do_POST(self):
         tam = int(self.headers.get("Content-Length") or 0)
@@ -679,17 +929,32 @@ class Handler(BaseHTTPRequestHandler):
             corpo = json.loads(self.rfile.read(tam) or b"{}")
         except Exception:
             corpo = {}
-        if self.path == "/api/sair":
+        p = self.path
+        if p == "/api/sair":
             self.responder(200, {"ok": True})
             threading.Timer(0.5, lambda: os._exit(0)).start()
             return
-        if self.path == "/api/atualizar":
+        if p == "/api/atualizar":
             return self.responder(200, {"ok": ATUALIZADOR.atualizar()})
-        if self.path == "/api/verificar":
+        if p == "/api/verificar":
             ATUALIZADOR.verificar()
             return self.responder(200, ATUALIZADOR.info())
-        if self.path == "/api/missoes/trocar":
-            return self.responder(200, {"ok": APP.trocar_missao(corpo.get("id"))})
+        if p.startswith("/api/missoes/"):
+            acao = p.rsplit("/", 1)[1]
+            if acao == "gerar":
+                APP.manter_ofertas()
+                return self.responder(200, {"ok": True})
+            return self.responder(200, APP.acao_missao(acao, corpo.get("id")))
+        if p == "/api/pino":
+            return self.responder(200, APP.pino(corpo.get("x"), corpo.get("y"), corpo.get("rotulo") or "Meu pino"))
+        if p == "/api/pino/remover":
+            with APP.lock:
+                return self.responder(200, APP.remover_pino())
+        if p == "/api/chat":
+            return self.responder(200, APP.conversar(corpo.get("texto")))
+        if p == "/api/exportar_mapa":
+            APP.enviar_comando(["export_map"])
+            return self.responder(200, {"ok": True})
         self.responder(404, {"erro": "não encontrado"})
 
 

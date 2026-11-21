@@ -130,6 +130,13 @@ local function readState()
         end)
     end
 
+    pcall(function()
+        local q = FindFirstOf("NavigationPlayerStateComponent").QuickWaypoint
+        if q.Hash ~= 0 then
+            local t = q.Transform.Translation
+            s.pino_jogo = { x = t.X, y = t.Y, z = t.Z }
+        end
+    end)
     s.ok = s.moedas ~= nil
     return s
 end
@@ -248,6 +255,147 @@ end)
 -- Observação: o hook em Client_OnBagRequestFinished derrubava o jogo ao vender o animal.
 -- O abate é registrado pelo popup (acima); a ponte ignora popups repetidos do mesmo animal.
 
+
+------------------------------------------------------------------ mapa, névoa, pontos de interesse e animais
+local function writeFile(path, data, mode)
+    local tmp = path .. ".tmp"
+    local f = io.open(tmp, mode or "w")
+    if not f then return false end
+    f:write(data); f:close()
+    os.remove(path)
+    os.rename(tmp, path)
+    return true
+end
+
+local function currentLevel()
+    local nav = FindFirstOf("LevelNavigationDataAsset")
+    if not valid(nav) then return nil end
+    local nome = nav.MapName:ToString()          -- /HS3DefaultMaps/Maps/Texas/Texas_a
+    return nav, nome, nome:match("([^/]+)$")
+end
+
+local function exportMap()
+    local nav, _, curto = currentLevel()
+    if not nav then return log("exportar mapa: nível não encontrado") end
+    local pc = FindFirstOf("HS3PlayerController")
+    local KRL = StaticFindObject("/Script/Engine.Default__KismetRenderingLibrary")
+    local tex = nav.MapBrush.ResourceObject
+    local size = 4096
+    pcall(function() size = tex:Blueprint_GetSizeX() end)
+    local rt = KRL:CreateRenderTarget2D(pc, size, size, 2, { R = 0, G = 0, B = 0, A = 1 }, false, false)
+    local canvas, sz, ctx = {}, {}, {}
+    KRL:BeginDrawCanvasToRenderTarget(pc, rt, canvas, sz, ctx)
+    local cv = canvas.Canvas or canvas
+    cv:K2_DrawTexture(tex, { X = 0, Y = 0 }, { X = size, Y = size }, { X = 0, Y = 0 }, { X = 1, Y = 1 },
+        { R = 1, G = 1, B = 1, A = 1 }, 0, 0.0, { X = 0.5, Y = 0.5 })
+    KRL:EndDrawCanvasToRenderTarget(pc, ctx.Context or ctx)
+    KRL:ExportRenderTarget(pc, rt, DIR, "mapa_" .. curto .. ".png")
+    local info = { nivel = curto, tamanho_mundo = nav.MapSize.X, pixels = size }
+    writeFile(DIR .. "mapa_" .. curto .. ".json", jsonEncode(info))
+    log("mapa exportado: " .. curto)
+end
+
+local function exportPois()
+    local _, nome, curto = currentLevel()
+    if not nome then return end
+    local estados = {}
+    local save = FindFirstOf("NavigationSaveData")
+    if valid(save) then
+        save.DiscoverStatusLists:ForEach(function(_, e)
+            local d = e:get()
+            if d.LevelName:ToString() == nome then
+                d.DiscoveryStatesList:ForEach(function(_, st)
+                    local s = st:get()
+                    estados[s.ActorHash] = tagName(s.DiscoveryStatus)
+                end)
+            end
+        end)
+    end
+    local lista = {}
+    local content = FindFirstOf("NavigationContentComponent")
+    if valid(content) then
+        content.NavigationActorDataMap:ForEach(function(k, v)
+            local tipo = k:get().PrimaryAssetName:ToString()
+            if tipo ~= "DA_Herd_MapIconData" and tipo ~= "DA_Player_MapIconData" and tipo ~= "DA_PlayerSmell_NavigationIcon" then
+                v:get().ActorDataArray:ForEach(function(_, e)
+                    local a = e:get()
+                    local t = a.Transform.Translation
+                    lista[#lista + 1] = { tipo = tipo, hash = a.Hash, x = t.X, y = t.Y, z = t.Z, estado = estados[a.Hash] }
+                end)
+            end
+        end)
+    end
+    writeFile(DIR .. "pois_" .. curto .. ".json", jsonEncode(lista))
+end
+
+local function exportFog()
+    local _, nome, curto = currentLevel()
+    local save = FindFirstOf("NavigationSaveData")
+    if not nome or not valid(save) then return end
+    save.FogOfWarLists:ForEach(function(_, e)
+        local f = e:get()
+        if f.LevelName:ToString() == nome then
+            local arr = f.FogArray
+            local n = math.min(arr:GetArrayNum(), 524288)   -- 2048x2048 bits
+            local parts, buf = {}, {}
+            for i = 1, n do
+                buf[#buf + 1] = string.char(arr[i])
+                if #buf == 8192 then parts[#parts + 1] = table.concat(buf); buf = {} end
+            end
+            parts[#parts + 1] = table.concat(buf)
+            writeFile(DIR .. "nevoa_" .. curto .. ".bin", table.concat(parts), "wb")
+        end
+    end)
+end
+
+local function writeAnimals()
+    local lista = {}
+    for _, a in ipairs(FindAllOf("AnimalCharacter") or {}) do
+        pcall(function()
+            local loc = a:K2_GetActorLocation()
+            local rot = a:K2_GetActorRotation()
+            lista[#lista + 1] = { id = a.EcoSimCreatureId, classe = a:GetClass():GetFName():ToString(),
+                x = loc.X, y = loc.Y, z = loc.Z, yaw = rot.Yaw }
+        end)
+    end
+    writeFile(DIR .. "animais.json", jsonEncode({ ts = os.time(), animais = lista }))
+end
+
+local function quickWaypoint()
+    local nav = FindFirstOf("NavigationPlayerStateComponent")
+    if not valid(nav) then return nil end
+    local q = nav.QuickWaypoint
+    if q.Hash == 0 then return nil end
+    local t = q.Transform.Translation
+    return { x = t.X, y = t.Y, z = t.Z }
+end
+
+local function setPin(x, y, z)
+    local nav = FindFirstOf("NavigationPlayerStateComponent")
+    local id = { PrimaryAssetType = { Name = FName("NavigationIconData") }, PrimaryAssetName = FName("DA_QuickWaypoint_MapIconData") }
+    nav:Server_AddQuickWaypoint(id, { Rotation = { X = 0, Y = 0, Z = 0, W = 1 }, Translation = { X = x, Y = y, Z = z }, Scale3D = { X = 1, Y = 1, Z = 1 } })
+    log(string.format("pino no jogo: %.0f, %.0f", x, y))
+end
+
+local function clearPin()
+    FindFirstOf("NavigationPlayerStateComponent"):Server_ClearQuickWaypoint()
+    log("pino removido do jogo")
+end
+
+local ultimoNivel, ticks = nil, 0
+local function periodic()
+    ticks = ticks + 1
+    local _, _, curto = currentLevel()
+    if curto and curto ~= ultimoNivel and FindFirstOf("HS3PlayerController") then
+        ultimoNivel = curto
+        local f = io.open(DIR .. "mapa_" .. curto .. ".png", "rb")
+        if f then f:close() else pcall(exportMap) end
+        pcall(exportPois); pcall(exportFog)
+    end
+    if ticks % 5 == 0 then pcall(writeAnimals) end
+    if ticks % 60 == 0 then pcall(exportPois); pcall(exportFog) end
+end
+
 -- utilidades disponíveis para scripts de desenvolvimento (pasta dev\)
 HS3 = { log = log, emit = emit, json = jsonEncode, tagName = tagName, valid = valid, dir = DIR }
 
@@ -255,7 +403,7 @@ HS3 = { log = log, emit = emit, json = jsonEncode, tagName = tagName, valid = va
 LoopAsync(3000, function() return tryHookSpotted() end)
 
 LoopAsync(1000, function()
-    ExecuteInGameThread(function() pcall(writeState) end)
+    ExecuteInGameThread(function() pcall(writeState); pcall(periodic) end)
 
     local f = io.open(CMD_FILE, "r")
     if not f then return false end
@@ -271,6 +419,11 @@ LoopAsync(1000, function()
                 if cmd == "add_credits" and n then giveCredits(n, ref)
                 elseif cmd == "add_rep" and n then giveReputation(n, ref)
                 elseif cmd == "status" then log("status solicitado")
+                elseif cmd == "pin" then
+                    local x, y, z = line:match("^pin%s+(%S+)%s+(%S+)%s*(%S*)")
+                    setPin(tonumber(x), tonumber(y), tonumber(z) or 0)
+                elseif cmd == "unpin" then clearPin()
+                elseif cmd == "export_map" then exportMap(); exportPois(); exportFog()
                 elseif cmd == "script" and arg ~= "" and arg:match("^[%w_%-]+%.lua$") then
                     local chunk, e = loadfile(DIR .. "dev" .. "\\" .. arg)
                     if not chunk then log("script erro ao carregar: " .. tostring(e)); return end
