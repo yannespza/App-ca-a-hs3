@@ -1191,6 +1191,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.responder(200, APP.configurar(corpo.get("chave"), corpo.get("valor")))
         if p == "/api/chat":
             return self.responder(200, APP.conversar(corpo.get("texto")))
+        if p == "/api/exportar_dados":
+            APP.enviar_comando(["exportar_dados"])
+            return self.responder(200, {"ok": True})
         if p == "/api/exportar_mapa":
             APP.enviar_comando(["export_map"])
             return self.responder(200, {"ok": True})

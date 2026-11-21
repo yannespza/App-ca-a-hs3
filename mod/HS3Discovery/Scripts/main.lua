@@ -609,7 +609,7 @@ local function exportarDados(forcar)
                          fim = function() exportando = false end })
 end
 
-local ultimoNivel, ticks, dadosChecados = nil, 0, false
+local ultimoNivel, ticks = nil, 0
 local function periodic()
     ticks = ticks + 1
     local _, _, curto = currentLevel()
@@ -621,11 +621,7 @@ local function periodic()
         local f2 = io.open(DIR .. "catalogo_v2.json", "rb")
         if f2 then f2:close() else pcall(iniciarCatalogo) end
     end
-    if catalogo then pcall(passoCatalogo)
-    elseif not dadosChecados and ultimoNivel and ticks > 15 then
-        dadosChecados = true
-        local ok, e = pcall(exportarDados, false); if not ok then log("exportarDados: " .. tostring(e)) end
-    end
+    if catalogo then pcall(passoCatalogo) end
     if ticks % 10 == 0 then pcall(writeEquipamento) end
     if ticks % 5 == 0 then pcall(writeAnimals) end
     if ticks % 60 == 0 then pcall(exportPois) end
@@ -661,7 +657,11 @@ LoopAsync(1000, function()
                 elseif cmd == "unpin" then clearPin()
                 elseif cmd == "comprar" and arg ~= "" then comprar(arg, ref)
                 elseif cmd == "catalogo" then iniciarCatalogo()
-                elseif cmd == "exportar_dados" then exportarDados(true)
+                elseif cmd == "exportar_dados" then
+                    local _, _, curto = currentLevel()
+                    if not curto or curto:find("Hub") or curto:find("Menu") or not FindFirstOf("HS3PlayerController") then
+                        log("exportar_dados: entre numa reserva primeiro")
+                    else exportarDados(true) end
                 elseif cmd == "teleport" then
                     local x, y, z = line:match("^teleport%s+(%S+)%s+(%S+)%s*(%S*)")
                     teleportar(tonumber(x), tonumber(y), tonumber(z) or 0)

@@ -64,12 +64,8 @@ function M.iniciar(ctx)
         return o and classe(o) and o or nil
     end
     local function desenhar(tex, arquivo, tam, uv0, uvT, larg, alt)
-        local rt = rts[tam]
-        if not rt then
-            rt = KRL:CreateRenderTarget2D(pc, tam, tam, 2, { R = 0, G = 0, B = 0, A = 0 }, false, false)
-            rts[tam] = rt
-        end
-        KRL:ClearRenderTarget2D(pc, rt, { R = 0, G = 0, B = 0, A = 0 })
+        -- um render target novo por imagem (mesmo caminho testado no jogo)
+        local rt = KRL:CreateRenderTarget2D(pc, tam, tam, 2, { R = 0, G = 0, B = 0, A = 0 }, false, false)
         local w, h = tam, tam
         if larg > alt then h = tam * alt / larg elseif alt > larg then w = tam * larg / alt end
         local canvas, sz, c = {}, {}, {}
@@ -219,9 +215,14 @@ function M.iniciar(ctx)
 
     local total, i = #fila, 1
     log("exportação dos dados do jogo: " .. total .. " tarefas")
-    LoopAsync(400, function()
+    LoopAsync(700, function()
         ExecuteInGameThread(function()
-            local fim = math.min(i + 4, total)
+            if not fila then return end
+            if not (pc and pc:IsValid()) then
+                log("exportação interrompida (saiu da reserva). Use o botão no app para continuar.")
+                fila = nil; if ctx.fim then ctx.fim() end; return
+            end
+            local fim = math.min(i + 1, total)
             for k = i, fim do pcall(fila[k]) end
             i = fim + 1
             if i > total and fila then

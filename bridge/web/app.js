@@ -427,8 +427,10 @@ async function renderEnciclopedia() {
   const d = await (await fetch("/api/enciclopedia")).json();
   if (!d.pronto) {
     $("painel-enciclopedia").innerHTML = `<div class="diario-vazio"><h3>Diário de campo</h3>
-      <p>Os dados do diário (fotos, hábitos, calibres, armas, roupas, cães) são lidos do jogo uma única vez.
-      Entre numa reserva com o jogo aberto e espere uns 2 minutos — esta página se completa sozinha.</p></div>`;
+      <p>Os dados do diário (fotos, hábitos, calibres, armas, roupas, cães) são lidos do jogo uma única vez.</p>
+      <p>Com o jogo aberto <b>dentro de uma reserva</b>, clique no botão abaixo. A leitura é feita aos poucos (uns 10 a 15 minutos,
+      sem travar o jogo) e esta página se completa sozinha no fim. Se sair da reserva no meio, é só clicar de novo: continua de onde parou.</p>
+      <button class="btn-papel verde" onclick="post('/api/exportar_dados',{}).then(()=>this.textContent='Lendo dados do jogo…')">Ler dados do jogo</button></div>`;
     setTimeout(() => { if (abaAtual === "enciclopedia") renderEnciclopedia(); }, 15000);
     return;
   }
