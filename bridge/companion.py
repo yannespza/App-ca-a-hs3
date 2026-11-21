@@ -1335,8 +1335,24 @@ class Handler(BaseHTTPRequestHandler):
             path = APP.caminho(os.path.join("img", nome))
             if not re.fullmatch(r"[\w\-]+\.png", nome) or not os.path.isfile(path):
                 return self.responder(404, {"erro": "sem imagem"})
+            # revalida sempre (os ícones podem ser refeitos em alta resolução), mas sem baixar de novo se não mudou
+            marca = str(int(os.path.getmtime(path)))
+            if self.headers.get("If-None-Match") == marca:
+                self.send_response(304)
+                self.send_header("ETag", marca)
+                self.send_header("Cache-Control", "no-cache")
+                self.end_headers()
+                return
             with open(path, "rb") as f:
-                return self.responder(200, f.read(), "image/png", cache=True)
+                corpo = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("ETag", marca)
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Content-Length", str(len(corpo)))
+            self.end_headers()
+            self.wfile.write(corpo)
+            return
         if caminho == "/api/mapa.png":
             return self.arquivo_mod("mapa_{nivel}.png", "image/png")
         if caminho == "/api/nevoa.png":

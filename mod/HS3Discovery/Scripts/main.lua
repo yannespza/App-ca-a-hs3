@@ -606,7 +606,12 @@ local function exportarDados(forcar)
     end
     exportando = true
     exportador.iniciar({ DIR = DIR, log = log, writeFile = writeFile, json = jsonEncode, tagName = tagName, valid = valid,
-                         fim = function() exportando = false end })
+                         fim = function()
+                             exportando = false
+                             -- depois de ler os dados, refaz em alta resolução os ícones novos (img\nitidos.txt guarda os já feitos)
+                             local ch = loadfile(DIR .. "Scripts\\nitido.lua")
+                             if ch then pcall(function() ch().iniciar({ DIR = DIR, log = log }) end) end
+                         end })
 end
 
 ------------------------------------------------------------------ mochila e contratos do jogo
@@ -712,6 +717,9 @@ LoopAsync(1000, function()
                 elseif cmd == "teleport" then
                     local x, y, z = line:match("^teleport%s+(%S+)%s+(%S+)%s*(%S*)")
                     teleportar(tonumber(x), tonumber(y), tonumber(z) or 0)
+                elseif cmd == "nitido" then
+                    local ch, e = loadfile(DIR .. "Scripts\\nitido.lua")
+                    if ch then ch().iniciar({ DIR = DIR, log = log }) else log("nitido.lua: " .. tostring(e)) end
                 elseif cmd == "export_map" then exportMap(); exportPois(); exportFog(); exportCalibres()
                 elseif cmd == "mochila" then
                     -- mochila ler | mochila por <item> <tipo> <idx> | mochila tirar <item> | mochila municao <arma> <municao>

@@ -11,7 +11,8 @@ let MUNDO = 1224000;                    // largura do mundo em cm (vem do jogo)
 const toLL = (p) => [-(p.y / MUNDO + 0.5) * S, (p.x / MUNDO + 0.5) * S];
 const fromLL = (ll) => ({ x: (ll.lng / S - 0.5) * MUNDO, y: (-ll.lat / S - 0.5) * MUNDO });
 
-const mapa = L.map("mapa", { crs: L.CRS.Simple, minZoom: -3, maxZoom: 2, zoomSnap: 0.25, attributionControl: false, zoomControl: true });
+const mapa = L.map("mapa", { crs: L.CRS.Simple, minZoom: -3, maxZoom: 2, zoomSnap: 0.25, attributionControl: false, zoomControl: false });
+L.control.zoom({ position: "bottomright" }).addTo(mapa);
 const limites = [[-S, 0], [0, S]];
 mapa.fitBounds(limites);
 let camadaImagem = null, camadaNevoa = null, nivelAtual = null, nevoaVersao = 0;
@@ -168,7 +169,7 @@ function atualizarMarcadores(d) {
 function distancia(a, b) { if (!a || !b) return null; return Math.hypot(a.x - b.x, a.y - b.y, (a.z || 0) - (b.z || 0)) / 100; }
 
 // ------------------------------------------------------------------ contratos
-function recompensa(m) { return `💰 ${fmt(m.creditos_pagos ?? m.creditos)} · ⭐ ${fmt(m.reputacao)}`; }
+function recompensa(m) { return `$${fmt(m.creditos_pagos ?? m.creditos)} <small>+${fmt(m.reputacao)} rep.</small>`; }
 
 function renderOfertas(d) {
   const of = d.ofertas;
@@ -195,7 +196,7 @@ function renderAtivas(d) {
         <button class="btn-papel cinza" onclick="if(confirm('Abandonar este contrato?'))acao('abandonar','${m.id}')">Abandonar</button></div>
     </div>`);
   const fim = d.finalizadas.slice(0, 3).map(m => `<div class="ativa concl"><div class="at-titulo"><span>${esc(m.titulo)}</span>
-      <span class="recomp">${m.status === "paga" ? "✅ Pago" : (m.enviado ? "⏳ Pagando…" : "✔ Concluída")}</span></div></div>`);
+      <span class="estado-pg ${m.status === "paga" ? "ok" : ""}">${m.status === "paga" ? "Pago" : (m.enviado ? "Pagando…" : "Concluído")}</span></div></div>`);
   const jogo = (d.contratos_jogo || []).map(c => `<div class="ativa do-jogo">
       <div class="at-titulo"><span><span class="selo-jogo">JOGO</span> ${esc(c.titulo)}</span>${c.rastreado ? `<span class="selo-rastreio">Rastreando</span>` : ""}</div>
       <div class="of-meta">${esc(c.vendedor)}${c.tempo_min != null ? ` · ⏱ ${c.tempo_min} min restantes` : ""}</div>
@@ -209,7 +210,8 @@ function renderAtivas(d) {
 
 async function acao(tipo, id) {
   const r = await post("/api/missoes/" + tipo, { id });
-  if (!r.ok && r.erro) alert(r.erro);
+  if (!r.ok && r.erro) return moAviso(r.erro, "erro");
+  if (tipo === "aceitar") { moAviso("Contrato aceito. Ele está em Em andamento.", "ok"); document.querySelector('.segmentos [data-seg="ativas"]').click(); }
   atualizar();
 }
 
@@ -257,8 +259,8 @@ async function clicarAtualizar() {
     $("btn-atualizar").textContent = "Verificando…";
     const r = await post("/api/verificar");
     mostrarAtualizacao(r, r.atual);
-    if (r.erro) alert(r.erro);
-    else if (!r.disponivel) alert(`Você já está na versão mais recente (v${r.atual}).`);
+    if (r.erro) moAviso(r.erro, "erro");
+    else if (!r.disponivel) moAviso(`Você já está na versão mais recente (v${r.atual}).`, "ok");
   }
 }
 async function sair() {
@@ -287,7 +289,8 @@ async function atualizar() {
   mostrarAtualizacao(d.atualizacao, d.versao);
   const st = d.estado || {};
   $("led").className = "led " + (d.em_reserva ? "on" : d.conectado ? "meio" : "");
-  $("conexao-txt").textContent = d.em_reserva ? `Conectado · ${nomeMapa(st.mapa)}` : d.conectado ? "Conectado · fora da reserva" : "Jogo não detectado";
+  $("conexao-txt").textContent = d.em_reserva ? "Conectado ao jogo" : d.conectado ? "Jogo aberto, fora da reserva" : "Jogo fechado";
+  $("nome-reserva").textContent = d.em_reserva ? nomeMapa(st.mapa) : d.conectado ? "No acampamento" : "Aguardando o jogo";
 
   // placas
   const moedas = st.moedas || {};
@@ -295,14 +298,16 @@ async function atualizar() {
   const pt = d.patente;
   $("p-patente").textContent = pt.patente;
   $("p-patente-barra").style.width = (pt.progresso * 100) + "%";
-  $("p-patente-sub").textContent = `${fmt(pt.pontos)} pts` + (pt.proxima ? ` · faltam ${fmt(pt.faltam)} p/ ${pt.proxima}` : "");
+  $("p-patente-sub").textContent = pt.proxima ? `faltam ${fmt(pt.faltam)} pts para ${pt.proxima}` : `${fmt(pt.pontos)} pts`;
   $("f-voltar").checked = !!d.config?.voltar_ao_ultimo_local;
   $("f-hud").checked = d.config?.contratos_no_jogo !== false;
   $("btn-voltar").style.display = d.tem_local_salvo ? "" : "none";
   $("aviso-teleporte").textContent = d.aviso_teleporte || "";
   const rep = d.reputacao_mapa_atual;
   $("p-rep").textContent = rep ? fmt(rep.valor) : "–";
-  $("p-contratos").textContent = `${d.ativas.length} ativo${d.ativas.length === 1 ? "" : "s"}`;
+  const nAndamento = d.ativas.length + (d.contratos_jogo || []).length;
+  $("p-contratos").textContent = nAndamento || "";
+  $("n-ofertas").textContent = d.ofertas.length || "";
   const campo = Object.entries(st.pontos_campo || {}).find(([k]) => st.mapa && k.toLowerCase().includes(nomeMapa(st.mapa).toLowerCase()));
   $("p-campo").textContent = campo ? fmt(campo[1]) : "–";
 
@@ -326,23 +331,30 @@ async function atualizar() {
 
   // telemetria
   const prox = (d.rastreados || []).find(a => a.distancia_m !== null);
-  const pino = st.pino_jogo;
-  $("telemetria").innerHTML = [
-    ["Reserva", nomeMapa(st.mapa)],
-    ["Posição", st.pos ? `${Math.round(st.pos.x / 100)} / ${Math.round(st.pos.y / 100)} · alt ${Math.round(st.pos.z / 100)} m` : "–"],
-    ["Animais rastreados", fmt((d.rastreados || []).length)],
-    ["Mais próximo", prox ? `${esc(prox.especie_nome || prox.grupo_nome)} · ${metros(prox.distancia_m)}` : "–"],
-    ["Pino", pino ? metros(distancia(st.pos, pino)) : "–"],
-  ].map(([k, v]) => `<span>${k}</span><b>${v}</b>`).join("");
+  const pino = st.pino_jogo && st.pino_jogo.x ? st.pino_jogo : d.pino_app;
+  const hud = [
+    ["Posição", st.pos ? `${Math.round(st.pos.x / 100)} · ${Math.round(st.pos.y / 100)}` : "–", st.pos ? `altitude ${Math.round(st.pos.z / 100)} m` : ""],
+    ["Animais rastreados", fmt((d.rastreados || []).length), prox ? `mais perto: ${esc(prox.especie_nome || prox.grupo_nome)}, ${metros(prox.distancia_m)}` : "marque com o binóculo"],
+    ["Pino", pino && pino.x ? metros(distancia(st.pos, pino)) : "–", pino && pino.x ? "até o pino" : "nenhum pino"],
+  ];
+  $("telemetria").innerHTML = d.em_reserva ? hud.map(([k, v, s]) => `<div class="hud-item"><span>${k}</span><b>${v}</b><small>${s}</small></div>`).join("") : "";
   const s = d.estatisticas;
   $("diario").innerHTML = [
     ["Abates", fmt(s.total_abates)], ["Distância média", metros(s.distancia_media)], ["Tiro mais longo", metros(s.distancia_maxima)],
     ["Melhor genética", s.melhor_genetica ? `${pct(s.melhor_genetica.genetica)} · ${esc(s.melhor_genetica.especie)}` : "–"],
     ["Contratos concluídos", fmt(s.missoes_concluidas)], ["Créditos de contratos", fmt(s.creditos_ganhos)],
   ].map(([k, v]) => `<span>${k}</span><b>${v}</b>`).join("");
-  $("ultimos").innerHTML = d.abates.slice(0, 5).map(a =>
-    `<div><span>${esc(a.especie_nome || a.grupo_nome)} ${a.sexo_nome ? "· " + esc(a.sexo_nome) : ""}</span><span>${pct(a.genetica)} · ${metros(a.distancia_m)} · ${esc((a.arma || "").replace(/^ID_/, "").replace(/_/g, " "))}</span></div>`
-  ).join("") || `<div><span>Nenhum abate ainda.</span></div>`;
+  const barras = (lista, id) => {
+    const max = Math.max(1, ...lista.map(x => x[1]));
+    $(id).innerHTML = lista.slice(0, 8).map(([n, v]) => `<div class="barra-lin"><span>${esc(n)}</span><i style="--p:${100 * v / max}%"></i><b>${v}</b></div>`).join("")
+      || `<p class="vazio">Nenhum abate ainda.</p>`;
+  };
+  barras(s.por_grupo || [], "cac-especies");
+  barras((s.por_arma || []).map(([n, v]) => [n.replace(/^ID_/, "").replace(/_/g, " "), v]), "cac-armas");
+  $("ultimos").innerHTML = d.abates.length ? `<table class="tabela"><thead><tr><th>Animal</th><th>Genética</th><th>Distância</th><th>Arma</th><th>Reserva</th></tr></thead><tbody>` +
+    d.abates.slice(0, 15).map(a => `<tr><td><b>${esc(a.especie_nome || a.grupo_nome)}</b>${a.sexo_nome && a.sexo_nome !== "?" ? ` <small>${esc(a.sexo_nome)}</small>` : ""}</td>
+      <td>${pct(a.genetica)}</td><td>${metros(a.distancia_m)}</td><td>${esc((a.arma || "").replace(/^ID_/, "").replace(/_/g, " "))}</td><td>${esc(a.reserva ? nomeMapa(a.reserva) : "–")}</td></tr>`).join("") + `</tbody></table>`
+    : `<p class="vazio">Nenhum abate ainda. Cada animal recolhido no jogo aparece aqui.</p>`;
 }
 
 atualizar();
@@ -353,17 +365,22 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
 
 // ------------------------------------------------------------------ abas: armário, loja, enciclopédia
 let abaAtual = "mapa", filtroLoja = "Todas";
+document.querySelectorAll(".segmentos button").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".segmentos button").forEach(x => x.classList.toggle("ativo", x === b));
+  document.querySelectorAll(".seg").forEach(s => s.classList.toggle("ativo", s.id === "seg-" + b.dataset.seg));
+  if (b.dataset.seg === "chat") { const l = $("chat-log"); l.scrollTop = l.scrollHeight; }
+});
 document.querySelectorAll("#abas button").forEach(b => b.onclick = () => {
   abaAtual = b.dataset.aba;
   document.querySelectorAll("#abas button").forEach(x => x.classList.toggle("ativo", x === b));
-  ["armario", "loja", "enciclopedia"].forEach(a => $("painel-" + a).classList.toggle("ativo", a === abaAtual));
+  ["armario", "loja", "enciclopedia", "cacadas"].forEach(a => $("painel-" + a).classList.toggle("ativo", a === abaAtual));
   document.querySelector(".mapa-papel").classList.toggle("so-mapa", abaAtual === "mapa");
   if (abaAtual === "mapa") setTimeout(() => mapa.invalidateSize(), 50);
   atualizarAba();
 });
 $("f-voltar").onchange = (e) => post("/api/config", { chave: "voltar_ao_ultimo_local", valor: e.target.checked });
 $("f-hud").onchange = (e) => post("/api/config", { chave: "contratos_no_jogo", valor: e.target.checked });
-async function voltarAgora() { const r = await post("/api/voltar"); if (!r.ok) alert(r.erro); }
+async function voltarAgora() { const r = await post("/api/voltar"); if (!r.ok) moAviso(r.erro, "erro"); }
 
 function barraStat(nome, v) {
   return `<div class="st"><span>${nome}</span><span class="b"><i style="width:${Math.max(0, Math.min(100, v))}%"></i></span><b>${Math.round(v)}</b></div>`;
@@ -441,7 +458,7 @@ async function renderArmario(forcar) {
     : `<div class="mo-pronta">✔ A mochila já está pronta para os contratos escolhidos</div>`;
 
   const contratos = d.ativas.length ? d.ativas.map(m => `<button class="mo-contrato ${m.escolhida ? "on" : ""}" onclick="moMissao('${esc(m.id)}')">
-      <span class="mo-check">${m.escolhida ? "✔" : ""}</span><span class="mo-origem ${m.do_jogo ? "jogo" : "app"}">${m.do_jogo ? "JOGO" : "EARL"}</span>${esc(m.titulo)}</button>`).join("")
+      <span class="mo-check">${m.escolhida ? "✔" : ""}</span><span class="mo-origem ${m.do_jogo ? "jogo" : "earl"}">${m.do_jogo ? "JOGO" : "EARL"}</span>${esc(m.titulo)}</button>`).join("")
     : `<span class="mo-dica">Nenhum contrato ativo. Sem contrato, a sugestão vale para qualquer animal.</span>`;
 
   // espaços da mochila
@@ -609,7 +626,8 @@ async function renderLoja() {
   const det = d.deteccao || {};
   const med = (nome, v, dica) => `<div class="medidor"><div class="item-sub">${nome}</div><div class="v">${v == null ? "–" : Math.round(v * 100) + "%"}</div>
       <div class="b"><i style="width:${(v || 0) * 100}%"></i></div><div class="item-sub">${dica}</div></div>`;
-  let html = `<h3>Como os animais te percebem agora</h3><div class="medidores">
+  let html = `<header class="pag-topo"><h2>Roupas e camuflagem</h2><p>O quanto os animais te veem, ouvem e sentem com a roupa de agora, e o que dá para comprar.</p></header>
+    <h3>Como os animais te percebem agora</h3><div class="medidores">
       ${med("Visão", det.visual, "quanto menor, mais camuflado")}${med("Audição", det.som, "barulho da roupa e dos passos")}${med("Olfato", det.cheiro, "use spray e vento a favor")}</div>`;
   html += `<h3>Você está vestindo</h3>` + (d.vestidos.length ? `<div class="grade-itens">${d.vestidos.map(itemLoja).join("")}</div>` : `<p class="vazio">–</p>`);
   const partes = ["Todas", ...new Set(d.itens.map(i => i.parte))];
@@ -631,7 +649,7 @@ function itemLoja(i) {
 async function comprarItem(id, nome, preco) {
   if (!confirm(`Comprar "${nome}" por $${fmt(preco)} na loja do jogo?`)) return;
   const r = await post("/api/comprar", { id });
-  if (!r.ok) alert(r.erro); else setTimeout(renderLoja, 2500);
+  if (!r.ok) moAviso(r.erro, "erro"); else { moAviso("Compra enviada ao jogo.", "ok"); setTimeout(renderLoja, 2500); }
 }
 
 // ---------------------------------------------------------------- Diário de campo
