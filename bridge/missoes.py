@@ -72,9 +72,9 @@ FALAS_ABRE = [
 FALAS_GRUPO = [
     "Tem {g} demais derrubando cerca na propriedade do Miller.", "O pessoal da vila reclamou de {g} comendo a horta.",
     "A população de {g} cresceu demais esse ano e o pasto não aguenta.", "O açougue da cidade encomendou {g}.",
-    "Um fazendeiro me ligou desesperado com {g} no milharal.", "Os {g} estão espantando o gado lá perto do rio.",
+    "Um fazendeiro me ligou desesperado com {g} no milharal.", "Tem {g} espantando o gado lá perto do rio.",
     "A associação quer equilibrar o número de {g} antes do inverno.", "Encomenda de carne de {g} pra festa da paróquia.",
-    "Achei rastro fresco de {g} perto da estrada de terra.", "O veterinário pediu pra controlar os {g} por causa de doença.",
+    "Achei rastro fresco de {g} perto da estrada de terra.", "O veterinário pediu pra controlar a população de {g} por causa de doença.",
 ]
 FALAS_QUALQUER = [
     "A câmara fria do posto está vazia.", "Os hóspedes do rancho querem carne de caça no jantar.",
@@ -137,30 +137,41 @@ def _arma_tipo(tipo):
     return "rifle"
 
 
-def gerar(dados, pois, nome_grupo, grupos_reserva, armas_tipos, quantos=1):
-    """Gera `quantos` contratos variados, sem repetir títulos já oferecidos agora."""
-    vistos = [g for g in set(dados.get("grupos_vistos", [])) if g != "outro"]
-    grupos = list(dict.fromkeys(list(grupos_reserva) + vistos)) or ["cervo", "porco"]
+def gerar(dados, pois, nome_grupo, grupos_reserva, cap, quantos=1):
+    """Gera `quantos` contratos variados, sem repetir títulos já oferecidos agora.
+    cap = extras.capacidade(): grupos que você consegue caçar com as armas e munição que tem, e com que tipo de arma."""
+    if isinstance(cap, (list, tuple)):          # chamada antiga: só a lista de tipos de arma
+        cap = {"grupos": {g: {"armas": list(cap), "atrair": True} for g in grupos_reserva}, "telemetro": True}
+    grupos = [g for g in grupos_reserva if g in cap["grupos"]]
     usados = {m["titulo"] for m in dados.get("missoes", []) if m.get("status") in ("oferta", "ativa")}
     saida = []
     for _ in range(quantos * 8):
         if len(saida) >= quantos:
             break
-        m = _um(grupos, pois, nome_grupo, armas_tipos)
+        m = _um(grupos, pois, nome_grupo, cap)
         if m and m["titulo"] not in usados:
             usados.add(m["titulo"])
             saida.append(m)
     return saida
 
 
-def _um(grupos, pois, nome_grupo, armas_tipos):
+def _um(grupos, pois, nome_grupo, cap):
+    # sem arma+munição para nada da reserva (jogo novo): só censo no binóculo e reconhecimento
+    caca = 1 if grupos else 0
     forma = random.choices(["grupo", "qualquer", "variedade", "marcar", "marcar_grupo", "visitar"],
-                           weights=[50, 16, 7, 10, 7, 7 if pois else 0])[0]
+                           weights=[50 * caca, 16 * caca, 7 * caca if len(grupos) > 1 else 0, 10, 7, 7 if pois else 0])[0]
     if forma in ("marcar", "marcar_grupo"):
-        return _marcar(grupos if forma == "marcar_grupo" else None, nome_grupo)
+        return _marcar(grupos if forma == "marcar_grupo" and grupos else None, nome_grupo)
     if forma == "visitar":
-        return _visitar(pois)
+        return _visitar(pois) if pois else _marcar(None, nome_grupo)
     grupo = random.choice(grupos) if forma == "grupo" else None
+    # tipos de arma que você consegue usar nesse alvo (arma sua + munição sua permitida)
+    if grupo:
+        armas_tipos = cap["grupos"][grupo]["armas"]
+        pode_atrair = cap["grupos"][grupo]["atrair"]
+    else:
+        armas_tipos = sorted({t for g in grupos for t in cap["grupos"][g]["armas"]})
+        pode_atrair = any(cap["grupos"][g]["atrair"] for g in grupos)
     pequeno = grupo in PEQUENOS
     meta = random.choice([1, 1, 2, 2, 3, 4, 5] if pequeno else [1, 1, 1, 2, 2, 3])
     if forma == "variedade":
@@ -176,17 +187,17 @@ def _um(grupos, pois, nome_grupo, armas_tipos):
             break
         if o == "dist":
             arma = cond.get("arma")
-            faixas = ["curta", "media"] if arma in ("arco", "curta_arma") or pequeno else ["curta", "media", "longa", "longa"]
+            faixas = ["curta", "media"] if arma in ("arco", "curta_arma") or pequeno or "rifle" not in armas_tipos else ["curta", "media", "longa", "longa"]
             if arma == "espingarda":
                 faixas = ["curta"]
             f = random.choice(faixas)
             cond["dist_min"], cond["dist_max"] = random.choice(FAIXAS[f])
             chaves.append(f)
         elif o == "arma":
-            tipos = [t for t in armas_tipos if t != "rifle" or not pequeno] or ["rifle"]
+            tipos = [t for t in armas_tipos if t != "rifle" or not pequeno] or list(armas_tipos)
             if "longa" in chaves:
                 tipos = [t for t in tipos if t == "rifle"]
-            if not tipos:
+            if not tipos or len(armas_tipos) < 2:      # com um tipo só, exigir o tipo não acrescenta nada
                 continue
             t = random.choice(tipos)
             if grupo in AVES and t not in ("espingarda", "arco"):
@@ -202,6 +213,8 @@ def _um(grupos, pois, nome_grupo, armas_tipos):
             s = random.choice(["macho", "macho", "femea"])
             cond["sexo"] = s
             chaves.append(s)
+        elif o == "atrair" and not pode_atrair:
+            continue
         elif o in ("um_tiro", "sem_torre", "atrair", "nao_detectado", "calibre"):
             cond[o] = True
             chaves.append(o)

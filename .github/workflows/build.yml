@@ -9,7 +9,40 @@ permissions:
   contents: write
 
 jobs:
+  android:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Gerar HS3Companion.apk
+        working-directory: android
+        env:
+          VERSAO_APP: 0.1.${{ github.run_number }}
+          NUMERO_APP: ${{ github.run_number }}
+        run: |
+          gradle --no-daemon assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk ../HS3Companion.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: HS3Companion.apk
+
   build:
+    needs: android
+    if: always()
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,7 +52,7 @@ jobs:
           python-version: "3.12"
 
       - name: Instalar PyInstaller
-        run: pip install pyinstaller certifi
+        run: pip install pyinstaller certifi pillow
 
       - name: Gravar versão
         shell: pwsh
@@ -38,6 +71,12 @@ jobs:
           Copy-Item LEIA-ME.txt pacote/
           Compress-Archive -Path pacote/* -DestinationPath HS3Companion.zip -Force
 
+      - name: Pegar o app Android
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: apk
+
       - name: Publicar release
         uses: softprops/action-gh-release@v2
         with:
@@ -46,4 +85,7 @@ jobs:
           body: |
             Baixe **HS3Companion.zip**, extraia e siga o LEIA-ME.txt.
             Commit: ${{ github.sha }}
-          files: HS3Companion.zip
+          fail_on_unmatched_files: false
+          files: |
+            HS3Companion.zip
+            HS3Companion.apk

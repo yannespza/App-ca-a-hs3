@@ -95,6 +95,7 @@ def carregar_pois(path):
             continue
         p = dict(p)
         p["categoria"], p["nome"] = cat, nome
-        p["descoberto"] = (p.get("estado") or "").endswith("Discovered") or cat not in ("lugar", "acampamento", "torre")
+        # lugares, acampamentos, torres e estruturas de caça só contam depois que você os descobre no jogo
+        p["descoberto"] = (p.get("estado") or "").endswith("Discovered") or cat not in ("lugar", "acampamento", "torre", "estrutura")
         saida.append(p)
     return saida

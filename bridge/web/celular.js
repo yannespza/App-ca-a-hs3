@@ -10,6 +10,13 @@ async function abrirCelular() {
     q.make();
     qr = q.createSvgTag({ cellSize: 6, margin: 3, scalable: true });
   }
+  let qrApk = "";
+  if (typeof qrcode === "function") {
+    const q2 = qrcode(0, "M");
+    q2.addData("https://github.com/yannespza/App-ca-a-hs3/releases/latest/download/HS3Companion.apk");
+    q2.make();
+    qrApk = q2.createSvgTag({ cellSize: 4, margin: 3, scalable: true });
+  }
   moModal(`<header class="mo-jan-topo"><div><h3>Usar no celular ${ajuda("celular")}</h3><small>O celular vira uma segunda tela do app, pela rede Wi-Fi de casa</small></div>
       <button class="mo-x" onclick="moFecharModal()">✕</button></header>
     <div class="mo-jan-corpo cel">
@@ -22,9 +29,17 @@ async function abrirCelular() {
             <li>Abra a <b>câmera</b> do celular e aponte para o QR code. Toque no link que aparecer.</li>
             <li>Na primeira vez, o Windows pode perguntar se o HS3Companion pode usar a rede: clique em <b>Permitir acesso</b>.
               Se não aparecer e o celular não abrir, veja a dica abaixo.</li>
-            <li>No celular, use <b>“Adicionar à tela inicial”</b> (menu ⋮ do Chrome ou botão Compartilhar do iPhone).
-              Ele vira um ícone que abre direto, em tela cheia.</li>
+            <li><b>iPhone:</b> no Safari, botão Compartilhar → <b>“Adicionar à Tela de Início”</b>. Vira um ícone que abre em tela cheia.</li>
           </ol>
+        </div>
+        <div class="cel-grade cel-apk">
+          <div class="cel-qr">${qrApk}</div>
+          <div><b>Android: instale o app</b>
+            <ol class="cel-passos">
+              <li>Aponte a câmera para este QR para baixar o <b>HS3Companion.apk</b>.</li>
+              <li>Abra o arquivo baixado. Se o Android pedir, permita <b>“instalar apps desconhecidos”</b> para o navegador.</li>
+              <li>Abra o app <b>HS3 Companion</b>: ele procura este PC sozinho. Digite o PIN <b class="cel-pin">${esc(c.pin)}</b> uma vez.</li>
+            </ol></div>
         </div>
         <p>Sem câmera? Digite no navegador do celular <code>${esc(c.endereco)}</code> e o PIN <b class="cel-pin">${esc(c.pin)}</b>.</p>
         ${c.outros && c.outros.length ? `<p class="mo-dica">Se não abrir, este PC também atende em: ${c.outros.map(x => `<code>${esc(x)}</code>`).join(" ")} (use o que começa igual ao endereço do seu celular no Wi-Fi).</p>` : ""}
@@ -44,3 +59,7 @@ async function celLigar(ligado) {
   moFecharModal();
   moAviso(ligado ? "Ligado. Feche e abra o HS3Companion uma vez para valer." : "Desligado: o celular não entra mais.", "ok");
 }
+
+// dentro do app Android: botão para procurar outro PC
+if (window.HS3 && typeof window.HS3.esquecer === "function") document.body.classList.add("apk");
+function trocarPc() { if (confirm("Procurar outro PC na rede?")) window.HS3.esquecer(); }

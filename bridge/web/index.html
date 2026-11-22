@@ -50,6 +50,7 @@
     </div>
     <div class="topo-acoes">
       <button class="btn sec so-pc" onclick="abrirCelular()" title="Abrir este app no celular">📱 Celular</button>
+      <button class="btn sec so-apk" onclick="trocarPc()" title="Conectar a outro PC">Trocar de PC</button>
       <button id="btn-atualizar" class="btn sec" onclick="clicarAtualizar()">Procurar atualização</button>
       <button class="btn fantasma so-pc" onclick="sair()" title="Fecha o HS3 Companion">Fechar</button>
     </div>
@@ -61,7 +62,7 @@
       <div id="mapa"></div>
       <div class="camadas legenda">
         <label><input type="checkbox" id="f-pois" checked><span>Pontos</span></label>
-        <label><input type="checkbox" id="f-estr"><span>Estruturas</span></label>
+        <label><input type="checkbox" id="f-estr"><span>Estruturas a descobrir</span></label>
         <label><input type="checkbox" id="f-nevoa"><span>Névoa</span></label>
         <span class="ajuda-cam" data-ajuda="camadas"></span><button class="btn-nevoa" id="btn-nevoa" onclick="atualizarNevoa()" title="Lê do jogo as áreas já exploradas. O jogo dá uma travadinha de 1 segundo, por isso só acontece quando você pede.">↻ névoa</button>
         <label><input type="checkbox" id="f-animais" checked><span>Animais</span></label>
@@ -69,6 +70,8 @@
       <div class="mapa-botoes">
         <button class="btn-mapa" onclick="centralizar()" title="Centralizar em mim">
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/></svg>Eu</button>
+        <button class="btn-mapa" id="btn-tempo" onclick="abrirTempo()" style="display:none" title="Passar o tempo, como dormir na cama do acampamento">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span id="btn-tempo-hora">Passar tempo</span></button>
         <button class="btn-mapa" id="btn-tirar-pino" onclick="tirarPino()" style="display:none">Tirar pino</button>
         <button class="btn-mapa" id="btn-voltar" onclick="voltarAgora()" style="display:none">Voltar ao último local</button>
         <label class="btn-mapa alterna" title="Ao entrar na reserva, volta para onde você estava quando saiu"><input type="checkbox" id="f-voltar"><span>Voltar ao último local ao entrar</span></label><span class="ajuda-mapa" data-ajuda="voltar"></span>

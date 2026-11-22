@@ -5,6 +5,7 @@ paga recompensas escrevendo comandos em cmd.txt e serve o app em http://localhos
 Só usa a biblioteca padrão do Python.
 """
 import hmac
+import socket
 import json
 import re
 import urllib.parse
@@ -25,6 +26,7 @@ from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import extras
+import imagens
 import instalador
 import missoes
 import mapa
@@ -293,11 +295,14 @@ def dentro(pos, local, raio_m=60):
     return d is not None and d <= raio_m
 
 
-def avaliar_missoes(dados, evento):
-    """Atualiza o progresso das missões ativas com um evento (abate confirmado, marcação ou posição)."""
+def avaliar_missoes(dados, evento, reserva=None):
+    """Atualiza o progresso das missões ativas com um evento (abate confirmado, marcação ou posição).
+    Cada contrato vale só na reserva onde foi oferecido."""
     concluidas = []
     for m in dados["missoes"]:
         if m["status"] != "ativa" or evento.get("ts", 0) < m.get("aceita_em", m["criada"]) - 2:
+            continue
+        if m.get("reserva") and reserva and m["reserva"] != reserva:
             continue
         t = m["tipo"]
         if t == "combo":
@@ -657,6 +662,10 @@ class Companion:
         try:
             with open(self.caminho("state.json"), "r", encoding="utf-8") as f:
                 self.estado = json.load(f)
+            pj = self.estado.get("pino_jogo")
+            # sem pino o jogo deixa a posição zerada (versões antigas do mod mandavam assim mesmo)
+            if not isinstance(pj, dict) or (abs(pj.get("x") or 0) < 1 and abs(pj.get("y") or 0) < 1):
+                self.estado.pop("pino_jogo", None)
             self.estado_lido_em = os.path.getmtime(self.caminho("state.json"))
         except Exception:
             pass
@@ -765,7 +774,7 @@ class Companion:
             d["marcados"][str(ev.get("id"))] = ev
             self.registrar_grupo(chave)
             if novo:
-                return avaliar_missoes(d, {"tipo": "marcado", "id": ev.get("id"), "ts": time.time()})
+                return avaliar_missoes(d, {"tipo": "marcado", "id": ev.get("id"), "ts": time.time()}, self.reserva())
         elif tipo in ("abate", "abate_final"):
             id_ = str(ev.get("id"))
             if any(str(a.get("id")) == id_ for a in d["abates"]):
@@ -781,7 +790,7 @@ class Companion:
             d["abates"].append(ab)
             d["marcados"].pop(id_, None)
             d["posicoes"].pop(id_, None)
-            return avaliar_missoes(d, dict(ab, tipo="abate_confirmado"))
+            return avaliar_missoes(d, dict(ab, tipo="abate_confirmado"), self.reserva())
         elif tipo == "compra":
             d["compras"] = (d["compras"] + [ev])[-50:]
         elif tipo == "recompensa":
@@ -831,17 +840,67 @@ class Companion:
                 self.remover_pino()
 
     # --- missões
-    def por_status(self, *status):
-        return [m for m in self.dados["missoes"] if m["status"] in status]
+    def reserva(self):
+        """Nome da reserva atual (Texas, Colorado...) ou None no rancho/menu."""
+        n = self.nivel()
+        if not n:
+            return None
+        r = extras.nome_mapa(n)
+        return None if r == "Rancho" else r
+
+    def por_status(self, *status, todas=False):
+        """Contratos com esse status na reserva atual (todas=True: de todas as reservas)."""
+        r = self.reserva()
+        return [m for m in self.dados["missoes"] if m["status"] in status and (todas or (r and m.get("reserva") == r))]
+
+    def separar_por_reserva(self):
+        """Contratos antigos (sem reserva): ofertas são refeitas; ativos ficam com a reserva atual."""
+        r = self.reserva()
+        if not r or not self.em_reserva():
+            return
+        antes = len(self.dados["missoes"])
+        self.dados["missoes"] = [m for m in self.dados["missoes"] if not (m["status"] == "oferta" and not m.get("reserva"))]
+        mudou = len(self.dados["missoes"]) != antes
+        sem = [m for m in self.dados["missoes"] if not m.get("reserva")]
+        if not sem:
+            return
+        # em que reservas vive cada grupo de animal (para mandar contratos antigos para a reserva certa)
+        dados = self.cache.json(self.caminho("jogo_dados.json"), None) or {}
+        onde = {}
+        for a in dados.get("animais", []):
+            g = grupo_de(a.get("tag"))[0]
+            for mp in a.get("mapas", []):
+                nome = extras.nome_mapa(mp)
+                if nome not in ("Rancho", mp):
+                    onde.setdefault(g, set()).add(nome)
+        visitadas = {extras.nome_mapa(x.get("mapa")) for x in self.estado.get("reputacao") or [] if isinstance(x, dict)}
+        visitadas |= {extras.nome_mapa(k) for k in (self.estado.get("pontos_campo") or {})}
+        for m in sem:
+            lugares = onde.get(m.get("grupo") or "", set())
+            if len(lugares) > 1 and r not in lugares and len(lugares & visitadas) == 1:
+                lugares = lugares & visitadas
+            m["reserva"] = r if (not lugares or r in lugares or len(lugares) > 1) else next(iter(lugares))
+            mudou = True
+        if mudou:
+            self.salvar_pendente = True
+
+    def outras_reservas(self):
+        r = self.reserva()
+        cont = {}
+        for m in self.dados["missoes"]:
+            if m["status"] in ("ativa", "oferta") and m.get("reserva") and m["reserva"] != r:
+                c = cont.setdefault(m["reserva"], {"reserva": m["reserva"], "ativas": 0, "ofertas": 0})
+                c["ativas" if m["status"] == "ativa" else "ofertas"] += 1
+        return sorted(cont.values(), key=lambda c: c["reserva"])
 
     def manter_ofertas(self):
-        if self.gerando or not self.nivel():
+        if self.gerando or not self.reserva() or not self.em_reserva():
             return
         faltam = self.cfg["ofertas"] - len(self.por_status("oferta"))
         if faltam <= 0:
             return
         self.gerando = True
-        threading.Thread(target=self._gerar_ofertas, args=(faltam,), daemon=True).start()
+        threading.Thread(target=self._gerar_ofertas, args=(faltam, self.reserva()), daemon=True).start()
 
     def info_gerador(self):
         """Espécies que vivem na reserva atual e tipos de arma que você tem (para o gerador de contratos)."""
@@ -857,21 +916,23 @@ class Companion:
                 g = grupo_de(a.get("tag"))[0]
                 if g != "outro" and g not in grupos:
                     grupos.append(g)
-        comprados = {b["id"] for b in self.equipamento().get("comprados", [])}
-        tipos = set()
         for i in dados.get("itens", []):
             if (i.get("tipo") or "").startswith("Inventory.Weapon"):
-                t = missoes._arma_tipo(i["tipo"])
-                ARMA_TIPOS[(i.get("item") or "").split(":")[-1]] = t
-                if i["id"] in comprados or i.get("padrao"):
-                    tipos.add(t)
-        return grupos, sorted(tipos) or ["rifle"]
+                ARMA_TIPOS[(i.get("item") or "").split(":")[-1]] = missoes._arma_tipo(i["tipo"])
+        # só o que dá para caçar com as armas e a munição que você tem (jogo novo = poucas opções)
+        cap = extras.capacidade(dados, self.tabela_calibres(), self.equipamento(), self.nivel(), grupo_de, missoes._arma_tipo)
+        grupos = [g for g in grupos if g in cap["grupos"]]
+        return grupos, cap
 
-    def _gerar_ofertas(self, n):
+    def _gerar_ofertas(self, n, reserva):
         try:
-            grupos, armas = self.info_gerador()
+            grupos, cap = self.info_gerador()
             with self.lock:
-                novas = missoes.gerar(self.dados, self.pois(), nome_grupo, grupos, armas, n)
+                if self.reserva() != reserva:
+                    return  # trocou de reserva no meio: gera de novo na próxima volta
+                novas = missoes.gerar(self.dados, self.pois(), nome_grupo, grupos, cap, n)
+                for m in novas:
+                    m["reserva"] = reserva
                 self.dados["missoes"].extend(novas[:n])
                 self.salvar_pendente = True
         except Exception as e:
@@ -884,6 +945,8 @@ class Companion:
             m = next((x for x in self.dados["missoes"] if x["id"] == id_), None)
             if not m:
                 return {"ok": False, "erro": "missão não encontrada"}
+            if m.get("reserva") and m["reserva"] != self.reserva() and acao in ("aceitar", "focar"):
+                return {"ok": False, "erro": f"Este contrato é da reserva {m['reserva']}. Vá até lá para usar."}
             if acao == "aceitar" and m["status"] == "oferta":
                 if len(self.por_status("ativa")) >= self.cfg["missoes_ativas"]:
                     return {"ok": False, "erro": f"Você já tem {self.cfg['missoes_ativas']} contratos ativos. Abandone um antes."}
@@ -918,7 +981,39 @@ class Companion:
             self._pino({"x": float(x), "y": float(y), "z": z}, rotulo)
         return {"ok": True}
 
+    def vigiar_pino(self):
+        """Se o pino sumiu do jogo (tirado lá dentro), tira também do app."""
+        if not self.em_reserva():
+            return
+        tem = bool(self.estado.get("pino_jogo"))
+        pa = self.dados.get("pino_app")
+        if tem:
+            self._pino_visto = True
+        elif pa and getattr(self, "_pino_visto", False) and time.time() - (pa.get("ts") or 0) > 8:
+            self.dados["pino_app"] = None
+            self.salvar_pendente = True
+            self._pino_visto = False
+
+    def passar_tempo(self, horas=None, ate=None):
+        if not self.em_reserva() or not self.reserva():
+            return {"ok": False, "erro": "Entre numa reserva no jogo primeiro."}
+        agora = self.estado.get("hora")
+        if ate is not None:
+            if agora is None:
+                return {"ok": False, "erro": "Ainda não li o relógio do jogo. Tente de novo em alguns segundos."}
+            horas = (float(ate) - float(agora)) % 24
+        try:
+            horas = float(horas)
+        except (TypeError, ValueError):
+            return {"ok": False, "erro": "Quantidade de horas inválida."}
+        if horas < 0.25:
+            return {"ok": False, "erro": "Já está nesse horário."}
+        horas = min(horas, 23.5)
+        self.enviar_comando([f"dormir {horas:.2f}"])
+        return {"ok": True, "horas": round(horas, 2)}
+
     def remover_pino(self):
+        self._pino_visto = False
         self.dados["pino_app"] = None
         self.enviar_comando(["unpin"])
         self.salvar_pendente = True
@@ -1112,7 +1207,7 @@ class Companion:
         r["sugestao"] = extras.sugestao_kit(r)
         return r
 
-    def dados_mochila(self, ids=None):
+    def dados_mochila(self, ids=None, especies=None):
         agora = time.time()
         dados = self.cache.json(self.caminho("jogo_dados.json"), None)
         lida = self._lida_mochila()
@@ -1122,8 +1217,21 @@ class Companion:
             escolhidas = [m for m in ativas if not ids or m["id"] in ids]
             if not dados:
                 return {"pronto": False}
-            r = extras.mochila(dados, self.tabela_calibres(), self.equipamento(), lida, escolhidas,
+            # espécies escolhidas na Mochila entram como "alvos" junto com os contratos
+            validas = {a.get("tag") for a in dados.get("animais", [])}
+            alvos = [t for t in (especies or []) if t in validas]
+            extras_alvo = [{"id": "esp:" + t, "titulo": nome_especie(t), "tipo": "abater_grupo", "grupo": grupo_de(t)[0], "especie": t}
+                           for t in alvos]
+            r = extras.mochila(dados, self.tabela_calibres(), self.equipamento(), lida, escolhidas + extras_alvo,
                                nome_especie, grupo_de, nome_grupo)
+            reserva = (self.nivel() or "").lower().split("_")[0]
+            r["especies"] = sorted(
+                [{"tag": a["tag"], "nome": nome_especie(a["tag"]) or a.get("titulo"),
+                  "reservas": sorted({extras.nome_mapa(m) for m in a.get("mapas") or []} - {"Rancho"}),
+                  "aqui": bool(reserva) and any(reserva in (m or "").lower() for m in a.get("mapas") or []),
+                  "escolhida": a["tag"] in alvos}
+                 for a in dados.get("animais", []) if a.get("tag") and not a["tag"].endswith(".Hub")],
+                key=lambda e: (not e["aqui"], e["nome"] or ""))
             r["pronto"] = True
             r["ativas"] = [{"id": m["id"], "titulo": m["titulo"], "escolhida": m in escolhidas, "do_jogo": bool(m.get("do_jogo")),
                             "vendedor": m.get("vendedor")} for m in ativas]
@@ -1166,7 +1274,8 @@ class Companion:
             return {"ok": True, "resumo": resumo, "escolha": escolha}
         elif acao == "montar":
             ids = [str(x) for x in (corpo.get("missoes") or [])] or None
-            plano = self.dados_mochila(ids).get("plano") or []
+            esp = [str(x) for x in (corpo.get("especies") or []) if re.fullmatch(r"[\w.]+", str(x))]
+            plano = self.dados_mochila(ids, esp).get("plano") or []
             for t in plano:
                 if t["acao"] == "por" and ok_id(t["item"]):
                     linhas.append(f"mochila por {t['item']} {t['tipo']} {int(t['idx'])}")
@@ -1237,7 +1346,10 @@ class Companion:
         linhas = ["T\tContratos do Velho Earl"]
         if self.cfg.get("contratos_no_jogo", True):
             agora = time.time()
+            r = self.reserva()
             for m in self.dados["missoes"]:
+                if m.get("reserva") and m["reserva"] != r:
+                    continue
                 recente = m["status"] in ("concluida", "paga") and agora - (m.get("concluida_em") or m.get("pago_em") or 0) < 120
                 if m["status"] == "ativa" or recente:
                     linhas.append(self.texto_hud(m))
@@ -1260,6 +1372,8 @@ class Companion:
                 except Exception:
                     pass
             self.ler_estado()
+            self.vigiar_pino()
+            self.separar_por_reserva()
             self.vigiar_jogo_novo()
             self.ler_animais()
             mudou = False
@@ -1268,7 +1382,7 @@ class Companion:
                 mudou = True
             self.cuidar_posicao()
             if self.em_reserva():
-                if avaliar_missoes(self.dados, {"tipo": "posicao", "id": "local", "pos": self.estado["pos"], "ts": time.time()}):
+                if avaliar_missoes(self.dados, {"tipo": "posicao", "id": "local", "pos": self.estado["pos"], "ts": time.time()}, self.reserva()):
                     mudou = True
             self.pagar_pendentes()
             limite = time.time() - 7200
@@ -1334,7 +1448,8 @@ class Companion:
                 rastreados.append(item)
             rastreados.sort(key=lambda x: x["distancia_m"] if x["distancia_m"] is not None else 1e9)
             rep = next((r for r in st.get("reputacao", []) or [] if self.nivel() and self.nivel() in (r.get("mapa") or "")), None)
-            lista = self.dados["missoes"]
+            r_atual = self.reserva()
+            lista = [m for m in self.dados["missoes"] if r_atual and m.get("reserva") == r_atual]
             return {
                 "versao": VERSAO,
                 "atualizacao": ATUALIZADOR.info() if ATUALIZADOR else None,
@@ -1350,6 +1465,8 @@ class Companion:
                 "contratos_jogo": self.contratos_jogo(),
                 "finalizadas": [m for m in lista if m["status"] in ("concluida", "paga")][-8:][::-1],
                 "gerando": self.gerando,
+                "reserva": r_atual,
+                "outras_reservas": self.outras_reservas(),
                 "abates": self.dados["abates"][-30:][::-1],
                 "estatisticas": self.estatisticas(),
                 "npc": missoes.NPC,
@@ -1496,6 +1613,18 @@ class Handler(BaseHTTPRequestHandler):
             return self.responder(200, f.read(), tipo)
 
     def do_GET(self):
+        if self.path.split("?")[0] == "/api/ping":
+            # o app Android procura o PC na rede por aqui (sem PIN: só diz que é o HS3 Companion)
+            corpo = json.dumps({"app": "hs3companion", "versao": VERSAO, "celular": bool(APP.cfg.get("celular")),
+                                "pc": socket.gethostname()}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(corpo)))
+            self.end_headers()
+            self.wfile.write(corpo)
+            return
         if not self.porteiro():
             return
         caminho = self.path.split("?")[0]
@@ -1517,7 +1646,8 @@ class Handler(BaseHTTPRequestHandler):
         if caminho == "/api/mochila":
             q = urllib.parse.parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
             ids = [x for x in (q.get("missoes", [""])[0]).split(",") if x]
-            return self.responder(200, APP.dados_mochila(ids))
+            esp = [x for x in (q.get("especies", [""])[0]).split(",") if re.fullmatch(r"[\w.]+", x)]
+            return self.responder(200, APP.dados_mochila(ids, esp))
         if caminho == "/api/loja":
             return self.responder(200, APP.dados_loja())
         if caminho == "/api/instalacao":
@@ -1537,6 +1667,11 @@ class Handler(BaseHTTPRequestHandler):
             path = APP.caminho(os.path.join("img", nome))
             if not re.fullmatch(r"[\w\-]+\.png", nome) or not os.path.isfile(path):
                 return self.responder(404, {"erro": "sem imagem"})
+            if "p=1" in self.path:      # versão pequena e recortada (listas, mochila, celular)
+                try:
+                    path = imagens.icone(path, os.path.join(BASE_DIR, "cache", "img")) or path
+                except Exception as e:
+                    print("ícone leve falhou:", nome, repr(e))
             # revalida sempre (os ícones podem ser refeitos em alta resolução), mas sem baixar de novo se não mudou
             marca = str(int(os.path.getmtime(path)))
             if self.headers.get("If-None-Match") == marca:
@@ -1550,11 +1685,27 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "image/png")
             self.send_header("ETag", marca)
-            self.send_header("Cache-Control", "no-cache")
+            # versão pequena: o navegador guarda por 10 min (a mochila redesenha os ícones toda hora)
+            self.send_header("Cache-Control", "max-age=600" if "p=1" in self.path else "no-cache")
             self.send_header("Content-Length", str(len(corpo)))
             self.end_headers()
             self.wfile.write(corpo)
             return
+        if caminho == "/api/mapa.jpg":
+            nivel = (APP.nivel() or "").replace("/", "")
+            origem = APP.caminho(f"mapa_{nivel}.png")
+            q = urllib.parse.parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
+            try:
+                lado = int((q.get("lado") or ["2048"])[0])
+                jpg = imagens.mapa_jpeg(origem, os.path.join(BASE_DIR, "cache")) if lado <= 2048 else \
+                    imagens.mapa_jpeg(origem, os.path.join(BASE_DIR, "cache"), lado=4096, qualidade=85)
+            except Exception as e:
+                print("mapa leve falhou:", repr(e))
+                jpg = None
+            if not jpg:
+                return self.arquivo_mod("mapa_{nivel}.png", "image/png")
+            with open(jpg, "rb") as f:
+                return self.responder(200, f.read(), "image/jpeg", cache=True)
         if caminho == "/api/mapa.png":
             return self.arquivo_mod("mapa_{nivel}.png", "image/png")
         if caminho == "/api/nevoa.png":
@@ -1607,6 +1758,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.responder(200, APP.acao_missao(acao, corpo.get("id")))
         if p == "/api/pino":
             return self.responder(200, APP.pino(corpo.get("x"), corpo.get("y"), corpo.get("rotulo") or "Meu pino"))
+        if p == "/api/tempo":
+            with APP.lock:
+                return self.responder(200, APP.passar_tempo(corpo.get("horas"), corpo.get("ate")))
         if p == "/api/pino/remover":
             with APP.lock:
                 return self.responder(200, APP.remover_pino())

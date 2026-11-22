@@ -39,22 +39,56 @@ let marcJogador = null, marcPino = null;
 const marcAnimais = {};
 let jaCentralizou = false, ultimoEstado = null;
 
-const ICONE_POI = { lugar: "◆", torre: "♜", acampamento: "▲", estrutura: "⌂", sede: "⌂", servico: "★", npc: "☻", veiculo: "⛟", cao: "✦", viagem: "⇄" };
-
+// ícones no estilo do mapa do jogo: desenho branco dentro de um círculo colorido
+const SVG_POI = {
+  lugar: '<path d="M12 21s-6-5.6-6-10.5a6 6 0 0 1 12 0C18 15.4 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.2"/>',
+  torre: '<path d="M7 21l2-11h6l2 11M9 10V6h6v4M8 6l4-3 4 3M10 15h4M9.5 18h5"/>',
+  acampamento: '<path d="M3 20L12 5l9 15zM12 20v-6l-3 6M12 14l3 6"/>',
+  estrutura: '<path d="M7 21l1.5-9h7L17 21M8 12V8h8v4M7 8h10M10 16h4"/>',
+  sede: '<path d="M4 11l8-6 8 6M6 10v10h12V10M10 20v-5h4v5"/>',
+  loja: '<path d="M4 5h2l2 10h10l2-7H7"/><circle cx="9" cy="19" r="1.4"/><circle cx="17" cy="19" r="1.4"/>',
+  servico: '<path d="M12 4l2.4 5 5.6.6-4.2 3.8 1.2 5.6L12 16.3 7 19l1.2-5.6L4 9.6 9.6 9z"/>',
+  relogio: '<circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/>',
+  garagem: '<path d="M3 11l9-6 9 6v9H3zM7 20v-6h10v6M7 17h10"/>',
+  roupa: '<path d="M8 4l4 2 4-2 4 4-3 3v9H7v-9L4 8z"/>',
+  npc: '<circle cx="12" cy="8" r="3.4"/><path d="M5 20c.8-4 3.6-6 7-6s6.2 2 7 6"/>',
+  veiculo: '<path d="M3 16V11l2-4h8l3 4h4a1 1 0 0 1 1 1v4M3 16h18"/><circle cx="7.5" cy="17" r="2"/><circle cx="16.5" cy="17" r="2"/>',
+  cao: '<circle cx="7" cy="9" r="1.8"/><circle cx="12" cy="6.5" r="1.8"/><circle cx="17" cy="9" r="1.8"/><path d="M12 12c3 0 5.5 3.4 5.5 5.5 0 1.6-1.4 2.5-3 2.5-1 0-1.6-.6-2.5-.6s-1.5.6-2.5.6c-1.6 0-3-.9-3-2.5C6.5 15.4 9 12 12 12z"/>',
+  viagem: '<path d="M4 9h13l-3-3M20 15H7l3 3"/>',
+  oculto: '<path d="M9.2 9.2a2.9 2.9 0 1 1 3.9 2.7c-.7.3-1.1.9-1.1 1.6v.8"/><circle cx="12" cy="17.6" r=".6"/>',
+};
+function chaveIcone(p) {
+  if (!p.descoberto) return "oculto";
+  if (p.categoria === "servico") {
+    const t = p.tipo || "";
+    if (/Store/.test(t)) return "loja";
+    if (/Clock/.test(t)) return "relogio";
+    if (/Garage/.test(t)) return "garagem";
+    if (/Wardrobe|Customization/.test(t)) return "roupa";
+  }
+  return SVG_POI[p.categoria] ? p.categoria : "lugar";
+}
 function iconePoi(p) {
-  const cls = p.descoberto ? p.categoria : "oculto";
-  return L.divIcon({ className: "", html: `<div class="mk-poi ${cls}">${p.descoberto ? (ICONE_POI[p.categoria] || "•") : "?"}</div>`, iconSize: [26, 28], iconAnchor: [13, 14] });
+  const k = chaveIcone(p), peq = p.categoria === "estrutura" || !p.descoberto;
+  const lado = peq ? 22 : 28;
+  return L.divIcon({ className: "", html: `<div class="mk-poi ${p.descoberto ? p.categoria : "oculto"} ic-${k}" style="width:${lado}px;height:${lado}px">
+      <svg viewBox="0 0 24 24">${SVG_POI[k]}</svg></div>`, iconSize: [lado, lado], iconAnchor: [lado / 2, lado / 2] });
 }
 
+let poisTexto = "";
 async function carregarPois() {
   let lista = [];
-  try { lista = await (await fetch("/api/pois")).json(); } catch { return; }
+  let texto = "";
+  try { texto = await (await fetch("/api/pois")).text(); lista = JSON.parse(texto); } catch { return; }
+  if (texto === poisTexto) return;      // nada mudou: não redesenha
+  poisTexto = texto;
   grupoPois.clearLayers(); grupoEstr.clearLayers();
   for (const p of lista) {
     const m = L.marker(toLL(p), { icon: iconePoi(p), riseOnHover: true })
       .bindTooltip(`<b>${esc(p.descoberto ? p.nome : "Local não descoberto")}</b>${p.descoberto ? "" : "<br><i>Explore para revelar</i>"}`, { direction: "top", offset: [0, -12] });
     m.on("click", () => perguntarPino(L.latLng(toLL(p)), p.descoberto ? p.nome : "Local não descoberto"));
-    (p.categoria === "estrutura" ? grupoEstr : grupoPois).addLayer(m);
+    // estruturas de caça descobertas aparecem com os pontos; as que faltam descobrir ficam na camada "Estruturas"
+    (p.categoria === "estrutura" && !p.descoberto ? grupoEstr : grupoPois).addLayer(m);
   }
 }
 
@@ -64,7 +98,9 @@ function atualizarMapaBase(info) {
   if (info.nivel !== nivelAtual && info.imagem) {
     nivelAtual = info.nivel;
     if (camadaImagem) mapa.removeLayer(camadaImagem);
-    camadaImagem = L.imageOverlay("/api/mapa.png?n=" + encodeURIComponent(nivelAtual), limites, { className: "mapa-img" }).addTo(mapa);
+    // JPEG leve: 2048 px no celular, 4096 px no PC (o PNG original tem ~22 MB)
+    const lado = innerWidth <= 820 ? 2048 : 4096;
+    camadaImagem = L.imageOverlay(`/api/mapa.jpg?n=${encodeURIComponent(nivelAtual)}&lado=${lado}`, limites, { className: "mapa-img" }).addTo(mapa);
     camadaImagem.bringToBack();
     nevoaVersao = -1;
     carregarPois();
@@ -95,7 +131,30 @@ function perguntarPino(ll, rotulo) {
 }
 mapa.on("click", (e) => perguntarPino(e.latlng, "Meu pino"));
 
-async function tirarPino() { await post("/api/pino/remover"); atualizar(); }
+async function tirarPino() {
+  $("btn-tirar-pino").style.display = "none";
+  if (marcPino) { mapa.removeLayer(marcPino); marcPino = null; }
+  await post("/api/pino/remover"); atualizar();
+}
+
+// ---- passar o tempo (igual dormir na cama do acampamento)
+function horaTexto(h) { if (h == null) return "–"; h = ((h % 24) + 24) % 24; const m = Math.floor((h % 1) * 60); return `${Math.floor(h)}h${String(m).padStart(2, "0")}`; }
+function abrirTempo() {
+  const h = ultimoEstado?.estado?.hora;
+  const op = (rot, sub, corpo) => `<button class="tempo-op" onclick='passarTempo(${JSON.stringify(corpo)})'><b>${rot}</b><small>${sub}</small></button>`;
+  moModal(`<header class="mo-jan-topo"><div><h3>Passar o tempo</h3><small>${h != null ? `Agora no jogo: ${horaTexto(h)}. ` : ""}O jogo mostra a tela do tempo passando, como quando você dorme no acampamento.</small></div>
+      <button class="mo-x" onclick="moFecharModal()">✕</button></header>
+    <div class="mo-jan-corpo"><div class="tempo-grade">
+      ${op("+1 hora", "um cochilo", { horas: 1 })}${op("+2 horas", "", { horas: 2 })}${op("+4 horas", "", { horas: 4 })}${op("+8 horas", "uma noite de sono", { horas: 8 })}
+      ${op("Amanhecer", "até 5h30, animais ativos", { ate: 5.5 })}${op("Meio-dia", "até 12h", { ate: 12 })}
+      ${op("Fim de tarde", "até 17h, animais ativos", { ate: 17 })}${op("Noite", "até 21h", { ate: 21 })}
+    </div></div>`);
+}
+async function passarTempo(corpo) {
+  const r = await post("/api/tempo", corpo);
+  moFecharModal();
+  if (!r.ok) alert(r.erro || "Não consegui passar o tempo.");
+}
 function centralizar() { if (ultimoEstado?.estado?.pos) mapa.setView(toLL(ultimoEstado.estado.pos), 0); }
 
 $("f-pois").onchange = (e) => e.target.checked ? grupoPois.addTo(mapa) : mapa.removeLayer(grupoPois);
@@ -181,6 +240,8 @@ function atualizarMarcadores(d) {
   }
   const pino = st.pino_jogo || d.pino_app;
   $("btn-tirar-pino").style.display = pino ? "" : "none";
+  $("btn-tempo").style.display = d.em_reserva && d.reserva ? "" : "none";
+  if (st.hora != null) $("btn-tempo-hora").textContent = horaTexto(st.hora);
   if (pino) {
     const rot = (d.pino_app && Math.abs(d.pino_app.x - pino.x) < 200 && Math.abs(d.pino_app.y - pino.y) < 200) ? d.pino_app.rotulo : "Ponto de rota rápido";
     if (!marcPino) marcPino = L.marker(toLL(pino), { icon: L.divIcon({ className: "", html: '<div class="mk-pino">📍</div>', iconSize: [30, 30], iconAnchor: [15, 30] }), zIndexOffset: 900 }).addTo(mapa);
@@ -209,10 +270,17 @@ function renderOfertas(d) {
         <span><button class="btn-papel cinza" onclick="acao('recusar','${m.id}')">Outro</button>
         <button class="btn-papel verde" onclick="acao('aceitar','${m.id}')">Aceitar</button></span></div>
     </div>`).join("");
-  if (of.length) html = `<div class="of-topo"><span>${of.length} contratos na mesa</span><button class="btn-papel cinza" onclick="renovarOfertas()">Trocar todos</button></div>` + html;
+  if (of.length) html = `<div class="of-topo"><span>${of.length} contratos ${d.reserva ? "de " + esc(d.reserva) : "na mesa"}</span><button class="btn-papel cinza" onclick="renovarOfertas()">Trocar todos</button></div>` + html;
   if (!of.length) html = `<div class="vazio">${d.gerando ? "O Velho Earl está pensando em novos contratos…" : (d.em_reserva ? "Sem contratos no momento." : "Entre numa reserva para receber contratos.")}</div>`;
   else if (d.gerando) html += `<div class="sub">Preparando mais contratos…</div>`;
-  $("ofertas").innerHTML = html;
+  $("ofertas").innerHTML = html + outrasReservas(d);
+}
+
+// cada reserva guarda os próprios contratos; aqui só um resumo das outras
+function outrasReservas(d) {
+  const o = d.outras_reservas || [];
+  if (!o.length) return "";
+  return `<div class="outras-res">Guardados em outras reservas: ${o.map(c => `<b>${esc(c.reserva)}</b> ${c.ativas} ativo${c.ativas === 1 ? "" : "s"}, ${c.ofertas} na mesa`).join(" · ")}</div>`;
 }
 
 function renderAtivas(d) {
@@ -234,7 +302,7 @@ function renderAtivas(d) {
     </div>`);
   const partes = lista.concat(fim);
   if (jogo.length) partes.push(`<div class="sep-jogo">Contratos do jogo</div>`, ...jogo);
-  $("ativas").innerHTML = partes.join("") || `<div class="vazio">Aceite um contrato do Velho Earl.</div>`;
+  $("ativas").innerHTML = (partes.join("") || `<div class="vazio">${d.reserva ? "Aceite um contrato do Velho Earl." : "Entre numa reserva: cada reserva tem os próprios contratos."}</div>`) + outrasReservas(d);
 }
 
 async function renovarOfertas() {
@@ -392,7 +460,7 @@ async function atualizar() {
 
 atualizar();
 setInterval(atualizar, 2000);
-setInterval(() => { if (nivelAtual) carregarPois(); }, 60000);
+setInterval(() => { if (nivelAtual) carregarPois(); }, 15000);
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
 
 
@@ -423,6 +491,8 @@ function barraStat(nome, v) {
 
 // ---------------------------------------------------------------- Mochila
 let mochilaMissoes = null;  // ids escolhidos (null = todas as ativas)
+let mochilaEspecies = [];    // espécies escolhidas para caçar (tags), guardadas neste aparelho
+try { mochilaEspecies = JSON.parse(localStorage.getItem("hs3_mo_esp") || "[]"); } catch {}
 let mochilaDados = null;
 const MO_TIPOS = [
   { tipo: "Inventory.Weapon", nome: "Armas", classe: "armas" },
@@ -431,36 +501,18 @@ const MO_TIPOS = [
 ];
 let moAssinatura = "", moOcupadoAte = 0;
 const moTxtIdade = (s) => s == null ? "" : s < 60 ? `há ${s} s` : `há ${Math.round(s / 60)} min`;
-// recorta a parte transparente dos ícones do jogo (armas ocupam só uma faixa do quadrado)
-const moRecortes = {};
-function moRecortar(img) {
-  const src = img.dataset.src;
-  img.parentElement.classList.add("tem");
-  if (moRecortes[src]) { if (img.src !== moRecortes[src]) img.src = moRecortes[src]; return; }
-  try {
-    const c = document.createElement("canvas"), w = img.naturalWidth, h = img.naturalHeight;
-    if (!w || !h) return;
-    c.width = w; c.height = h;
-    const g = c.getContext("2d"); g.drawImage(img, 0, 0);
-    const px = g.getImageData(0, 0, w, h).data;
-    let x0 = w, y0 = h, x1 = -1, y1 = -1;
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (px[(y * w + x) * 4 + 3] > 12) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
-    if (x1 < 0) return;
-    const m = 3, cw = x1 - x0 + 1 + 2 * m, ch = y1 - y0 + 1 + 2 * m;
-    const c2 = document.createElement("canvas"); c2.width = cw; c2.height = ch;
-    c2.getContext("2d").drawImage(c, x0, y0, x1 - x0 + 1, y1 - y0 + 1, m, m, x1 - x0 + 1, y1 - y0 + 1);
-    moRecortes[src] = c2.toDataURL();
-    img.src = moRecortes[src];
-  } catch { moRecortes[src] = src; }
-}
-const moFoto = (i, cls) => `<div class="mo-foto ${cls || ""}">${i && i.imagem ? `<img src="${moRecortes[i.imagem] || i.imagem}" data-src="${i.imagem}" alt="" onload="moRecortar(this)" onerror="this.remove()">` : ""}
+// ícones pequenos e já recortados pelo programa (?p=1): leve no celular, sem recorte no navegador
+const moFoto = (i, cls) => `<div class="mo-foto ${cls || ""}">${i && i.imagem ? `<img src="${i.imagem}?p=1" alt="" loading="lazy" decoding="async" onload="this.parentElement.classList.add('tem')" onerror="this.remove()">` : ""}
   <span class="mo-foto-ini">${esc(((i && i.nome) || "?").trim()[0] || "?")}</span></div>`;
 const moSelo = (i) => i.serve ? `<span class="mo-selo sim">✔ serve</span>` : i.serve === false ? `<span class="mo-selo nao">não serve</span>` : "";
 
 async function renderArmario(forcar) {
   const p = $("painel-armario");
-  if (!forcar && (document.querySelector(".mo-modal") || p.contains(document.activeElement) && document.activeElement.tagName === "SELECT")) return;
-  const q = mochilaMissoes ? `?missoes=${encodeURIComponent(mochilaMissoes.join(","))}` : "";
+  if (!forcar && (document.querySelector(".mo-modal") || p.contains(document.activeElement) && ["SELECT", "INPUT"].includes(document.activeElement.tagName))) return;
+  const params = [];
+  if (mochilaMissoes) params.push("missoes=" + encodeURIComponent(mochilaMissoes.join(",")));
+  if (mochilaEspecies.length) params.push("especies=" + encodeURIComponent(mochilaEspecies.join(",")));
+  const q = params.length ? "?" + params.join("&") : "";
   let d;
   try { d = await (await fetch("/api/mochila" + q)).json(); } catch { return; }
   const assin = JSON.stringify(d);
@@ -486,7 +538,16 @@ async function renderArmario(forcar) {
 
   const contratos = d.ativas.length ? d.ativas.map(m => `<button class="mo-contrato ${m.escolhida ? "on" : ""}" onclick="moMissao('${esc(m.id)}')">
       <span class="mo-check">${m.escolhida ? "✔" : ""}</span><span class="mo-origem ${m.do_jogo ? "jogo" : "earl"}">${m.do_jogo ? "JOGO" : "EARL"}</span>${esc(m.titulo)}</button>`).join("")
-    : `<span class="mo-dica">Nenhum contrato ativo. Sem contrato, a sugestão vale para qualquer animal.</span>`;
+    : `<span class="mo-dica">Nenhum contrato ativo.</span>`;
+  const escolhidas = (d.especies || []).filter(e => e.escolhida);
+  const especiesHtml = `<div class="mo-esp">
+      <div class="mo-esp-linha"><input class="mo-esp-busca" placeholder="Procurar espécie (ex.: veado, pato, javali)…" oninput="moEspFiltrar(this.value)" autocomplete="off">
+        <button class="kit-btn sec" onclick="moEspVarias()">Escolher várias</button></div>
+      <div id="mo-esp-res" class="mo-esp-res"></div>
+      ${escolhidas.length ? `<div class="mo-esp-chips">${escolhidas.map(e => `<button class="mo-esp-chip" onclick="moEspAlternar('${esc(e.tag)}')" title="Tirar">${esc(e.nome)}${e.reservas.length ? ` <small>${esc(e.reservas.join(", "))}</small>` : ""} <b>×</b></button>`).join("")}
+        <button class="mo-esp-limpar" onclick="mochilaEspecies=[];moEspSalvar()">Limpar</button></div>`
+        : `<span class="mo-dica">Nenhuma espécie escolhida. Sem espécie e sem contrato, a sugestão vale para qualquer animal.</span>`}
+    </div>`;
 
   // espaços da mochila
   const porTipo = (t) => d.mochila.filter(m => m.tipo === t);
@@ -535,7 +596,9 @@ async function renderArmario(forcar) {
       <div class="mo-montar">${botaoMontar}${plano.length ? ajuda("mochila_montar") : ""}</div>
     </div>
     <div class="mo-bloco">
-      <div class="mo-rotulo">1 · Para quais contratos? ${ajuda("mochila_contratos")}</div>
+      <div class="mo-rotulo">1 · O que você vai caçar? ${ajuda("mochila_especies")}</div>
+      ${especiesHtml}
+      <div class="mo-sub-rotulo">Contratos ${ajuda("mochila_contratos")}</div>
       <div class="mo-contratos">${contratos}</div>
       ${d.requisitos.length ? `<div class="mo-precisa"><span>O que precisa:</span>${d.requisitos.map(r => `<b>${esc(r)}</b>`).join("")}</div>` : ""}
     </div>
@@ -553,6 +616,41 @@ function moNumero(tipo, idx) {
   return tipo === "Inventory.Weapon" ? idx + 1 : tipo === "Inventory.Objects" ? nArmas + idx + 1 : null;
 }
 const moOnde = (tipo, idx) => { const n = moNumero(tipo, idx); return n ? `espaço ${n}` : "GPS"; };
+
+// ---- espécies escolhidas para a mochila
+function moEspSalvar() {
+  try { localStorage.setItem("hs3_mo_esp", JSON.stringify(mochilaEspecies)); } catch {}
+  renderArmario(true);
+}
+function moEspAlternar(tag) {
+  mochilaEspecies = mochilaEspecies.includes(tag) ? mochilaEspecies.filter(t => t !== tag) : [...mochilaEspecies, tag];
+  moEspSalvar();
+}
+const semAcento = (t) => (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+function moEspFiltrar(txt) {
+  const caixa = $("mo-esp-res");
+  const q = semAcento(txt.trim());
+  if (!q) { caixa.innerHTML = ""; return; }
+  const lista = (mochilaDados.especies || []).filter(e => semAcento(e.nome + " " + e.reservas.join(" ")).includes(q)).slice(0, 12);
+  caixa.innerHTML = lista.length ? lista.map(e => `<button class="mo-esp-op ${mochilaEspecies.includes(e.tag) ? "on" : ""}" onmousedown="event.preventDefault()" onclick="moEspAlternar('${esc(e.tag)}')">
+      <span class="mo-check">${mochilaEspecies.includes(e.tag) ? "✔" : ""}</span>${esc(e.nome)} <small>${esc(e.reservas.join(", "))}${e.aqui ? " · nesta reserva" : ""}</small></button>`).join("")
+    : `<span class="mo-dica">Nenhuma espécie com esse nome.</span>`;
+}
+function moEspVarias() {
+  const grupos = {};
+  (mochilaDados.especies || []).forEach(e => (grupos[e.aqui ? "Nesta reserva" : (e.reservas[0] || "Outras")] ||= []).push(e));
+  const ordem = Object.keys(grupos).sort((a, b) => (a === "Nesta reserva" ? -1 : b === "Nesta reserva" ? 1 : a.localeCompare(b)));
+  moModal(`<header class="mo-jan-topo"><div><h3>O que você vai caçar?</h3><small>Toque em quantas espécies quiser; a mochila é sugerida para todas juntas</small></div>
+      <button class="mo-x" onclick="moFecharModal();renderArmario(true)">✕</button></header>
+    <div class="mo-jan-corpo">${ordem.map(g => `<h4>${esc(g)}</h4><div class="mo-esp-grade">${grupos[g].map(e => `
+        <label class="mo-esp-card"><input type="checkbox" ${mochilaEspecies.includes(e.tag) ? "checked" : ""} onchange="moEspMarcar('${esc(e.tag)}', this.checked)">
+          <span>${esc(e.nome)}</span></label>`).join("")}</div>`).join("")}</div>
+    <footer class="mo-jan-rodape"><button class="sec" onclick="mochilaEspecies=[];document.querySelectorAll('.mo-esp-card input').forEach(i=>i.checked=false)">Desmarcar todas</button>
+      <button class="ok" onclick="moFecharModal();moEspSalvar()">Pronto</button></footer>`);
+}
+function moEspMarcar(tag, sim) {
+  mochilaEspecies = sim ? [...new Set([...mochilaEspecies, tag])] : mochilaEspecies.filter(t => t !== tag);
+}
 
 function moMissao(id) {
   const todas = mochilaDados.ativas.map(m => m.id);
@@ -680,7 +778,7 @@ function moConfirmarMontar() {
     <div class="mo-jan-corpo"><ul class="mo-lista-plano">${linhas}</ul>
       <p class="mo-dica">As trocas são feitas uma por segundo para o jogo não travar. Leva uns ${plano.length + 2} segundos.</p></div>
     <footer class="mo-jan-rodape"><button class="sec" onclick="moFecharModal()">Cancelar</button>
-      <button class="ok" onclick="moFecharModal();moAcao({acao:'montar',missoes:mochilaMissoes||[]})">Montar agora</button></footer>`);
+      <button class="ok" onclick="moFecharModal();moAcao({acao:'montar',missoes:mochilaMissoes||[],especies:mochilaEspecies})">Montar agora</button></footer>`);
 }
 
 async function renderLoja() {
@@ -688,16 +786,18 @@ async function renderLoja() {
   const det = d.deteccao || {};
   const med = (nome, v, dica) => `<div class="medidor"><div class="item-sub">${nome}</div><div class="v">${v == null ? "–" : Math.round(v * 100) + "%"}</div>
       <div class="b"><i style="width:${(v || 0) * 100}%"></i></div><div class="item-sub">${dica}</div></div>`;
-  let html = `<header class="pag-topo"><h2>Roupas e camuflagem ${ajuda("loja")}</h2><p>O quanto os animais te veem, ouvem e sentem com a roupa de agora, e o que dá para comprar.</p></header>
-    <h3>Como os animais te percebem agora</h3><div class="medidores">
-      ${med("Visão", det.visual, "quanto menor, mais camuflado")}${med("Audição", det.som, "barulho da roupa e dos passos")}${med("Olfato", det.cheiro, "use spray e vento a favor")}</div>`;
+  let html = `<header class="pag-topo"><h2>Roupas e camuflagem ${ajuda("loja")}</h2><p>Sua camuflagem agora e o que dá para comprar. Em tudo aqui, <b>quanto maior, melhor</b>: mais escondido, mais silencioso, menos cheiro, mais rápido.</p></header>
+    <h3>Sua camuflagem agora</h3><div class="medidores">
+      ${med("Visual", det.visual, "quanto maior, menos os animais te veem")}${med("Silêncio", det.som, "quanto maior, menos te ouvem")}${med("Cheiro", det.cheiro, "quanto maior, menos te sentem pelo faro")}</div>
+    <p class="item-sub">O jogo soma as 6 peças que você veste (blusa, calça, calçado, luvas, cabeça e mochila) e transforma em porcentagem.
+      Postura, movimento, vento e vegetação contam por fora: agachado, devagar e com o vento no rosto você some ainda mais.</p>`;
   html += `<h3>Você está vestindo</h3>` + (d.vestidos.length ? `<div class="grade-itens">${d.vestidos.map(itemLoja).join("")}</div>` : `<p class="vazio">–</p>`);
   const partes = ["Todas", ...new Set(d.itens.map(i => i.parte))];
   html += `<h3>Catálogo (${d.itens.length} peças) · saldo $${fmt(d.creditos)}</h3><div class="filtros">${partes.map(p =>
       `<button class="${p === filtroLoja ? "ativo" : ""}" onclick="filtroLoja='${p}';renderLoja()">${esc(p)}</button>`).join("")}</div>`;
   const lista = d.itens.filter(i => filtroLoja === "Todas" || i.parte === filtroLoja);
   html += `<div class="grade-itens">${lista.map(itemLoja).join("")}</div>
-    <p class="item-sub">Os números de camuflagem (0 a 100) vêm do próprio jogo: quanto maior, menos o animal te vê, ouve ou sente. A compra é feita na loja do jogo com seus créditos.</p>`;
+    <p class="item-sub">Os números (0 a 100) vêm do próprio jogo: quanto maior, melhor (menos o animal te vê, ouve ou sente; “Corrida” = mais rápido). A compra é feita na loja do jogo com seus créditos.</p>`;
   $("painel-loja").innerHTML = html;
 }
 function itemLoja(i) {
@@ -728,7 +828,7 @@ async function comprarItem(id, nome, preco) {
 }
 
 // ---------------------------------------------------------------- Diário de campo
-let diario = null, diarioCat = "animais", diarioSel = null, diarioBusca = "", diarioAberto = false;   // aberto: no celular mostra a página no lugar da lista
+let diario = null, diarioCat = "animais", diarioSel = null, diarioBusca = "", diarioAberto = false, diarioReserva = null;   // aberto: no celular mostra a página no lugar da lista
 const moedaFmt = (i) => i.preco == null ? "" : (i.moeda === "pontos de campo" ? `${fmt(i.preco)} pts de campo` : `$${fmt(i.preco)}`);
 const chips = (l, cls = "") => (l || []).map(x => `<span class="chip ${cls}">${esc(x)}</span>`).join("") || `<span class="item-sub">–</span>`;
 const quando = (ts) => ts ? new Date(ts * 1000).toLocaleDateString("pt-BR") : "";
@@ -740,7 +840,7 @@ function semFoto(i, cat, grande) {
 }
 function fotoDiario(i, cat, grande) {
   if (!i.imagem) return semFoto(i, cat, grande);
-  return `<img src="${i.imagem}" alt="" loading="lazy" onerror="this.outerHTML=this.dataset.sil" data-sil="${esc(semFoto(i, cat, grande))}">`;
+  return `<img src="${i.imagem}${grande ? "" : "?p=1"}" alt="" loading="lazy" onerror="this.outerHTML=this.dataset.sil" data-sil="${esc(semFoto(i, cat, grande))}">`;
 }
 
 async function renderEnciclopedia() {
@@ -761,8 +861,15 @@ async function renderEnciclopedia() {
 function desenharDiario() {
   const cat = diario.categorias.find(c => c.id === diarioCat) || diario.categorias[0];
   const q = diarioBusca.trim().toLowerCase();
-  const lista = cat.itens.filter(i => !q || (i.nome + " " + (i.sub || i.cabecalho || "") + " " + (i.calibre || "")).toLowerCase().includes(q));
-  if (!diarioSel || !cat.itens.some(i => i.id === diarioSel)) diarioSel = (lista[0] || cat.itens[0] || {}).id;
+  // animais: primeiro a reserva (começa na reserva em que você está)
+  const reservas = cat.id === "animais" ? [...new Set(cat.itens.flatMap(i => i.reservas || []))].sort() : [];
+  if (reservas.length && !reservas.includes(diarioReserva)) {
+    const aqui = nomeMapa((ultimoEstado && ultimoEstado.estado && ultimoEstado.estado.mapa) || "");
+    diarioReserva = reservas.includes(aqui) ? aqui : reservas[0];
+  }
+  const daReserva = (i) => !reservas.length || (i.reservas || []).includes(diarioReserva);
+  const lista = cat.itens.filter(i => daReserva(i) && (!q || (i.nome + " " + (i.sub || i.cabecalho || "") + " " + (i.calibre || "")).toLowerCase().includes(q)));
+  if (!diarioSel || !lista.some(i => i.id === diarioSel)) diarioSel = (lista[0] || {}).id;
   const grupos = {};
   lista.forEach(i => (grupos[i.cabecalho || i.sub || cat.nome] ||= []).push(i));
   const menu = Object.entries(grupos).map(([g, its]) => `<div class="dm-grupo">${esc(g)} <small>${its.length}</small></div>` + its.map(i => `
@@ -774,6 +881,7 @@ function desenharDiario() {
   $("painel-enciclopedia").innerHTML = `<div class="diario ${diarioAberto ? "aberto" : ""}">
     <aside class="diario-menu">
       <div class="dm-cats">${ajuda("diario")}${diario.categorias.map(c => `<button data-cat="${c.id}" class="${c.id === cat.id ? "ativo" : ""}">${esc(c.nome)} <small>${c.itens.length}</small></button>`).join("")}</div>
+      ${reservas.length ? `<div class="dm-reservas">${reservas.map(r => `<button data-res="${esc(r)}" class="${r === diarioReserva ? "ativo" : ""}">${esc(r)} <small>${cat.itens.filter(i => (i.reservas || []).includes(r)).length}</small></button>`).join("")}</div>` : ""}
       <input class="dm-busca" placeholder="Buscar…" value="${esc(diarioBusca)}">
       <div class="dm-lista">${menu}</div>
     </aside>
@@ -781,6 +889,7 @@ function desenharDiario() {
   </div>`;
   const p = $("painel-enciclopedia");
   p.querySelectorAll(".dm-cats button").forEach(b => b.onclick = () => { diarioCat = b.dataset.cat; diarioSel = null; diarioBusca = ""; diarioAberto = false; desenharDiario(); });
+  p.querySelectorAll(".dm-reservas button").forEach(b => b.onclick = () => { diarioReserva = b.dataset.res; diarioSel = null; diarioAberto = false; desenharDiario(); });
   p.querySelectorAll(".dm-item").forEach(b => b.onclick = () => { diarioSel = b.dataset.id; diarioAberto = true; desenharDiario(); p.querySelector(".diario-pagina").scrollTop = 0; });
   const busca = p.querySelector(".dm-busca");
   busca.oninput = () => { diarioBusca = busca.value; const pos = busca.selectionStart; desenharDiario(); const n = $("painel-enciclopedia").querySelector(".dm-busca"); n.focus(); n.setSelectionRange(pos, pos); };

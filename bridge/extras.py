@@ -503,7 +503,10 @@ def requisitos_missoes(missoes, grupo_nome):
                 grupos.append(m["grupo"])
         elif m["tipo"] not in ("marcar", "visitar"):
             qualquer = True
-    chips = [grupo_nome(g) for g in grupos] + (["Qualquer animal"] if qualquer and not grupos else [])
+    grupos_contrato = {m["grupo"] for m in missoes if m.get("grupo") and not m.get("especie")}
+    chips = [grupo_nome(g) for g in grupos if g in grupos_contrato]
+    chips += list(dict.fromkeys(m["titulo"] for m in missoes if m.get("especie")))
+    chips += ["Qualquer animal"] if qualquer and not grupos else []
     if dist:
         chips += [f"Tiro de {m['dist_min']}–{m['dist_max']} m" for m in dist]
     rotulos = {"calibre": "Calibre certo", "atrair": "Atrair (chamador/cheiro)", "nao_detectado": "Sem ser percebido",
@@ -530,7 +533,11 @@ def mochila(dados, calibres, equip, lida, missoes, nome_especie, grupo_de, grupo
     for linha in calibres:
         g = grupo_de(linha.get("animal"))[0]
         especies_grupo.setdefault(g, []).append(linha)
-    alvo = [l for g in req["grupos"] for l in especies_grupo.get(g, [])]
+    # espécie escolhida (Mochila) vale só ela; contrato de grupo vale o grupo todo
+    alvo_especies = [m["especie"] for m in missoes if m.get("especie")]
+    grupos_contrato = [m.get("grupo") for m in missoes if m.get("grupo") and not m.get("especie")]
+    alvo = [l for g in dict.fromkeys(grupos_contrato) for l in especies_grupo.get(g, [])]
+    alvo += [l for t in alvo_especies for l in calibres if _casa_tag(l.get("animal"), t) and l not in alvo]
 
     def calibre_serve(cal):
         """Calibre permitido para todas as espécies-alvo (ou para alguma, se o alvo for qualquer animal)."""
@@ -602,7 +609,10 @@ def mochila(dados, calibres, equip, lida, missoes, nome_especie, grupo_de, grupo
                           "vento": "Vento", "esconderijo": "Esconderijos", "telemetro": "Telêmetros", "binoculo": "Binóculos",
                           "gps": "GPS"}.get(papel, "Outros")
             d["papel"] = papel
-            alvo_atrai = [g for g in atrai if g in req["grupos"]]
+            alvo_atrai = [g for g in atrai if g in grupos_contrato]
+            if alvo_especies and atrai_tags(c.get("item")):
+                if any(_casa_tag(t, e) for t in atrai_tags(c.get("item")) for e in alvo_especies):
+                    alvo_atrai = alvo_atrai or atrai
             if atrai:
                 d["serve"] = bool(alvo_atrai) or (not req["grupos"] and "atrair" in req["tipos"])
                 d["motivo"] = ("atrai " + ", ".join(grupo_nome(g) for g in (alvo_atrai or atrai)))
@@ -1078,3 +1088,37 @@ def sugestao_kit(kit, espaco_arma=None):
         papeis.add(o["papel"])
         escolha["objetos"].append({"item": o["item"], "espaco": espaco})
     return escolha
+
+
+# ---------------------------------------------------------------- o que dá para caçar com o que você tem (contratos)
+def capacidade(dados, calibres, equip, nivel, grupo_de, tipo_arma):
+    """Por grupo de animal da reserva: tipos de arma com que você consegue caçar (arma sua + munição sua permitida)
+    e se você tem chamador/chamariz/isca para ele. Jogo novo = só o que você já tem."""
+    comprados = {b["id"] for b in equip.get("comprados", [])}
+    tem = lambda c: c["id"] in comprados or bool(c.get("padrao"))
+    itens = [c for c in dados.get("itens", []) if not c.get("desativado") and tem(c)]
+    municoes = [calibres_item(c)[0] for c in itens if (c.get("tipo") or "").endswith("Attachments.Ammo") and calibres_item(c)]
+    armas = [(tipo_arma(c.get("tipo")), calibres_item(c)) for c in itens if (c.get("tipo") or "").startswith("Inventory.Weapon")]
+    objetos = [c for c in itens if (c.get("tipo") or "").startswith("Inventory.Objects")]
+    nivel = (nivel or "").lower().split("_")[0]
+    r = {}
+    for a in dados.get("animais", []):
+        tag = a.get("tag") or ""
+        if not tag or tag.endswith(".Hub") or not (nivel and any(nivel in (m or "").lower() for m in a.get("mapas") or [])):
+            continue
+        g = grupo_de(tag)[0]
+        if g == "outro":
+            continue
+        linha = next((l for l in calibres if l.get("animal") == tag), None) or next((l for l in calibres if _casa_tag(l.get("animal"), tag)), None)
+        permitidos = (linha or {}).get("compativeis", [])
+        ok_mun = [m for m in municoes if any(p == m or p.startswith(m + ".") for p in permitidos)]
+        info = r.setdefault(g, {"armas": set(), "atrair": False, "especies": []})
+        info["especies"].append(tag)
+        for t, cals in armas:
+            if any(_casa_cal(m, w) for m in ok_mun for w in cals):
+                info["armas"].add(t)
+        if any(_casa_tag(x, tag) for o in objetos for x in atrai_tags(o.get("item"))):
+            info["atrair"] = True
+    tem_telemetro = any("RangeFinder" in (c.get("tipo") or "") for c in objetos)
+    return {"grupos": {g: {"armas": sorted(v["armas"]), "atrair": v["atrair"]} for g, v in r.items() if v["armas"]},
+            "telemetro": tem_telemetro}

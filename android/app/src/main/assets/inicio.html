@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>HS3 Companion</title>
+<style>
+  :root { --fundo: #14201b; --papel: #1d2c25; --linha: rgba(255,255,255,.14); --texto: #eae4d6; --fraco: #a9b3a8; --laranja: #e0812f; --verde: #7fa35a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--fundo); color: var(--texto); font: 16px/1.45 system-ui, sans-serif;
+    padding: max(24px, env(safe-area-inset-top)) 20px 32px; }
+  h1 { font-size: 24px; margin: 8px 0 4px; }
+  p { color: var(--fraco); margin: 0 0 18px; }
+  .caixa { background: var(--papel); border: 1px solid var(--linha); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+  .barra { height: 6px; border-radius: 3px; background: rgba(255,255,255,.08); overflow: hidden; margin-top: 10px; }
+  .barra div { height: 100%; width: 0; background: var(--laranja); transition: width .2s; }
+  button { width: 100%; padding: 14px; border-radius: 12px; border: 0; font: 600 16px system-ui, sans-serif; cursor: pointer; }
+  .pc { background: var(--verde); color: #10170f; margin-top: 10px; text-align: left; }
+  .pc small { display: block; font-weight: 400; opacity: .8; }
+  .sec { background: transparent; color: var(--texto); border: 1px solid var(--linha); margin-top: 10px; }
+  input { width: 100%; padding: 13px; border-radius: 10px; border: 1px solid var(--linha); background: #101914; color: var(--texto); font-size: 16px; }
+  .erro { background: rgba(200,80,59,.18); border: 1px solid rgba(200,80,59,.5); color: #f3c6bb; border-radius: 12px; padding: 12px; margin-bottom: 14px; display: none; }
+  label { display: block; color: var(--fraco); font-size: 14px; margin-bottom: 6px; }
+</style>
+</head>
+<body>
+  <h1>HS3 Companion</h1>
+  <p>O app conversa com o HS3 Companion aberto no seu PC. Celular e PC precisam estar na mesma rede de casa (Wi-Fi ou cabo no roteador).</p>
+
+  <div class="erro" id="erro">Não consegui falar com o PC no endereço salvo. Confira se o HS3Companion.exe está aberto no PC e procure de novo.</div>
+
+  <div class="caixa">
+    <b id="status">Procurando o PC na rede…</b>
+    <div class="barra"><div id="progresso"></div></div>
+    <div id="achados"></div>
+    <button class="sec" id="procurar" onclick="procurar()" style="display:none">Procurar de novo</button>
+  </div>
+
+  <div class="caixa">
+    <label for="ip">Não achou? Digite o endereço que aparece no PC, no botão 📱 Celular (ex.: 192.168.0.10)</label>
+    <input id="ip" inputmode="decimal" placeholder="192.168.0.10" autocomplete="off">
+    <button class="sec" onclick="manual()">Conectar</button>
+  </div>
+
+<script>
+const PORTA = 8765;
+const ponte = window.HS3;
+if (location.search.includes("erro=1")) document.getElementById("erro").style.display = "block";
+
+function abrir(url) { if (ponte) ponte.abrir(url); else location.href = url; }
+
+function testar(base, ms) {
+  const c = new AbortController();
+  const t = setTimeout(() => c.abort(), ms);
+  return fetch(base + "/api/ping", { signal: c.signal, cache: "no-store" })
+    .then(r => r.json()).then(j => (j && j.app === "hs3companion" ? j : null))
+    .catch(() => null).finally(() => clearTimeout(t));
+}
+
+async function procurar() {
+  document.getElementById("procurar").style.display = "none";
+  document.getElementById("achados").innerHTML = "";
+  const st = document.getElementById("status"), barra = document.getElementById("progresso");
+  st.textContent = "Procurando o PC na rede…";
+  const meus = ((ponte && ponte.ips()) || "").split(",").filter(ip => /^(192\.168|10\.|172\.(1[6-9]|2\d|3[01]))\./.test(ip));
+  if (!meus.length) { st.textContent = "Não achei a rede de casa. Ligue o Wi-Fi do celular."; document.getElementById("procurar").style.display = ""; return; }
+  const bases = [...new Set(meus.map(ip => ip.split(".").slice(0, 3).join(".")))];
+  const alvos = [];
+  for (const b of bases) for (let i = 1; i < 255; i++) alvos.push(`http://${b}.${i}:${PORTA}`);
+  const achados = [];
+  let feitos = 0;
+  for (let i = 0; i < alvos.length; i += 64) {
+    await Promise.all(alvos.slice(i, i + 64).map(async url => {
+      const r = await testar(url, 1800);
+      feitos++;
+      if (r) { achados.push({ url, ...r }); mostrar(achados); }
+    }));
+    barra.style.width = Math.round(100 * feitos / alvos.length) + "%";
+  }
+  if (achados.length === 1 && achados[0].celular) { st.textContent = "PC encontrado! Abrindo…"; abrir(achados[0].url); return; }
+  st.textContent = achados.length ? "Escolha o PC:" : "Não encontrei o PC. Ele está ligado com o HS3Companion.exe aberto?";
+  document.getElementById("procurar").style.display = "";
+}
+
+function mostrar(lista) {
+  document.getElementById("achados").innerHTML = lista.map(p => `<button class="pc" onclick="abrir('${p.url}')">${p.pc || "PC"}
+      <small>${p.url.replace("http://", "")}${p.celular ? "" : " · acesso pelo celular desligado no PC"}</small></button>`).join("");
+}
+
+async function manual() {
+  let v = document.getElementById("ip").value.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  if (!v) return;
+  if (!v.includes(":")) v += ":" + PORTA;
+  const url = "http://" + v;
+  const st = document.getElementById("status");
+  st.textContent = "Testando " + v + "…";
+  const r = await testar(url, 4000);
+  if (r) abrir(url);
+  else st.textContent = "Não respondeu em " + v + ". Confira o endereço no PC.";
+}
+
+procurar();
+</script>
+</body>
+</html>

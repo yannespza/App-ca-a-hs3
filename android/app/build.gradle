@@ -1,0 +1,34 @@
+plugins { id "com.android.application" }
+
+def versao = (System.getenv("VERSAO_APP") ?: "0.1.0")
+def numero = (System.getenv("NUMERO_APP") ?: "1").toInteger()
+
+android {
+    namespace "com.hs3.companion"
+    compileSdk 34
+    defaultConfig {
+        applicationId "com.hs3.companion"
+        minSdk 24
+        targetSdk 34
+        versionCode numero
+        versionName versao
+    }
+    signingConfigs {
+        release {
+            storeFile file("hs3.keystore")
+            storePassword "hs3companion"
+            keyAlias "hs3"
+            keyPassword "hs3companion"
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
