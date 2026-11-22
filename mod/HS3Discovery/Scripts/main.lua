@@ -684,7 +684,7 @@ local function periodic()
         ultimoNivel = curto
         local f = io.open(DIR .. "mapa_" .. curto .. ".png", "rb")
         if f then f:close() else pcall(exportMap) end
-        pcall(exportPois); pcall(exportFog); pcall(exportCalibres)
+        pcall(exportPois); pcall(exportCalibres)   -- névoa só quando o app pede (leitura pesada)
         local f2 = io.open(DIR .. "catalogo_v2.json", "rb")
         if f2 then f2:close() else pcall(iniciarCatalogo) end
     end
@@ -706,7 +706,6 @@ local function periodic()
     if ticks % 15 == 0 then pcall(writeEquipamento) end
     if ticks % 5 == 0 then pcall(writeAnimals) end
     if curto and ticks % 300 == 0 then pcall(exportPois) end   -- pontos descobertos a cada 5 min (e ao entrar na reserva)
-    if curto and ticks % 600 == 0 then pcall(exportFog) end    -- névoa a cada 10 min (leitura pesada: 524 mil bytes)
 end
 
 -- utilidades disponíveis para scripts de desenvolvimento (pasta dev\)
@@ -749,7 +748,11 @@ LoopAsync(1000, function()
                 elseif cmd == "nitido" then
                     local ch, e = loadfile(DIR .. "Scripts\\nitido.lua")
                     if ch then ch().iniciar({ DIR = DIR, log = log }) else log("nitido.lua: " .. tostring(e)) end
-                elseif cmd == "export_map" then exportMap(); exportPois(); exportFog(); exportCalibres()
+                elseif cmd == "export_map" then exportMap(); exportPois(); exportCalibres()
+                elseif cmd == "nevoa" then
+                    -- névoa do mapa: 524 mil leituras (lista dentro de lista) -> só quando você pede no app
+                    local _, _, curto = currentLevel()
+                    if curto and not curto:find("Hub") and not curto:find("Menu") then exportFog(); log("névoa exportada") end
                 elseif cmd == "mochila" then
                     -- mochila ler | mochila por <item> <tipo> <idx> | mochila tirar <item> | mochila municao <arma> <municao>
                     -- leitura na hora; trocas vão para a fila (uma por segundo, depois salva e relê)

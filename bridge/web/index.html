@@ -24,6 +24,8 @@
     <button data-aba="loja"><svg viewBox="0 0 24 24"><path d="M9 3 4 6l-1 6 3 1v8h12v-8l3-1-1-6-5-3c0 2-1.3 3-3 3S9 5 9 3Z"/></svg><span>Roupas</span></button>
     <button data-aba="enciclopedia"><svg viewBox="0 0 24 24"><path d="M5 4h9a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4Zm0 13a3 3 0 0 1 3-3h9M9 8h5"/></svg><span>Diário</span></button>
     <button data-aba="cacadas"><svg viewBox="0 0 24 24"><path d="M4 20V10m6 10V4m6 16v-7m4 7H2"/></svg><span>Caçadas</span></button>
+    <button class="trilho-config" onclick="abrirInstalacao()" title="Pasta do jogo, instalação do mod e jogo novo">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg><span>Ajustes</span></button>
     <div class="trilho-rodape">
       <span id="versao" class="versao"></span>
     </div>
@@ -55,7 +57,8 @@
       <div class="camadas legenda">
         <label><input type="checkbox" id="f-pois" checked><span>Pontos</span></label>
         <label><input type="checkbox" id="f-estr"><span>Estruturas</span></label>
-        <label><input type="checkbox" id="f-nevoa" checked><span>Névoa</span></label>
+        <label><input type="checkbox" id="f-nevoa"><span>Névoa</span></label>
+        <button class="btn-nevoa" id="btn-nevoa" onclick="atualizarNevoa()" title="Lê do jogo as áreas já exploradas. O jogo dá uma travadinha de 1 segundo, por isso só acontece quando você pede.">↻ névoa</button>
         <label><input type="checkbox" id="f-animais" checked><span>Animais</span></label>
       </div>
       <div class="mapa-botoes">
@@ -125,5 +128,6 @@
 <script src="/silhuetas.js"></script>
 <script src="/app.js"></script>
 <script src="/kit.js"></script>
+<script src="/instalacao.js"></script>
 </body>
 </html>

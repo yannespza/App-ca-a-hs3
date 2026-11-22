@@ -24,6 +24,7 @@ from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import extras
+import instalador
 import missoes
 import mapa
 
@@ -56,7 +57,7 @@ CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 DADOS_PATH = os.path.join(BASE_DIR, "dados_hs3.json")
 
 CONFIG_PADRAO = {
-    "pasta_mod": r"D:\SteamLibrary\steamapps\common\HS3\HS3\Binaries\Win64\ue4ss\Mods\HS3Discovery",
+    "pasta_mod": "",          # achada sozinha (ou escolhida na tela Instalação do app)
     "porta": 8765,
     "abrir_navegador": True,
     "missoes_ativas": 6,
@@ -185,6 +186,15 @@ def carregar_config():
     if salvo.get("versao_config", 1) < 2:
         # versões antigas gravaram 3 ofertas / 3 ativos: passa para os limites novos
         cfg["missoes_ativas"], cfg["ofertas"] = CONFIG_PADRAO["missoes_ativas"], CONFIG_PADRAO["ofertas"]
+    if not os.path.isfile(os.path.join(cfg.get("pasta_mod") or "", "Scripts", "main.lua")):
+        # primeira vez (ou o jogo mudou de lugar): procura o jogo e usa o mod se já estiver instalado
+        try:
+            w = instalador.achar_jogo()
+            sit = instalador.situacao(w)
+            if sit.get("mod"):
+                cfg["pasta_mod"] = sit["pasta_mod"]
+        except Exception as e:
+            print("procura do jogo falhou:", repr(e))
     if cfg != {k: v for k, v in salvo.items()}:
         salvar_json(CONFIG_PATH, cfg)
     return cfg
@@ -478,11 +488,7 @@ class Companion:
         self.estado_lido_em = 0
         self.dados = carregar_json(DADOS_PATH, {})
         d = self.dados
-        for chave, padrao in (("missoes", []), ("abates", []), ("marcados", {}), ("grupos_vistos", []),
-                              ("eventos_offset", 0), ("pagamentos_dia", {}), ("recompensas", []),
-                              ("chat", []), ("pino_app", None), ("posicoes", {}), ("ultima_pos", {}),
-                              ("especies_vistas", {}), ("compras", [])):
-            d.setdefault(chave, padrao)
+        self._completar_dados(d)
         # missões da versão antiga continuam valendo como ativas
         for m in d["missoes"]:
             if m.get("status") == "concluida" and (m.get("pago") or {}).get("creditos"):
@@ -498,9 +504,95 @@ class Companion:
         self.teleporte = None            # (destino, hora) aguardando
         self.aviso_teleporte = None
 
+    @staticmethod
+    def _completar_dados(d):
+        for chave, padrao in (("missoes", []), ("abates", []), ("marcados", {}), ("grupos_vistos", []),
+                              ("eventos_offset", 0), ("pagamentos_dia", {}), ("recompensas", []),
+                              ("chat", []), ("pino_app", None), ("posicoes", {}), ("ultima_pos", {}),
+                              ("especies_vistas", {}), ("compras", []), ("reputacao_maxima", 0)):
+            d.setdefault(chave, padrao)
+
+    # --- instalação e jogo novo
+    def info_instalacao(self, pasta=None):
+        w = instalador.win64_de(pasta) if pasta else instalador.win64_de(self.cfg.get("pasta_mod"))
+        achado = None
+        if not w:
+            achado = w = instalador.achar_jogo()
+        sit = instalador.situacao(w)
+        sit["achado_sozinho"] = bool(achado)
+        sit["atualizado"] = bool(sit.get("mod")) and instalador.arquivos_mod_iguais(w)
+        sit["em_uso"] = bool(sit.get("pasta_mod")) and os.path.normcase(sit["pasta_mod"]) == os.path.normcase(self.cfg.get("pasta_mod") or "")
+        sit["pronto"] = bool(sit.get("mod")) and sit["em_uso"]
+        sit["jogo_aberto"] = self.conectado()
+        return sit
+
+    def acao_instalacao(self, corpo):
+        acao = corpo.get("acao")
+        if acao == "procurar":
+            p = instalador.escolher_pasta()
+            if not p:
+                return {"ok": False, "erro": "Nenhuma pasta escolhida."}
+            if not instalador.win64_de(p):
+                return {"ok": False, "erro": f"Não achei o jogo em {p}. Escolha a pasta HS3 dentro de steamapps\\common."}
+            return {"ok": True, "pasta": p, "situacao": self.info_instalacao(p)}
+        if acao in ("instalar", "usar"):
+            w = instalador.win64_de(corpo.get("pasta") or self.cfg.get("pasta_mod"))
+            if not w:
+                return {"ok": False, "erro": "Não achei o jogo nesta pasta (falta o HS3-Win64-Shipping.exe)."}
+            if acao == "instalar":
+                if self.conectado():
+                    return {"ok": False, "erro": "Feche o jogo antes de instalar (o jogo trava os arquivos do UE4SS)."}
+                try:
+                    instalador.instalar(w)
+                except Exception as e:
+                    return {"ok": False, "erro": f"Não consegui instalar: {e}"}
+            sit = instalador.situacao(w)
+            if not sit.get("mod"):
+                return {"ok": False, "erro": "O mod ainda não está instalado nesta pasta. Clique em Instalar."}
+            self.cfg["pasta_mod"] = sit["pasta_mod"]
+            salvar_json(CONFIG_PATH, self.cfg)
+            self.cache = extras.Cache()
+            return {"ok": True, "situacao": self.info_instalacao()}
+        if acao == "zerar":
+            return self.comecar_do_zero()
+        return {"ok": False, "erro": "Ação inválida."}
+
+    def comecar_do_zero(self):
+        """Jogo novo: guarda o histórico do app numa cópia e recomeça (contratos, abates, patente, pinos)."""
+        with self.lock:
+            copia = os.path.join(BASE_DIR, f"dados_hs3_ate_{time.strftime('%Y-%m-%d_%H%M')}.json")
+            salvar_json(copia, self.dados)
+            offset = self.dados.get("eventos_offset", 0)
+            self.dados.clear()
+            self._completar_dados(self.dados)
+            self.dados["eventos_offset"] = offset      # não reprocessa eventos antigos do mod
+            for nome in ("licencas_todas.json",):
+                try:
+                    os.remove(os.path.join(BASE_DIR, nome))
+                except OSError:
+                    pass
+            if hasattr(self, "_licencas_todas"):
+                self._licencas_todas = {}
+            self.novo_jogo_suspeito = False
+            salvar_json(DADOS_PATH, self.dados)
+        self.manter_ofertas()
+        return {"ok": True, "copia": os.path.basename(copia)}
+
+    def vigiar_jogo_novo(self):
+        """Se a reputação total cair muito (save novo), avisa no app para recomeçar do zero."""
+        total = sum((r.get("valor") or 0) for r in self.estado.get("reputacao") or [] if isinstance(r, dict))
+        if not self.estado.get("reputacao"):
+            return
+        maxima = self.dados.get("reputacao_maxima", 0)
+        if total > maxima:
+            self.dados["reputacao_maxima"] = total
+            self.novo_jogo_suspeito = False
+        elif maxima >= 100 and total < maxima * 0.4:
+            self.novo_jogo_suspeito = True
+
     # --- arquivos do mod
     def caminho(self, nome):
-        return os.path.join(self.cfg["pasta_mod"], nome)
+        return os.path.join(self.cfg["pasta_mod"] or os.path.join(BASE_DIR, "_mod_nao_instalado_"), nome)
 
     def nivel(self):
         return self.estado.get("mapa")
@@ -1112,6 +1204,7 @@ class Companion:
                 except Exception:
                     pass
             self.ler_estado()
+            self.vigiar_jogo_novo()
             self.ler_animais()
             mudou = False
             for ev in self.ler_eventos():
@@ -1211,7 +1304,8 @@ class Companion:
                 "tem_local_salvo": bool(getattr(self, "anterior", None)),
                 "chat": [{"role": c["role"], "content": c["content"]} for c in self.dados["chat"][-20:]],
                 "pasta_mod": self.cfg["pasta_mod"],
-                "pasta_mod_existe": os.path.isdir(self.cfg["pasta_mod"]),
+                "pasta_mod_existe": os.path.isdir(self.cfg["pasta_mod"] or ""),
+                "jogo_novo": bool(getattr(self, "novo_jogo_suspeito", False)),
             }
 
 
@@ -1321,6 +1415,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.responder(200, APP.dados_mochila(ids))
         if caminho == "/api/loja":
             return self.responder(200, APP.dados_loja())
+        if caminho == "/api/instalacao":
+            q = urllib.parse.parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
+            return self.responder(200, APP.info_instalacao((q.get("pasta") or [None])[0]))
         if caminho == "/api/compra":
             q = urllib.parse.parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
             return self.responder(200, APP.resultado_compra((q.get("ref") or [""])[0]))
@@ -1398,6 +1495,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.responder(200, APP.remover_pino())
         if p == "/api/mochila":
             return self.responder(200, APP.acao_mochila(corpo))
+        if p == "/api/nevoa":
+            ok = APP.em_reserva() and APP.enviar_comando(["nevoa"])
+            return self.responder(200, {"ok": bool(ok), "erro": None if ok else "Entre numa reserva no jogo primeiro."})
+        if p == "/api/instalacao":
+            return self.responder(200, APP.acao_instalacao(corpo))
         if p == "/api/licenca":
             return self.responder(200, APP.comprar_licenca(str(corpo.get("tag") or "")))
         if p == "/api/comprar":
@@ -1433,13 +1535,23 @@ def main():
         return
     APP = Companion()
     limpar_antigos(APP.cfg.get("pasta_mod"))
+    # mod no jogo de outra versão (ex.: copiado à mão de um pacote antigo): acerta com o que veio no programa
+    try:
+        w = instalador.win64_de(APP.cfg.get("pasta_mod"))
+        if w and getattr(sys, "frozen", False) and not instalador.arquivos_mod_iguais(w):
+            APP.ler_estado()
+            if not APP.conectado():
+                instalador.instalar(w)
+                print("mod do jogo atualizado para a versão do programa")
+    except Exception as e:
+        print("não consegui conferir o mod:", repr(e))
     ATUALIZADOR = Atualizador(APP.cfg)
     threading.Thread(target=ATUALIZADOR.loop, daemon=True).start()
     porta = APP.cfg["porta"]
     print(f"HS3 Companion {VERSAO}")
     print(f"Pasta do mod: {APP.cfg['pasta_mod']}")
-    if not os.path.isdir(APP.cfg["pasta_mod"]):
-        print("ATENÇÃO: pasta do mod não encontrada. Ajuste 'pasta_mod' em", CONFIG_PATH)
+    if not os.path.isdir(APP.cfg["pasta_mod"] or ""):
+        print("Mod ainda não instalado: abra o app e siga a tela Instalação.")
     threading.Thread(target=APP.loop, daemon=True).start()
     servidor = ThreadingHTTPServer(("127.0.0.1", porta), Handler)
     print(f"App aberto em {url}  (deixe esta janela aberta enquanto joga)")

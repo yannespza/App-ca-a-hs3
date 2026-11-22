@@ -1,0 +1,1 @@
+; Mods do UE4SS ligados por esta lista (o HS3Discovery é ligado pelo enabled.txt da pasta dele)

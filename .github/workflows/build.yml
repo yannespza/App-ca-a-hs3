@@ -27,7 +27,7 @@ jobs:
 
       - name: Gerar executável
         working-directory: bridge
-        run: pyinstaller --onefile --noconsole --name HS3Companion --icon icon.ico --add-data "web;web" --add-data "versao.txt;." companion.py
+        run: pyinstaller --onefile --noconsole --name HS3Companion --icon icon.ico --add-data "web;web" --add-data "versao.txt;." --add-data "../mod/HS3Discovery;HS3Discovery" --add-data "../ue4ss_kit;ue4ss_kit" --hidden-import tkinter --hidden-import tkinter.filedialog companion.py
 
       - name: Montar pacote
         shell: pwsh

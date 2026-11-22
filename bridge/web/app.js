@@ -101,7 +101,20 @@ function centralizar() { if (ultimoEstado?.estado?.pos) mapa.setView(toLL(ultimo
 $("f-pois").onchange = (e) => e.target.checked ? grupoPois.addTo(mapa) : mapa.removeLayer(grupoPois);
 $("f-estr").onchange = (e) => e.target.checked ? grupoEstr.addTo(mapa) : mapa.removeLayer(grupoEstr);
 $("f-animais").onchange = (e) => e.target.checked ? grupoAnimais.addTo(mapa) : mapa.removeLayer(grupoAnimais);
-$("f-nevoa").onchange = (e) => { if (camadaNevoa) e.target.checked ? camadaNevoa.addTo(mapa) : mapa.removeLayer(camadaNevoa); };
+$("f-nevoa").onchange = (e) => {
+  try { localStorage.setItem("hs3_nevoa", e.target.checked ? "1" : "0"); } catch {}
+  if (camadaNevoa) e.target.checked ? camadaNevoa.addTo(mapa) : mapa.removeLayer(camadaNevoa);
+};
+try { $("f-nevoa").checked = localStorage.getItem("hs3_nevoa") === "1"; } catch {}
+// a névoa não é mais lida sozinha (pesava no jogo): só quando você clica
+async function atualizarNevoa() {
+  let r;
+  try { r = await post("/api/nevoa", {}); } catch { return moAviso("O app não respondeu.", "erro"); }
+  if (!r.ok) return moAviso(r.erro || "Entre numa reserva primeiro.", "erro");
+  $("f-nevoa").checked = true;
+  try { localStorage.setItem("hs3_nevoa", "1"); } catch {}
+  moAviso("Lendo a névoa do jogo…", "ok");
+}
 
 function idadeTexto(dias) {
   if (!dias && dias !== 0) return "–";
@@ -308,6 +321,7 @@ async function atualizar() {
   if (atualizando && versaoAntes && d.versao !== versaoAntes) { location.reload(); return; }
   ultimoEstado = d;
   mostrarAtualizacao(d.atualizacao, d.versao);
+  if (typeof avisoJogoNovo === "function") avisoJogoNovo(d.jogo_novo);
   const st = d.estado || {};
   $("led").className = "led " + (d.em_reserva ? "on" : d.conectado ? "meio" : "");
   $("conexao-txt").textContent = d.em_reserva ? "Conectado ao jogo" : d.conectado ? "Jogo aberto, fora da reserva" : "Jogo fechado";
@@ -389,9 +403,9 @@ document.querySelectorAll(".segmentos button").forEach(b => b.onclick = () => {
   document.querySelectorAll(".seg").forEach(s => s.classList.toggle("ativo", s.id === "seg-" + b.dataset.seg));
   if (b.dataset.seg === "chat") { const l = $("chat-log"); l.scrollTop = l.scrollHeight; }
 });
-document.querySelectorAll("#abas button").forEach(b => b.onclick = () => {
+document.querySelectorAll("#abas button[data-aba]").forEach(b => b.onclick = () => {
   abaAtual = b.dataset.aba;
-  document.querySelectorAll("#abas button").forEach(x => x.classList.toggle("ativo", x === b));
+  document.querySelectorAll("#abas button[data-aba]").forEach(x => x.classList.toggle("ativo", x === b));
   ["armario", "loja", "enciclopedia", "cacadas"].forEach(a => $("painel-" + a).classList.toggle("ativo", a === abaAtual));
   document.querySelector(".mapa-papel").classList.toggle("so-mapa", abaAtual === "mapa");
   if (abaAtual === "mapa") setTimeout(() => mapa.invalidateSize(), 50);

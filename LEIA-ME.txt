@@ -1,29 +1,96 @@
-HS3 COMPANION - Cabana do Caçador
-==================================
+HS3 COMPANION - app de apoio para o Hunting Simulator 3
+=======================================================
+
+O que é: um app que roda ao lado do jogo (de preferência num segundo monitor) com
+mapa ao vivo, animais marcados, contratos com recompensa, mochila, diário de campo,
+licenças e estatísticas das caçadas. Funciona offline, só no seu PC.
+
 
 O QUE TEM NESTE PACOTE
-- HS3Companion.exe  -> o programa que conecta o jogo ao app
-- HS3Discovery\     -> o mod do UE4SS (vai dentro da pasta do jogo)
+- HS3Companion.exe -> o programa. Ele já traz dentro tudo o que precisa ir para o jogo:
+                      o UE4SS (carregador de mods) e o mod HS3Discovery.
+- HS3Discovery\    -> cópia do mod (o programa usa nas atualizações; não precisa mexer).
+- LEIA-ME.txt      -> este arquivo.
 
-INSTALAÇÃO (só na primeira vez; depois use o botão "Procurar atualização" do app)
-1. Copie a pasta HS3Discovery para:
-   D:\SteamLibrary\steamapps\common\HS3\HS3\Binaries\Win64\ue4ss\Mods\
-   (substitua os arquivos se perguntar)
-2. Coloque o HS3Companion.exe onde quiser (ex.: Documentos\HS3Companion).
+
+INSTALAÇÃO (só na primeira vez)
+1. Extraia o .zip numa pasta só para o app. Sugestão:
+      Documentos\HS3Companion
+   Não coloque dentro da pasta do jogo nem em "Arquivos de Programas".
+   O app guarda ao lado do .exe a configuração e o seu histórico.
+
+2. FECHE o jogo e abra o HS3Companion.exe.
+   O Windows pode avisar "O Windows protegeu o computador" (editor desconhecido):
+   clique em "Mais informações" > "Executar assim mesmo".
+
+3. Abre a tela "Instalação e ajustes":
+   - Passo 1 (pasta do jogo): o app procura o jogo sozinho nas bibliotecas da Steam.
+     Se não achar, clique em "Procurar..." e escolha a pasta HS3 do jogo.
+     Para descobrir onde ela está: na Steam, botão direito no Hunting Simulator 3 >
+     Gerenciar > Ver arquivos locais. Normalmente é algo como:
+        C:\Program Files (x86)\Steam\steamapps\common\HS3
+        D:\SteamLibrary\steamapps\common\HS3
+   - Passo 2: clique em "Instalar no jogo". O app copia para dentro do jogo:
+        HS3\HS3\Binaries\Win64\dwmapi.dll
+        HS3\HS3\Binaries\Win64\ue4ss\            (UE4SS)
+        HS3\HS3\Binaries\Win64\ue4ss\Mods\HS3Discovery\   (o mod)
+     Se você já tinha o UE4SS instalado, as suas configurações dele são mantidas.
+   - Passo 3: "Pronto". O app guarda a pasta e não pergunta mais.
+
+4. Dica: botão direito no HS3Companion.exe > Enviar para > Área de trabalho (criar atalho).
+
+O save do jogo fica em:
+   C:\Users\<seu usuário>\AppData\Local\HS3
+O app NÃO mexe no save. Tudo o que ele faz no jogo (dinheiro de contratos, mochila,
+licenças) é feito pelo próprio jogo enquanto ele está aberto.
+
 
 COMO USAR
 1. Abra o jogo pela Steam.
-2. Abra o HS3Companion.exe. O app abre sozinho numa janela própria.
-   Arraste a janela para o segundo monitor.
-3. Para fechar o programa, use o botão "Fechar" no canto superior do app.
-   Se fechar só a janela, abra o HS3Companion.exe de novo para reabri-la.
-4. Dica: clique com o botão direito no HS3Companion.exe > Enviar para >
-   Área de trabalho (criar atalho).
+2. Abra o HS3Companion.exe (antes ou depois do jogo, tanto faz).
+   O app abre numa janela própria. Arraste para o segundo monitor se tiver.
+3. Entre numa reserva (Texas ou Colorado). O app mostra "Conectado ao jogo".
+4. Na primeira vez: abra a aba "Diário" e clique em "Ler dados do jogo".
+   Leva de 10 a 15 minutos, aos poucos, sem travar o jogo. Só precisa uma vez.
+5. Para fechar o programa use o botão "Fechar" no alto do app.
+   Se fechar só a janela, o programa continua rodando: abra o .exe de novo para reabrir.
 
-CONFIGURAÇÃO
-Na primeira execução é criado o arquivo config.json ao lado do .exe.
-Se o jogo estiver em outra pasta, ajuste "pasta_mod" nele.
-Seus dados (missões, abates) ficam em dados_hs3.json ao lado do .exe.
+O que tem em cada aba:
+- Mapa: sua posição, animais marcados no binóculo, pontos da reserva. Clique no mapa
+  para pôr um pino (aparece também no mapa do jogo). A névoa (áreas exploradas) só é
+  lida quando você clica em "↻ névoa", porque essa leitura dá uma travadinha no jogo.
+- Mochila: os 8 espaços (1 e 2 armas, 3 a 8 equipamentos) e o que serve para os contratos.
+- Diário: cada animal tem "Montar a caçada": calibres, armas, munição, acessórios,
+  chamadores, chamarizes, iscas e a licença (com botão de compra quando acaba).
+- Caçadas: estatísticas.
+- Lado direito: contratos do Earl (aceite, cumpra no jogo e receba o pagamento) e dicas.
 
-O Windows pode avisar sobre "editor desconhecido" ao abrir o .exe:
-clique em "Mais informações" > "Executar assim mesmo".
+
+ATUALIZAÇÕES
+Quando sair uma versão nova, aparece o botão "Procurar atualização" / "Atualizar" no alto do app.
+O app baixa sozinho, troca o programa e o mod e reabre. Depois de atualizar,
+feche e abra o jogo uma vez para o mod novo valer.
+
+
+JOGO NOVO (começar do zero)
+Se você apagar o save ou começar outra carreira no jogo, abra "Ajustes" (canto inferior
+esquerdo do app) > "Começar do zero no app". Contratos, abates e patente do app voltam ao
+início; uma cópia do histórico antigo fica na pasta do programa
+(dados_hs3_ate_<data>.json). Se o app perceber que a sua reputação no jogo zerou, ele
+mesmo pergunta se você quer zerar.
+
+
+SE ALGO DER ERRADO
+- O app diz "Jogo fechado" com o jogo aberto: confira em Ajustes se a pasta do jogo está
+  certa e se o mod aparece como instalado. Depois feche e abra o jogo.
+- O jogo fechou sozinho: anote a mensagem de erro e mande para quem te passou o app,
+  junto com o arquivo
+     HS3\HS3\Binaries\Win64\ue4ss\Mods\HS3Discovery\output.txt
+- Algum antivírus pode desconfiar do dwmapi.dll (é assim que o UE4SS entra no jogo):
+  se ele apagar o arquivo, libere a pasta do jogo no antivírus e clique em Instalar de novo.
+- Para tirar tudo do jogo: apague o arquivo dwmapi.dll e a pasta ue4ss dentro de
+  HS3\HS3\Binaries\Win64. O jogo volta ao normal.
+
+Arquivos que o app cria na pasta dele: config.json (pasta do jogo e opções),
+dados_hs3.json (seu histórico), calibres_todos.json e licencas_todas.json (o que ele
+já leu do jogo) e hs3companion.log (registro do programa).
