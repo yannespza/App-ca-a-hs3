@@ -330,7 +330,7 @@ def avaliar_missoes(dados, evento, reserva=None):
                 conta = evento.get("grupo") == m["grupo"]
             elif t == "distancia":
                 d = evento.get("distancia_m") or 0
-                conta = m.get("dist_min", m.get("distancia", 0)) <= d <= m.get("dist_max", 500)
+                conta = d >= m.get("dist_min", m.get("distancia", 0))   # só distância mínima
             elif t in ("calibre", "atrair", "nao_detectado") and (not m.get("grupo") or evento.get("grupo") == m["grupo"]):
                 if t == "calibre":
                     conta = evento.get("calibre_compativel") is True
@@ -733,6 +733,59 @@ class Companion:
         # estruturas por onde você já passou contam como descobertas (o jogo só exporta a cada 5 min)
         return [dict(p, descoberto=True) if not p.get("descoberto") and p.get("hash") in vistos else p
                 for p in self._pois_cache[2]]
+
+    TITULOS_PERTO_ANTIGOS = {"Tiro de perto", "Cara a cara", "Nariz com nariz", "Coragem no capim", "Encostado no bicho"}
+
+    def revisar_contratos(self):
+        """Uma vez por versão: distância só mínima, plurais certos e recontagem dos abates que a regra antiga
+        de "sem ser percebido" (e o limite máximo de distância) deixaram de contar."""
+        d = self.dados
+        if d.get("versao_contratos", 0) >= 2 or not self.em_reserva() or not self.reserva():
+            return
+        for m in d["missoes"]:
+            c = m.get("cond") or {}
+            for alvo in (m, c):
+                alvo.pop("dist_max", None)
+            desc = m.get("descricao") or ""
+            if c.get("dist_min") is not None:
+                teto = 35 if m.get("grupo") in missoes.AVES or c.get("arma") == "espingarda" else 350
+                if c["dist_min"] > teto:
+                    desc = re.sub(r"a \d+–\d+ m", f"a {teto}–0 m", desc)
+                    c["dist_min"] = m["dist_min"] = teto
+            if c.get("dist_min") is not None and c["dist_min"] < 20:
+                c.pop("dist_min", None)
+                m.pop("dist_min", None)
+                desc = re.sub(r",? a \d+–\d+ m", "", desc)
+                if m.get("titulo") in self.TITULOS_PERTO_ANTIGOS:
+                    m["titulo"] = "Caçada no capricho"
+            else:
+                desc = re.sub(r"a (\d+)–\d+ m", r"a \1 m ou mais", desc)
+                if m.get("titulo") in self.TITULOS_PERTO_ANTIGOS:
+                    m["titulo"] = "Distância segura"
+            m["descricao"] = re.sub(r"(\w[\w-]*)\(s\)", lambda x: missoes.plural(x.group(1)), desc)
+        r = self.reserva()
+        # visitas: nomes de lugar em português; ofertas para "Estrutura de caça" (nome repetido) saem da mesa
+        nomes = {p.get("hash"): p.get("nome") for p in self.pois()}
+        d["missoes"] = [m for m in d["missoes"] if not (m["status"] == "oferta" and m.get("reserva") == r and any(
+            (l or {}).get("nome") == "Estrutura de caça" for l in (m.get("locais") or [])))]
+        for m in d["missoes"]:
+            if m.get("reserva") == r and m.get("locais") and m["status"] in ("oferta", "ativa"):
+                for l in m["locais"]:
+                    if nomes.get(l.get("hash")):
+                        l["nome"] = nomes[l["hash"]]
+                if isinstance(m.get("local"), dict) and nomes.get(m["local"].get("hash")):
+                    m["local"]["nome"] = nomes[m["local"]["hash"]]
+                lista = ", ".join(l["nome"] for l in m["locais"])
+                m["descricao"] = f"Vá até: {lista}." if len(m["locais"]) == 1 else f"Passe por estes {len(m['locais'])} lugares: {lista}."
+        ativas = [m for m in d["missoes"] if m["status"] == "ativa" and m.get("reserva") == r]
+        if ativas:
+            desde = min(m.get("aceita_em", m["criada"]) for m in ativas) - 2
+            for ab in list(d["abates"]):
+                if (ab.get("ts") or 0) >= desde and extras.nome_mapa(ab.get("reserva") or "") == r:
+                    avaliar_missoes(d, dict(ab, tipo="abate_confirmado"), r)
+        d["versao_contratos"] = 2
+        self.salvar_pendente = True
+        print("contratos revisados (distância mínima, plurais, recontagem)")
 
     def marcar_estruturas_perto(self):
         """Marca como descoberta a estrutura de caça a menos de 35 m de você (sem perguntar nada ao jogo)."""
@@ -1154,8 +1207,7 @@ class Companion:
                           "descricao": limpo(c.get("descricao")), "vendedor": self.VENDEDORES.get(vend, vend or "Jogo"),
                           "rastreado": bool(c.get("rastreado")), "objetivos": objs, "do_jogo": True,
                           "tempo_min": round(tempo / 60) if isinstance(tempo, (int, float)) and c.get("limitado") and tempo > 0 else None,
-                          "tipo": tipo, "grupo": grupo, "dist_min": int(dist.group(1)) if tipo == "distancia" else 0,
-                          "dist_max": 9999 if tipo == "distancia" else 0})
+                          "tipo": tipo, "grupo": grupo, "dist_min": int(dist.group(1)) if tipo == "distancia" else 0})
         return saida
 
     def _lida_mochila(self):
@@ -1405,6 +1457,7 @@ class Companion:
                 mudou = True
             self.cuidar_posicao()
             self.marcar_estruturas_perto()
+            self.revisar_contratos()
             if self.em_reserva():
                 if avaliar_missoes(self.dados, {"tipo": "posicao", "id": "local", "pos": self.estado["pos"], "ts": time.time()}, self.reserva()):
                     mudou = True

@@ -57,6 +57,9 @@ LUGARES = {
     "OilRigs": "Poços de petróleo", "RadioTower": "Torre de rádio", "RockFormation": "Formação rochosa",
     "SmallShed": "Galpão", "SolarFarm": "Usina solar", "TollBooth": "Pedágio", "Watchtower": "Torre de vigia",
     "WaterfallAndBridge": "Cachoeira e ponte",
+    # Colorado
+    "AbandonedCabin": "Cabana abandonada", "CollapsedTunnel": "Túnel desmoronado", "Dam": "Represa",
+    "FishingHuts": "Cabanas de pesca", "Fort": "Forte", "WaterMill": "Moinho d'água", "WindTurbines": "Turbinas eólicas",
 }
 
 

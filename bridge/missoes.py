@@ -55,7 +55,7 @@ TITULOS_COND = {
     "longa": ["Tiro de elite", "Olho de águia", "Lá do outro lado do vale", "Precisão a distância", "Mão firme, mira longa",
               "Atirador de cumeeira", "Vento e queda", "O tiro da sua vida"],
     "media": ["Olho de lince", "Distância de respeito", "Tiro medido", "Nem perto, nem longe"],
-    "curta": ["Tiro de perto", "Cara a cara", "Nariz com nariz", "Coragem no capim", "Encostado no bicho"],
+    "curta": ["Distância segura", "Sem encostar no bicho", "Espaço de respeito", "Tiro com folga"],
     "um_tiro": ["Um tiro, um abate", "Sem segunda chance", "Bala única", "Tiro certeiro", "Primeira e última"],
     "arco": ["Caçada à moda antiga", "Corda e flecha", "Silêncio do arco", "Arqueiro do mato"],
     "espingarda": ["Chumbo no ar", "Trabalho de espingarda", "Cano duplo"],
@@ -95,8 +95,8 @@ FALAS_QUALQUER = [
 FALAS_COND = {
     "longa": ["Quero ver tiro longo: confira o vento, a queda da bala e respire antes de apertar.", "De longe, sem o bicho desconfiar.",
               "Leve uma luneta boa e o bipé. Paciência vale mais que pressa."],
-    "media": ["Nem colado nem lá no horizonte: distância de caçador que sabe o que faz.", "Uma distância honesta, de tiro seguro."],
-    "curta": ["Chega perto. Bem perto. Vento no rosto e passo de gato.", "Quero que você sinta o cheiro do bicho antes de atirar."],
+    "media": ["Tiro de caçador que sabe o que faz: nada de chegar perto demais.", "Uma distância honesta, longe o bastante pro bicho não desconfiar."],
+    "curta": ["Não precisa colar no bicho: atire com uma folga de distância.", "Nada de encostar: chegue só até a distância combinada."],
     "um_tiro": ["Um tiro só. Bicho ferido correndo no mato não é caça, é vergonha.", "Sem segundo disparo, entendeu?"],
     "arco": ["Deixa o rifle no carro: é no arco.", "Flecha só. Isso separa os caçadores dos atiradores."],
     "espingarda": ["Vai de espingarda, chumbo certo pra espécie.", "Espingarda no ombro e olho vivo."],
@@ -128,8 +128,26 @@ DESC_COND = {
 }
 MULT = {"longa": 1.7, "media": 1.25, "curta": 1.3, "um_tiro": 1.3, "arco": 1.6, "espingarda": 1.1, "rifle": 1.0, "curta_arma": 1.6,
         "sem_torre": 1.2, "atrair": 1.35, "nao_detectado": 1.4, "calibre": 1.1, "macho": 1.2, "femea": 1.1}
-FAIXAS = {"curta": [(10, 40), (15, 50), (20, 50)], "media": [(80, 150), (100, 200), (120, 220), (150, 250)],
-          "longa": [(250, 500), (300, 500), (350, 500), (400, 500), (450, 500)]}
+# só distância mínima (sem limite máximo): "a X m ou mais"
+FAIXAS = {"curta": [20, 25, 30, 35], "media": [60, 80, 100, 120, 150], "longa": [200, 250, 300, 350]}
+
+
+def plural(nome, n=2):
+    """'coelho' -> 'coelhos', 'bisão' -> 'bisões', 'veado-mula' -> 'veados-mula'."""
+    if n == 1 or not nome:
+        return nome
+    cab, sep, resto = nome.partition("-")
+    if cab.endswith("ão"):
+        cab = cab[:-2] + "ões"
+    elif cab.endswith(("r", "z")):
+        cab += "es"
+    elif cab.endswith("m"):
+        cab = cab[:-1] + "ns"
+    elif cab.endswith("l") and not cab.endswith(("il",)):
+        cab = cab[:-1] + "is"
+    elif not cab.endswith("s"):
+        cab += "s"
+    return cab + sep + resto
 
 
 def _g(nome):
@@ -199,10 +217,10 @@ def _um(grupos, pois, nome_grupo, cap):
         if o == "dist":
             arma = cond.get("arma")
             faixas = ["curta", "media"] if arma in ("arco", "curta_arma") or pequeno or "rifle" not in armas_tipos else ["curta", "media", "longa", "longa"]
-            if arma == "espingarda":
+            if arma == "espingarda" or grupo in AVES:      # chumbo não vai longe
                 faixas = ["curta"]
             f = random.choice(faixas)
-            cond["dist_min"], cond["dist_max"] = random.choice(FAIXAS[f])
+            cond["dist_min"] = random.choice(FAIXAS[f])
             chaves.append(f)
         elif o == "arma":
             tipos = [t for t in armas_tipos if t != "rifle" or not pequeno] or list(armas_tipos)
@@ -237,16 +255,26 @@ def _um(grupos, pois, nome_grupo, cap):
     if forma == "variedade":
         alvo = f"{meta} animais de espécies diferentes"
     elif grupo:
-        alvo = f"{meta} {nome}" + ("" if meta == 1 else "(s)")
+        alvo = f"{meta} {plural(nome, meta)}"
     else:
         alvo = "1 animal de qualquer espécie" if meta == 1 else f"{meta} animais de qualquer espécie"
+    if cond.get("sexo") and forma != "variedade":
+        alvo += " " + ({"macho": "macho", "femea": "fêmea"}[cond["sexo"]] if meta == 1 else
+                       {"macho": "machos", "femea": "fêmeas"}[cond["sexo"]]) + " (confirme no binóculo antes)"
+    varios = meta > 1
     partes = []
     if "dist_min" in cond:
-        partes.append(f"a {cond['dist_min']}–{cond['dist_max']} m")
+        partes.append(f"a {cond['dist_min']} m ou mais")
     if "genetica" in cond:
         partes.append(f"com genética de {int(cond['genetica'] * 100)}% ou mais")
     for c in chaves:
-        if c in DESC_COND:
+        if c in ("macho", "femea"):
+            continue
+        if c == "nao_detectado":
+            partes.append("sem que os animais percebam você" if varios else "sem que o animal perceba você")
+        elif c == "atrair":
+            partes.append("atraídos por chamador ou isca de cheiro" if varios else "atraído por chamador ou isca de cheiro")
+        elif c in DESC_COND:
             partes.append(DESC_COND[c])
     descricao = f"Abata e recolha {alvo}" + (", " + ", ".join(partes) if partes else "") + "."
 
@@ -273,14 +301,14 @@ def _um(grupos, pois, nome_grupo, cap):
     m = _base(titulo, fala, descricao, meta, valor)
     m.update({"tipo": "combo", "grupo": grupo, "cond": cond})
     if "dist_min" in cond:
-        m["dist_min"], m["dist_max"] = cond["dist_min"], cond["dist_max"]
+        m["dist_min"] = cond["dist_min"]
     return m
 
 
 def _marcar(grupos, nome_grupo):
     grupo = random.choice(grupos) if grupos else None
     meta = random.choice([2, 3, 4] if grupo else [4, 5, 6, 8, 10])
-    alvo = f"{meta} {_g(nome_grupo(grupo))}(s) diferentes" if grupo else f"{meta} animais diferentes"
+    alvo = f"{meta} {plural(_g(nome_grupo(grupo)), meta)} diferentes" if grupo else f"{meta} animais diferentes"
     m = _base(random.choice(TITULOS_MARCAR), random.choice(FALAS_ABRE) + " " + random.choice(FALAS_MARCAR),
               f"Marque {alvo} com o binóculo.", meta, int(round((110 if not grupo else 160) * meta / 10) * 10))
     m.update({"tipo": "combo", "grupo": grupo, "cond": {"marcar": True}})
@@ -290,6 +318,10 @@ def _marcar(grupos, nome_grupo):
 def _visitar(pois):
     cand = [p for p in pois if p.get("categoria") in ("lugar", "torre", "acampamento", "estrutura")
             and p.get("nome") and "_" not in p["nome"] and "Contract" not in p["nome"] and "Zone" not in p["nome"]]
+    contagem = {}
+    for p in cand:
+        contagem[p["nome"]] = contagem.get(p["nome"], 0) + 1
+    cand = [p for p in cand if contagem[p["nome"]] == 1]      # "Estrutura de caça" repetido não diz onde ir
     novos = [p for p in cand if not p.get("descoberto")]
     cand = novos or cand
     if not cand:
@@ -337,7 +369,7 @@ def conta(m, evento, dentro, arma_tipo_de):
     if c.get("variedade") and evento.get("grupo") in set(m.get("grupos_feitos") or []):
         return False
     d = evento.get("distancia_m") or 0
-    if "dist_min" in c and not (c["dist_min"] <= d <= c["dist_max"]):
+    if "dist_min" in c and d < c["dist_min"]:      # sem limite máximo
         return False
     if c.get("um_tiro") and (evento.get("tiros") or 1) > 1:
         return False

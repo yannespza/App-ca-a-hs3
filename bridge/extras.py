@@ -489,7 +489,7 @@ def requisitos_missoes(missoes, grupo_nome):
     for m in missoes:
         if m.get("tipo") == "combo":
             for t in _tipos_combo(m):
-                expandidas.append(dict(m, tipo=t, dist_min=m.get("dist_min", 0), dist_max=m.get("dist_max", 0),
+                expandidas.append(dict(m, tipo=t, dist_min=m.get("dist_min", 0),
                                        grupo=m.get("grupo") if t not in ("marcar", "visitar") else None))
         else:
             expandidas.append(m)
@@ -509,14 +509,14 @@ def requisitos_missoes(missoes, grupo_nome):
     chips += list(dict.fromkeys(m["titulo"] for m in missoes if m.get("especie")))
     chips += ["Qualquer animal"] if qualquer and not grupos else []
     if dist:
-        chips += [f"Tiro de {m['dist_min']}–{m['dist_max']} m" for m in dist]
+        chips += [f"Tiro de {m['dist_min']} m ou mais" for m in dist if m.get("dist_min")]
     rotulos = {"calibre": "Calibre certo", "atrair": "Atrair (chamador/cheiro)", "nao_detectado": "Sem ser percebido",
                "sem_torre": "Sem torre/espera", "marcar": "Marcar com binóculo", "genetica": "Genética alta"}
     chips += [rotulos[t] for t in tipos if t in rotulos]
     nomes_arma = {"arco": "Arco ou besta", "espingarda": "Espingarda", "rifle": "Rifle", "curta_arma": "Arma curta"}
     chips += [nomes_arma[a] for a in armas if a in nomes_arma]
     return {"grupos": grupos, "qualquer": qualquer or not grupos, "tipos": tipos, "armas": armas,
-            "dist_min": min((m["dist_min"] for m in dist), default=0), "dist_max": max((m["dist_max"] for m in dist), default=0),
+            "dist_min": min((m["dist_min"] for m in dist), default=0),
             "chips": chips}
 
 
