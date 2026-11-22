@@ -663,6 +663,8 @@ class Companion:
             with open(self.caminho("state.json"), "r", encoding="utf-8") as f:
                 self.estado = json.load(f)
             pj = self.estado.get("pino_jogo")
+            if isinstance(pj, dict) and time.time() - getattr(self, "_pino_tirado_em", 0) < 10:
+                pj = None   # acabou de pedir para tirar: o jogo leva 1–2 s para confirmar
             # sem pino o jogo deixa a posição zerada (versões antigas do mod mandavam assim mesmo)
             if not isinstance(pj, dict) or (abs(pj.get("x") or 0) < 1 and abs(pj.get("y") or 0) < 1):
                 self.estado.pop("pino_jogo", None)
@@ -989,6 +991,7 @@ class Companion:
 
     # --- pinos
     def _pino(self, pos, rotulo="Pino", missao=None):
+        self._pino_tirado_em = 0
         self.dados["pino_app"] = {"x": pos["x"], "y": pos["y"], "z": pos.get("z", 0), "rotulo": rotulo,
                                   "missao": missao, "ts": time.time()}
         self.enviar_comando([f"pin {pos['x']:.0f} {pos['y']:.0f} {pos.get('z', 0):.0f}"])
@@ -1033,6 +1036,7 @@ class Companion:
 
     def remover_pino(self):
         self._pino_visto = False
+        self._pino_tirado_em = time.time()   # até o jogo confirmar, o app já mostra sem pino
         self.dados["pino_app"] = None
         self.enviar_comando(["unpin"])
         self.salvar_pendente = True

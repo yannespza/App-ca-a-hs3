@@ -120,14 +120,26 @@ function setaJogador(yaw) {
     html: `<div class="mk-jogador" style="transform:rotate(${yaw || 0}deg)"><svg viewBox="0 0 30 30"><path d="M28 15 L4 4 L10 15 L4 26 Z" fill="#d0661f" stroke="#2b1e12" stroke-width="1.5"/></svg></div>` });
 }
 
+let pinoPendente = null;
 function perguntarPino(ll, rotulo) {
-  const html = `<div style="text-align:center"><b>${esc(rotulo || "Novo pino")}</b><br>
-    <button class="btn-papel verde" id="pp-ok" style="margin-top:6px">📍 Colocar pino aqui</button></div>`;
-  const pop = L.popup().setLatLng(ll).setContent(html).openOn(mapa);
-  setTimeout(() => {
-    const b = document.getElementById("pp-ok");
-    if (b) b.onclick = async () => { const w = fromLL(ll); await post("/api/pino", { x: w.x, y: w.y, rotulo }); mapa.closePopup(pop); atualizar(); };
-  }, 30);
+  pinoPendente = { ll, rotulo };
+  const html = `<div class="pp-caixa" style="text-align:center"><b>${esc(rotulo || "Novo pino")}</b><br>
+    <button class="btn-papel verde" id="pp-ok" style="margin-top:6px;padding:10px 14px" onclick="confirmarPino(event)">📍 Colocar pino aqui</button></div>`;
+  // no celular a telemetria fica no alto: o mapa se ajeita para o balão não ficar escondido atrás dela
+  const celular = window.matchMedia("(max-width: 820px)").matches;
+  L.popup({ autoPanPaddingTopLeft: celular ? [12, 180] : [12, 12], autoPanPaddingBottomRight: celular ? [12, 150] : [12, 12] })
+    .setLatLng(ll).setContent(html).openOn(mapa);
+  const caixa = document.querySelector(".pp-caixa");
+  if (caixa) { L.DomEvent.disableClickPropagation(caixa); L.DomEvent.disableScrollPropagation(caixa); }
+}
+async function confirmarPino(ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  if (!pinoPendente) return;
+  const { ll, rotulo } = pinoPendente; pinoPendente = null;
+  const w = fromLL(ll);
+  mapa.closePopup();
+  await post("/api/pino", { x: w.x, y: w.y, rotulo });
+  atualizar();
 }
 mapa.on("click", (e) => perguntarPino(e.latlng, "Meu pino"));
 
