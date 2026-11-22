@@ -86,4 +86,7 @@ function avisoJogoNovo(sim) {
   document.body.appendChild(d);
 }
 
-verificarInstalacao();
+// no celular (outro aparelho) não tem instalação nem ajustes: isso é só no PC
+const NO_PC = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
+if (!NO_PC) document.body.classList.add("remoto");
+else verificarInstalacao();

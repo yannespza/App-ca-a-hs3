@@ -4,6 +4,7 @@ Lê state.json e events.jsonl gravados pelo mod, gera e valida missões,
 paga recompensas escrevendo comandos em cmd.txt e serve o app em http://localhost.
 Só usa a biblioteca padrão do Python.
 """
+import hmac
 import json
 import re
 import urllib.parse
@@ -66,6 +67,8 @@ CONFIG_PADRAO = {
     "contratos_no_jogo": True,
     "limite_diario_creditos": 20000,
     "github_token": "",
+    "celular": True,          # aceita o celular na mesma rede Wi-Fi (com PIN)
+    "pin": "",                # criado sozinho na primeira vez
     "versao_config": 2,
 }
 
@@ -195,9 +198,37 @@ def carregar_config():
                 cfg["pasta_mod"] = sit["pasta_mod"]
         except Exception as e:
             print("procura do jogo falhou:", repr(e))
+    if not re.fullmatch(r"\d{4,8}", str(cfg.get("pin") or "")):
+        import secrets
+        cfg["pin"] = f"{secrets.randbelow(10000):04d}"
     if cfg != {k: v for k, v in salvo.items()}:
         salvar_json(CONFIG_PATH, cfg)
     return cfg
+
+
+def ip_local():
+    """Endereço deste PC na rede de casa (o celular abre http://<ip>:<porta>)."""
+    import socket
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("10.255.255.255", 1))     # não envia nada: só descobre por qual placa sairia
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        try:
+            return socket.gethostbyname(socket.gethostname())
+        except Exception:
+            return None
+
+
+PAGINA_PIN = """<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HS3 Companion</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#121c19;color:#e3e8dc;font:16px system-ui,sans-serif}
+form{display:grid;gap:14px;padding:28px;border-radius:16px;background:#1a2723;border:1px solid #30443c;width:min(320px,86vw);text-align:center}
+h1{margin:0;font-size:22px}p{margin:0;color:#9fae9f;font-size:14px}input{font-size:28px;letter-spacing:8px;text-align:center;padding:10px;border-radius:10px;border:1px solid #43594f;background:#101916;color:#e3e8dc}
+button{font-size:17px;font-weight:700;padding:12px;border:0;border-radius:10px;background:#ff6b1a;color:#1b0d04}.erro{color:#f0a27a}</style></head>
+<body><form method="get" action="/"><h1>HS3 Companion</h1><p>Digite o PIN que aparece no app do PC (botão <b>Celular</b>), ou leia o QR code.</p>
+__ERRO__<input name="pin" inputmode="numeric" autocomplete="one-time-code" maxlength="8" autofocus><button>Entrar</button></form></body></html>"""
 
 
 # ------------------------------------------------------------------ geometria
@@ -1394,6 +1425,43 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(corpo)
 
+    # --- acesso pelo celular: o próprio PC entra direto; outros aparelhos precisam do PIN
+    def local(self):
+        return self.client_address[0] in ("127.0.0.1", "::1", "::ffff:127.0.0.1")
+
+    def liberado(self):
+        if self.local():
+            return True
+        if not APP.cfg.get("celular"):
+            return False
+        pin = str(APP.cfg.get("pin") or "")
+        cookies = dict(c.strip().split("=", 1) for c in (self.headers.get("Cookie") or "").split(";") if "=" in c)
+        return bool(pin) and hmac.compare_digest(cookies.get("hs3pin", ""), pin)
+
+    def porteiro(self):
+        """True se pode seguir. Senão já respondeu (página do PIN, ou 403 para a API)."""
+        if self.liberado():
+            return True
+        q = urllib.parse.parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
+        tentado = (q.get("pin") or [""])[0]
+        pin = str(APP.cfg.get("pin") or "")
+        if APP.cfg.get("celular") and tentado and pin and hmac.compare_digest(tentado, pin):
+            self.send_response(302)
+            self.send_header("Set-Cookie", f"hs3pin={pin}; Path=/; Max-Age=31536000; SameSite=Lax")
+            self.send_header("Location", "/")
+            self.end_headers()
+            return False
+        if tentado:
+            time.sleep(1.5)      # freia quem tenta adivinhar
+        if self.path.startswith("/api/"):
+            self.responder(403, {"erro": "PIN necessário"})
+        elif not APP.cfg.get("celular"):
+            self.responder(403, "Acesso pelo celular desligado no app do PC.".encode("utf-8"), "text/plain; charset=utf-8")
+        else:
+            erro = '<p class="erro">PIN errado. Confira no app do PC.</p>' if tentado else ""
+            self.responder(200, PAGINA_PIN.replace("__ERRO__", erro).encode("utf-8"), "text/html; charset=utf-8")
+        return False
+
     def arquivo_mod(self, nome, tipo):
         nivel = (APP.nivel() or "").replace("/", "")
         path = APP.caminho(nome.format(nivel=nivel))
@@ -1403,7 +1471,17 @@ class Handler(BaseHTTPRequestHandler):
             return self.responder(200, f.read(), tipo)
 
     def do_GET(self):
+        if not self.porteiro():
+            return
         caminho = self.path.split("?")[0]
+        if caminho == "/api/celular":
+            if not self.local():
+                return self.responder(403, {"erro": "só no PC"})
+            ip = ip_local()
+            porta = APP.cfg["porta"]
+            return self.responder(200, {"ligado": bool(APP.cfg.get("celular")), "ip": ip, "pin": APP.cfg.get("pin"),
+                                        "endereco": f"http://{ip}:{porta}" if ip else None,
+                                        "url_qr": f"http://{ip}:{porta}/?pin={APP.cfg.get('pin')}" if ip else None})
         if caminho == "/api/estado":
             return self.responder(200, APP.snapshot())
         if caminho == "/api/pois":
@@ -1467,6 +1545,10 @@ class Handler(BaseHTTPRequestHandler):
             self.responder(200, f.read(), TIPOS.get(ext, "application/octet-stream"), cache=ext in (".png", ".jpg", ".woff2"))
 
     def do_POST(self):
+        if not self.porteiro():
+            return
+        if self.path in ("/api/sair", "/api/instalacao", "/api/celular") and not self.local():
+            return self.responder(403, {"ok": False, "erro": "Isso só pode ser feito no app do PC."})
         tam = int(self.headers.get("Content-Length") or 0)
         try:
             corpo = json.loads(self.rfile.read(tam) or b"{}")
@@ -1477,6 +1559,14 @@ class Handler(BaseHTTPRequestHandler):
             self.responder(200, {"ok": True})
             threading.Timer(0.5, lambda: os._exit(0)).start()
             return
+        if p == "/api/celular":
+            if corpo.get("acao") == "novo_pin":
+                import secrets
+                APP.cfg["pin"] = f"{secrets.randbelow(10000):04d}"
+            elif "ligado" in corpo:
+                APP.cfg["celular"] = bool(corpo["ligado"])
+            salvar_json(CONFIG_PATH, APP.cfg)
+            return self.responder(200, {"ok": True, "reiniciar": "ligado" in corpo})
         if p == "/api/atualizar":
             return self.responder(200, {"ok": ATUALIZADOR.atualizar()})
         if p == "/api/verificar":
@@ -1553,7 +1643,12 @@ def main():
     if not os.path.isdir(APP.cfg["pasta_mod"] or ""):
         print("Mod ainda não instalado: abra o app e siga a tela Instalação.")
     threading.Thread(target=APP.loop, daemon=True).start()
-    servidor = ThreadingHTTPServer(("127.0.0.1", porta), Handler)
+    # "0.0.0.0" = também a rede de casa (celular, com PIN). Na primeira vez o Windows pergunta se libera: clique em Permitir.
+    endereco = "0.0.0.0" if APP.cfg.get("celular") else "127.0.0.1"
+    try:
+        servidor = ThreadingHTTPServer((endereco, porta), Handler)
+    except OSError:
+        servidor = ThreadingHTTPServer(("127.0.0.1", porta), Handler)
     print(f"App aberto em {url}  (deixe esta janela aberta enquanto joga)")
     if APP.cfg.get("abrir_navegador") and "--sem-navegador" not in sys.argv:
         threading.Timer(1.0, lambda: abrir_janela(url)).start()

@@ -398,6 +398,7 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
 
 // ------------------------------------------------------------------ abas: armário, loja, enciclopédia
 let abaAtual = "mapa", filtroLoja = "Todas";
+document.body.dataset.aba = "mapa";
 document.querySelectorAll(".segmentos button").forEach(b => b.onclick = () => {
   document.querySelectorAll(".segmentos button").forEach(x => x.classList.toggle("ativo", x === b));
   document.querySelectorAll(".seg").forEach(s => s.classList.toggle("ativo", s.id === "seg-" + b.dataset.seg));
@@ -405,6 +406,7 @@ document.querySelectorAll(".segmentos button").forEach(b => b.onclick = () => {
 });
 document.querySelectorAll("#abas button[data-aba]").forEach(b => b.onclick = () => {
   abaAtual = b.dataset.aba;
+  document.body.dataset.aba = abaAtual;
   document.querySelectorAll("#abas button[data-aba]").forEach(x => x.classList.toggle("ativo", x === b));
   ["armario", "loja", "enciclopedia", "cacadas"].forEach(a => $("painel-" + a).classList.toggle("ativo", a === abaAtual));
   document.querySelector(".mapa-papel").classList.toggle("so-mapa", abaAtual === "mapa");
@@ -529,11 +531,11 @@ async function renderArmario(forcar) {
 
   p.innerHTML = `<div class="mochila">
     <div class="mo-topo">
-      <div><h2>Mochila</h2>${status}</div>
-      ${botaoMontar}
+      <div><h2>Mochila ${ajuda("mochila")}</h2>${status}</div>
+      <div class="mo-montar">${botaoMontar}${plano.length ? ajuda("mochila_montar") : ""}</div>
     </div>
     <div class="mo-bloco">
-      <div class="mo-rotulo">1 · Para quais contratos?</div>
+      <div class="mo-rotulo">1 · Para quais contratos? ${ajuda("mochila_contratos")}</div>
       <div class="mo-contratos">${contratos}</div>
       ${d.requisitos.length ? `<div class="mo-precisa"><span>O que precisa:</span>${d.requisitos.map(r => `<b>${esc(r)}</b>`).join("")}</div>` : ""}
     </div>
@@ -686,7 +688,7 @@ async function renderLoja() {
   const det = d.deteccao || {};
   const med = (nome, v, dica) => `<div class="medidor"><div class="item-sub">${nome}</div><div class="v">${v == null ? "–" : Math.round(v * 100) + "%"}</div>
       <div class="b"><i style="width:${(v || 0) * 100}%"></i></div><div class="item-sub">${dica}</div></div>`;
-  let html = `<header class="pag-topo"><h2>Roupas e camuflagem</h2><p>O quanto os animais te veem, ouvem e sentem com a roupa de agora, e o que dá para comprar.</p></header>
+  let html = `<header class="pag-topo"><h2>Roupas e camuflagem ${ajuda("loja")}</h2><p>O quanto os animais te veem, ouvem e sentem com a roupa de agora, e o que dá para comprar.</p></header>
     <h3>Como os animais te percebem agora</h3><div class="medidores">
       ${med("Visão", det.visual, "quanto menor, mais camuflado")}${med("Audição", det.som, "barulho da roupa e dos passos")}${med("Olfato", det.cheiro, "use spray e vento a favor")}</div>`;
   html += `<h3>Você está vestindo</h3>` + (d.vestidos.length ? `<div class="grade-itens">${d.vestidos.map(itemLoja).join("")}</div>` : `<p class="vazio">–</p>`);
@@ -726,7 +728,7 @@ async function comprarItem(id, nome, preco) {
 }
 
 // ---------------------------------------------------------------- Diário de campo
-let diario = null, diarioCat = "animais", diarioSel = null, diarioBusca = "";
+let diario = null, diarioCat = "animais", diarioSel = null, diarioBusca = "", diarioAberto = false;   // aberto: no celular mostra a página no lugar da lista
 const moedaFmt = (i) => i.preco == null ? "" : (i.moeda === "pontos de campo" ? `${fmt(i.preco)} pts de campo` : `$${fmt(i.preco)}`);
 const chips = (l, cls = "") => (l || []).map(x => `<span class="chip ${cls}">${esc(x)}</span>`).join("") || `<span class="item-sub">–</span>`;
 const quando = (ts) => ts ? new Date(ts * 1000).toLocaleDateString("pt-BR") : "";
@@ -744,7 +746,7 @@ function fotoDiario(i, cat, grande) {
 async function renderEnciclopedia() {
   const d = await (await fetch("/api/enciclopedia")).json();
   if (!d.pronto) {
-    $("painel-enciclopedia").innerHTML = `<div class="diario-vazio"><h3>Diário de campo</h3>
+    $("painel-enciclopedia").innerHTML = `<div class="diario-vazio"><h3>Diário de campo ${ajuda("ler_dados")}</h3>
       <p>Os dados do diário (fotos, hábitos, calibres, armas, roupas, cães) são lidos do jogo uma única vez.</p>
       <p>Com o jogo aberto <b>dentro de uma reserva</b>, clique no botão abaixo. A leitura é feita aos poucos (uns 10 a 15 minutos,
       sem travar o jogo) e esta página se completa sozinha no fim. Se sair da reserva no meio, é só clicar de novo: continua de onde parou.</p>
@@ -769,17 +771,17 @@ function desenharDiario() {
         <span class="dm-nome">${esc(i.nome)}${i.tem ? ` <i class="dm-tem" title="Você tem">✔</i>` : ""}${i.abates ? ` <i class="dm-tem" title="Abatidos">${i.abates}</i>` : ""}</span>
       </button>`).join("")).join("") || `<p class="item-sub" style="padding:8px">Nada encontrado.</p>`;
   const it = cat.itens.find(i => i.id === diarioSel);
-  $("painel-enciclopedia").innerHTML = `<div class="diario">
+  $("painel-enciclopedia").innerHTML = `<div class="diario ${diarioAberto ? "aberto" : ""}">
     <aside class="diario-menu">
-      <div class="dm-cats">${diario.categorias.map(c => `<button data-cat="${c.id}" class="${c.id === cat.id ? "ativo" : ""}">${esc(c.nome)} <small>${c.itens.length}</small></button>`).join("")}</div>
+      <div class="dm-cats">${ajuda("diario")}${diario.categorias.map(c => `<button data-cat="${c.id}" class="${c.id === cat.id ? "ativo" : ""}">${esc(c.nome)} <small>${c.itens.length}</small></button>`).join("")}</div>
       <input class="dm-busca" placeholder="Buscar…" value="${esc(diarioBusca)}">
       <div class="dm-lista">${menu}</div>
     </aside>
-    <article class="diario-pagina">${it ? (cat.id === "animais" ? paginaAnimal(it) : paginaItem(it, cat)) : ""}</article>
+    <article class="diario-pagina"><button class="dp-voltar" onclick="diarioAberto=false;desenharDiario()">← ${esc(cat.nome)}</button>${it ? (cat.id === "animais" ? paginaAnimal(it) : paginaItem(it, cat)) : ""}</article>
   </div>`;
   const p = $("painel-enciclopedia");
-  p.querySelectorAll(".dm-cats button").forEach(b => b.onclick = () => { diarioCat = b.dataset.cat; diarioSel = null; diarioBusca = ""; desenharDiario(); });
-  p.querySelectorAll(".dm-item").forEach(b => b.onclick = () => { diarioSel = b.dataset.id; desenharDiario(); p.querySelector(".diario-pagina").scrollTop = 0; });
+  p.querySelectorAll(".dm-cats button").forEach(b => b.onclick = () => { diarioCat = b.dataset.cat; diarioSel = null; diarioBusca = ""; diarioAberto = false; desenharDiario(); });
+  p.querySelectorAll(".dm-item").forEach(b => b.onclick = () => { diarioSel = b.dataset.id; diarioAberto = true; desenharDiario(); p.querySelector(".diario-pagina").scrollTop = 0; });
   const busca = p.querySelector(".dm-busca");
   busca.oninput = () => { diarioBusca = busca.value; const pos = busca.selectionStart; desenharDiario(); const n = $("painel-enciclopedia").querySelector(".dm-busca"); n.focus(); n.setSelectionRange(pos, pos); };
   const sel = p.querySelector(".dm-item.sel"); if (sel) sel.scrollIntoView({ block: "nearest" });

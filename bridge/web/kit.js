@@ -69,16 +69,16 @@ function desenharKit() {
 
   const suas = kit.armas.filter(a => a.tem).length;
   caixa.innerHTML = `<section class="kit-painel">
-    <header class="kit-topo"><div><h3>Montar a caçada</h3>${status}</div>
+    <header class="kit-topo"><div><h3>Montar a caçada ${ajuda("kit")}</h3>${status}</div>
       <button class="mo-principal" ${pode ? "" : "disabled"} onclick="kitAuto()"><span class="mo-principal-ico">★</span>
         <span><b>Montar para esta espécie</b><small>arma, munição, chamador e isca de uma vez</small></span></button></header>
     ${faixa}
     <div class="kit-colunas">
-      <div class="kit-bloco"><h4>Balística <small>clique num calibre para ver as armas</small></h4>${balistica || `<p class="mo-dica">O jogo não lista calibres para esta espécie.</p>`}${proib}</div>
-      <div class="kit-bloco"><h4>Arma na mochila <small>${suas} arma${suas === 1 ? "" : "s"} sua${suas === 1 ? "" : "s"} servem</small></h4>${armasTxt}
+      <div class="kit-bloco"><h4>Balística ${ajuda("balistica")}<small>clique num calibre para ver as armas</small></h4>${balistica || `<p class="mo-dica">O jogo não lista calibres para esta espécie.</p>`}${proib}</div>
+      <div class="kit-bloco"><h4>Arma na mochila ${ajuda("arma_mochila")}<small>${suas} arma${suas === 1 ? "" : "s"} sua${suas === 1 ? "" : "s"} servem</small></h4>${armasTxt}
         ${pode && suas ? `<button class="kit-btn" onclick="kitArmas('','')">Escolher arma</button>` : ""}</div>
       ${kitLicenca()}
-      <div class="kit-bloco largo"><h4>Chamadores, chamarizes e iscas</h4><div class="kit-objs">${objetos}</div></div>
+      <div class="kit-bloco largo"><h4>Chamadores, chamarizes e iscas ${ajuda("atrair")}</h4><div class="kit-objs">${objetos}</div></div>
     </div></section>`;
 }
 
@@ -98,7 +98,7 @@ function kitLicenca() {
     : `<span class="mo-dica">Para comprar, entre numa reserva onde esta espécie vive.</span>`;
   return `<div class="kit-bloco largo kit-lic ${precisa ? "acabou" : ""}">
       ${kit.licenca_imagem ? `<img src="${kit.licenca_imagem}" alt="" onerror="this.remove()">` : ""}
-      <div class="kit-lic-info"><h4>Licença de caça <small>${n} animais por licença · $${fmt(l.preco)}</small></h4>
+      <div class="kit-lic-info"><h4>Licença de caça ${ajuda("licenca")}<small>${n} animais por licença · $${fmt(l.preco)}</small></h4>
         <div class="kit-lic-sit">${situacao}${l.tem && l.reserva && !l.comprar_aqui ? ` <small>(leitura de ${esc(nomeMapa(l.reserva))})</small>` : ""}</div>
         ${marcas}${botao}</div></div>`;
 }
@@ -132,7 +132,8 @@ function kitArmas(carga, calibre) {
       ${a.tem && !a.municoes.some(m => m.tem) ? `<span class="mo-opcao-sub aviso">sem munição sua para esta espécie</span>` : ""}
       ${a.tem ? "" : `<span class="mo-opcao-sub">na loja · $${fmt(a.preco)}</span>`}</button>`;
   moModal(`<header class="mo-jan-topo"><div><h3>${calibre ? "Armas " + esc(calibre) : "Escolher arma"}</h3>
-      <small>${esc(kit.nome)} · “indicada” = o tipo de arma mais usado para esta espécie</small></div>
+      <small>${esc(kit.nome)} · “indicada” = o tipo de arma mais usado para esta espécie</small>
+      ${carga ? (() => { const b = kit.balistica.find(x => x.id === carga); return b && b.especies.length ? `<small class="kit-serve">Esta munição serve para: ${esc(b.especies.join(", "))}</small>` : ""; })() : ""}</div>
       <input class="mo-busca" placeholder="Procurar…" oninput="moFiltrar(this.value)"><button class="mo-x" onclick="moFecharModal()">✕</button></header>
     <div class="mo-jan-corpo">
       ${suas.length ? `<h4>Suas armas (${suas.length})</h4><div class="mo-opcoes">${suas.map(cartao).join("")}</div>` : `<p class="mo-dica">Você não tem arma para este calibre.</p>`}
@@ -178,6 +179,7 @@ function desenharKitArma() {
     <div class="mo-jan-corpo">
       <h4>1 · Em qual espaço?</h4><div class="kit-escolhas">${espacos}</div>
       <h4>2 · Munição</h4><div class="kit-escolhas">${muni}</div>
+      ${(() => { const m = minhas.find(x => x.id === e.municao); return m && m.especies && m.especies.length ? `<p class="kit-serve">${esc(m.nome)} serve para: ${esc(m.especies.join(", "))}</p>` : ""; })()}
       ${aces ? `<h4 class="kit-sub">3 · Acessórios</h4>${aces}` : ""}
     </div>
     <footer class="mo-jan-rodape"><button class="sec" onclick="moFecharModal()">Cancelar</button>

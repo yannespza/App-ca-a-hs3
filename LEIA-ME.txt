@@ -66,6 +66,17 @@ O que tem em cada aba:
 - Lado direito: contratos do Earl (aceite, cumpra no jogo e receba o pagamento) e dicas.
 
 
+USAR NO CELULAR (segunda tela)
+1. No app do PC, clique em "📱 Celular" (no alto, à direita). Aparece um QR code.
+2. Com o celular no mesmo Wi-Fi do PC, aponte a câmera para o QR code e abra o link.
+3. Na primeira vez, o Windows pergunta se o HS3Companion pode usar a rede: clique em
+   "Permitir acesso".
+4. No celular, use "Adicionar à tela inicial" para virar um ícone que abre direto.
+O PC precisa continuar ligado com o jogo e o HS3Companion abertos: o celular é só uma
+segunda tela. Um PIN protege o acesso (aparece na mesma janela do QR code).
+Em qualquer tela, toque nos "?" para saber o que cada parte faz.
+
+
 ATUALIZAÇÕES
 Quando sair uma versão nova, aparece o botão "Procurar atualização" / "Atualizar" no alto do app.
 O app baixa sozinho, troca o programa e o mod e reabre. Depois de atualizar,
