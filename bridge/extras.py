@@ -124,7 +124,8 @@ def pontos_abate(a):
         p += 50
     elif a.get("calibre_compativel") is False:
         p -= 150
-    if a.get("estado_animal") in (1, 2, 4, 256, 512):
+    e = a.get("estado_animal")
+    if isinstance(e, int) and e >= 0 and not (e & 4095 & (8 | 16 | 32 | 64 | 1024 | 2048)):
         p += 60
     if a.get("atraido"):
         p += 30

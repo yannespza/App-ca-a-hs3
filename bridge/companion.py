@@ -337,7 +337,7 @@ def avaliar_missoes(dados, evento, reserva=None):
                 elif t == "atrair":
                     conta = evento.get("atraido") is True
                 else:
-                    conta = evento.get("estado_animal") in ESTADOS_CALMOS
+                    conta = missoes.nao_percebeu(evento.get("estado_animal"))
             elif t == "genetica":
                 conta = (evento.get("genetica") or 0) >= m["genetica"]
             elif t == "sem_torre":

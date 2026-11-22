@@ -19,6 +19,17 @@ NPC = {
 }
 
 ESTADOS_CALMOS = {1, 2, 4, 256, 512}   # parado, vagando, andando, comendo, dormindo
+# o jogo junta o estado com outras marcas (bits acima de 4096). Contam só os 12 bits de baixo:
+# fugindo 8, espreitando 16, atacando 32, investida 64, investigando 1024, acuado 2048 = percebeu você
+ESTADOS_ALERTA = 8 | 16 | 32 | 64 | 1024 | 2048
+
+
+def nao_percebeu(estado):
+    """O animal ainda não tinha percebido você quando levou o primeiro tiro?"""
+    if not isinstance(estado, int) or estado < 0:
+        return False
+    base = estado & 4095
+    return not (base & ESTADOS_ALERTA) and bool(base & (1 | 2 | 4 | 128 | 256 | 512))
 
 # dificuldade (créditos por animal) de cada grupo
 VALOR_GRUPO = {"pato": 220, "ganso": 260, "peru": 380, "faisao": 220, "codorna": 180, "pomba": 160, "antilope": 650,
@@ -338,7 +349,7 @@ def conta(m, evento, dentro, arma_tipo_de):
         return False
     if c.get("atrair") and evento.get("atraido") is not True:
         return False
-    if c.get("nao_detectado") and evento.get("estado_animal") not in ESTADOS_CALMOS:
+    if c.get("nao_detectado") and not nao_percebeu(evento.get("estado_animal")):
         return False
     if c.get("calibre") and evento.get("calibre_compativel") is not True:
         return False
