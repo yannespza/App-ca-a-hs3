@@ -506,6 +506,7 @@ const moFoto = (i, cls) => `<div class="mo-foto ${cls || ""}">${i && i.imagem ? 
   <span class="mo-foto-ini">${esc(((i && i.nome) || "?").trim()[0] || "?")}</span></div>`;
 const moSelo = (i) => i.serve ? `<span class="mo-selo sim">✔ serve</span>` : i.serve === false ? `<span class="mo-selo nao">não serve</span>` : "";
 
+function lidaJa(d) { return d.lida_ts && d.mochila.length; }
 async function renderArmario(forcar) {
   const p = $("painel-armario");
   if (!forcar && (document.querySelector(".mo-modal") || p.contains(document.activeElement) && ["SELECT", "INPUT"].includes(document.activeElement.tagName))) return;
@@ -540,11 +541,18 @@ async function renderArmario(forcar) {
       <span class="mo-check">${m.escolhida ? "✔" : ""}</span><span class="mo-origem ${m.do_jogo ? "jogo" : "earl"}">${m.do_jogo ? "JOGO" : "EARL"}</span>${esc(m.titulo)}</button>`).join("")
     : `<span class="mo-dica">Nenhum contrato ativo.</span>`;
   const escolhidas = (d.especies || []).filter(e => e.escolhida);
+  // o que o setup da mochila (arma + munição carregada) cobre; o que fica de fora aparece apagado
+  const cobertura = {};
+  (d.alvos || []).forEach(a => { if (!a.sem_dados) [a.chave, ...(a.tags || [])].forEach(t => cobertura[t] = a.coberta); });
+  const alvosValidos = (d.alvos || []).filter(a => !a.sem_dados);
+  const nCobertos = alvosValidos.filter(a => a.coberta).length;
+  const coberturaHtml = alvosValidos.length && lidaJa(d) ? `<div class="mo-cobertura"><span>Seu setup cobre ${nCobertos} de ${alvosValidos.length}:</span>
+      ${alvosValidos.map(a => `<b class="${a.coberta ? "ok" : "fora"}" title="${a.coberta ? "Coberto por " + esc(a.por.join(" e ")) : "Nenhuma arma da mochila, com a munição carregada, serve para este animal"}">${a.coberta ? "✔" : "○"} ${esc(a.nome)}</b>`).join("")}</div>` : "";
   const especiesHtml = `<div class="mo-esp">
       <div class="mo-esp-linha"><input class="mo-esp-busca" placeholder="Procurar espécie (ex.: veado, pato, javali)…" oninput="moEspFiltrar(this.value)" autocomplete="off">
         <button class="kit-btn sec" onclick="moEspVarias()">Escolher várias</button></div>
       <div id="mo-esp-res" class="mo-esp-res"></div>
-      ${escolhidas.length ? `<div class="mo-esp-chips">${escolhidas.map(e => `<button class="mo-esp-chip" onclick="moEspAlternar('${esc(e.tag)}')" title="Tirar">${esc(e.nome)}${e.reservas.length ? ` <small>${esc(e.reservas.join(", "))}</small>` : ""} <b>×</b></button>`).join("")}
+      ${escolhidas.length ? `<div class="mo-esp-chips">${escolhidas.map(e => `<button class="mo-esp-chip ${cobertura[e.tag] === false ? "fora" : ""}" onclick="moEspAlternar('${esc(e.tag)}')" title="${cobertura[e.tag] === false ? "Nenhuma arma da mochila com a munição carregada serve para esta espécie. Toque para tirar da lista." : "Tirar da lista"}">${esc(e.nome)}${e.reservas.length ? ` <small>${esc(e.reservas.join(", "))}</small>` : ""} <b>×</b></button>`).join("")}
         <button class="mo-esp-limpar" onclick="mochilaEspecies=[];moEspSalvar()">Limpar</button></div>`
         : `<span class="mo-dica">Nenhuma espécie escolhida. Sem espécie e sem contrato, a sugestão vale para qualquer animal.</span>`}
     </div>`;
@@ -574,7 +582,7 @@ async function renderArmario(forcar) {
         mun = it.municoes.length ? `<label class="mo-municao ${ruim ? "ruim" : ""}" onclick="event.stopPropagation()" ${carregada ? `data-dica="${dicaEspecies(carregada.nome, carregada.especies)}"` : ""}><span>Munição</span>
             <select ${pode ? "" : "disabled"} onchange="moAcao({acao:'municao',arma:'${esc(it.id)}',municao:this.value})">
               ${it.municoes.some(m => m.atual) ? "" : `<option value="">— escolha —</option>`}
-              ${it.municoes.map(m => `<option value="${esc(m.id)}" ${m.atual ? "selected" : ""} title="${esc("Serve para: " + (m.especies || []).join(", "))}">${m.serve ? "✔" : "✖"} ${esc(m.nome)}</option>`).join("")}
+              ${it.municoes.map(m => `<option value="${esc(m.id)}" ${m.atual ? "selected" : ""} title="${esc("Serve para: " + (m.especies || []).join(", "))}">${m.serve ? "✔" : "✖"} ${esc(m.nome)}${(m.cobre_nomes || []).length ? " — " + esc(m.cobre_nomes.join(", ")) : ""}${(m.ganha || []).length && (m.ganha || []).length < (m.cobre_nomes || []).length ? " (+" + esc(m.ganha.join(", ")) + ")" : ""}</option>`).join("")}
             </select></label>` : `<div class="mo-aviso">Você não tem munição para esta arma</div>`;
       }
       const aces = (it.acessorios || []).length ? `<div class="mo-aces">${it.acessorios.map(e =>
@@ -600,6 +608,7 @@ async function renderArmario(forcar) {
       ${especiesHtml}
       <div class="mo-sub-rotulo">Contratos ${ajuda("mochila_contratos")}</div>
       <div class="mo-contratos">${contratos}</div>
+      ${coberturaHtml}
       ${d.requisitos.length ? `<div class="mo-precisa"><span>O que precisa:</span>${d.requisitos.map(r => `<b>${esc(r)}</b>`).join("")}</div>` : ""}
     </div>
     <div class="mo-bloco">

@@ -491,7 +491,18 @@ end
 local function clearPin()
     local nav = FindFirstOf("NavigationPlayerStateComponent")
     if not valid(nav) then return end
-    nav:Server_ClearQuickWaypoint()
+    pcall(function() nav:Server_ClearQuickWaypoint() end)
+    -- o pedido acima não tira um pino posto pelo jogo: tira o marcador e zera o pino rápido direto
+    if nav.QuickWaypoint.Hash ~= -1 then
+        local q = nav.QuickWaypoint
+        pcall(function() nav:RemoveInWorldMarker(q) end)
+        pcall(function() nav:NavigationActorRemoved(q) end)
+        nav.QuickWaypoint.Hash = -1
+        nav.QuickWaypoint.Transform.Translation.X = 0
+        nav.QuickWaypoint.Transform.Translation.Y = 0
+        nav.QuickWaypoint.Transform.Translation.Z = 0
+        pcall(function() nav:OnRep_QuickWaypoint() end)
+    end
     log("pino removido do jogo")
 end
 

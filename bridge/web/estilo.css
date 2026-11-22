@@ -742,3 +742,9 @@ body.remoto .trilho-config, body.remoto .so-pc { display: none !important; }
 body.apk .so-apk { display: inline-flex !important; }
 .cel-apk { margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.12); }
 .cel-apk .cel-qr { max-width: 150px; }
+/* cobertura do setup (várias espécies) */
+.mo-esp-chip.fora { opacity: .45; text-decoration: line-through; text-decoration-thickness: 1px; }
+.mo-cobertura { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; font-size: 13px; }
+.mo-cobertura > span { color: var(--liquen); margin-right: 2px; }
+.mo-cobertura b { padding: 4px 9px; border-radius: 999px; font-weight: 600; border: 1px solid rgba(127,163,90,.6); background: rgba(127,163,90,.16); }
+.mo-cobertura b.fora { opacity: .45; border-color: rgba(255,255,255,.2); background: transparent; font-weight: 500; }
