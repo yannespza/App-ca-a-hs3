@@ -6,7 +6,7 @@ import os
 
 PARTES = {
     "Top": "Blusa / jaqueta", "Bottom": "Calça", "Gloves": "Luvas", "Shoes": "Calçado", "Backpack": "Mochila",
-    "Cap": "Boné", "Hat": "Chapéu", "Beanie": "Gorro", "Balaclava": "Balaclava", "Headwear": "Cabeça",
+    "Cap": "Boné", "Hat": "Chapéu", "Beanie": "Touca", "Balaclava": "Balaclava", "Headwear": "Cabeça",
 }
 STATS = [("VisualDetectionFactor", "visual"), ("SoundDetectionFactor", "som"), ("SmellDetectionFactor", "cheiro"),
          ("SprintSpeedFactor", "corrida")]
@@ -46,17 +46,27 @@ def nome_parte(tag):
 
 
 def nome_calibre(tag):
-    """Inventory.Ammo.Bullet.308.Win -> .308 Win ; Inventory.Ammo.Shell.12G.Slug -> 12G Slug"""
+    """Inventory.Ammo.Bullet.308.Win -> .308 Win ; Inventory.Ammo.Shell.12G.Slug -> Cal. 12 bala única (nomes como na loja do jogo)"""
     if not tag:
         return None
     p = tag.split(".")
     if "Ammo" in p:
         p = p[p.index("Ammo") + 1:]
-    tipo = {"Bullet": "", "Shell": "", "Arrow": "Flecha ", "Bolt": "Virote "}.get(p[0], p[0] + " ") if p else ""
+    if not p:
+        return tag
+    if p[0] == "Shell":
+        cal = "Cal. " + (p[1].rstrip("G") if len(p) > 1 else "?")
+        carga = {"Slug": "bala única", "Buck": "chumbo grosso", "Bird": "chumbo para aves"}.get(p[2] if len(p) > 2 else "", "")
+        if len(p) > 3 and p[3] == "Medium":
+            carga += " médio"
+        return f"{cal} {carga}".strip()
+    if p[0] in ("Arrow", "Bolt"):
+        return ("Flecha " if p[0] == "Arrow" else "Virote ") + " ".join(p[1:]).replace("gr", " gr").strip()
     resto = " ".join(p[1:])
-    if p and p[0] == "Bullet" and resto[:1].isdigit():
+    if p[0] == "Bullet" and resto[:1].isdigit():
         resto = "." + resto
-    return (tipo + resto).strip()
+    resto = {".9-3x62": "9.3x62", ".27 Nosler": "Nosler 27", ".300 Win": ".300 Win Mag"}.get(resto, resto)
+    return resto.strip()
 
 
 def tipo_item(tag):
@@ -65,15 +75,15 @@ def tipo_item(tag):
         partes = t.split(".")
         return "arma", " ".join(partes[3:]) if len(partes) > 3 else "Arma"
     if "Caller" in t:
-        return "chamariz", "Chamariz"
+        return "chamador", "Chamadores"
     if "Spray" in t:
-        return "cheiro", "Spray / cheiro"
+        return "cheiro", "Sprays e iscas de cheiro"
     if "Decoy" in t:
-        return "decoy", "Isca / decoy"
+        return "chamariz", "Chamarizes"
     if "Opticals" in t:
-        return "otica", "Ótica"
+        return "otica", "Binóculos e telêmetros"
     if "Blind" in t:
-        return "espera", "Espera / blind"
+        return "espera", "Esconderijos"
     if t.startswith("Inventory.Objects"):
         return "acessorio", "Acessório"
     if t.startswith("Cosmetics.Weapons.Attachments"):
@@ -139,7 +149,7 @@ def patente(abates, missoes):
 
 CABECALHOS = {
     "BigGame": "Caça grossa", "SmallGame": "Caça miúda", "Predators": "Predadores", "Predator": "Predadores",
-    "Birds": "Aves", "Bird": "Aves", "UplandBirds": "Aves de campo", "Waterfowl": "Aves aquáticas", "Varmint": "Pragas",
+    "Birds": "Aves", "Bird": "Aves", "UplandBirds": "Aves de campo", "UplandGame": "Aves de campo", "Waterfowl": "Aves aquáticas", "Varmint": "Pragas",
 }
 MEDALHAS = {"Bronze": "Bronze", "Silver": "Prata", "Gold": "Ouro", "Diamond": "Diamante", "Platinum": "Platina"}
 ATRIBUTOS_PT = {
@@ -392,16 +402,44 @@ def enciclopedia_jogo(dados, calibres, catalogo_equip, abates, vistos, nome_espe
 
 
 # ---------------------------------------------------------------- mochila por missão
-# O que cada chamador / isca / chamariz atrai (pelo nome do item no jogo).
+# Espécies de cada chamador, chamariz e isca de cheiro.
+# Chamadores: lido do jogo em 22/11/2026 (AnimalTags de B_CallerInstance_*, todos com alcance de 500 m e para os dois sexos).
+# Chamarizes e iscas de urina: o jogo não guarda a espécie no item; vale pelo nome do produto.
+ATRAI_TAGS = {
+    "Caller_Deer": ["Animals.Types.Deer"], "Caller_Elk": ["Animals.Types.Elk"],
+    "Caller_WildBoar": ["Animals.Types.Boar", "Animals.Types.Pig.Feral"],
+    "Caller_Predator": ["Animals.Types.Feline.Bobcat", "Animals.Types.Wolf.Gray", "Animals.Types.Bear.Black", "Animals.Types.Canine.Coyote",
+                        "Animals.Types.Feline.Lynx", "Animals.Types.Feline.Cougar"],
+    "Caller_Turkey": ["Animals.Types.Bird.Turkey"], "Caller_Pheasant": ["Animals.Types.Bird.Pheasant"],
+    "Caller_Goose": ["Animals.Types.Bird.Goose"], "Caller_Duck": ["Animals.Types.Bird.Duck"],
+    "UrineSpray_Wolf": ["Animals.Types.Wolf"], "UrineSpray_WhitetailDeer": ["Animals.Types.Deer.WhiteTail"],
+    "UrineSpray_MuleDeer": ["Animals.Types.Deer.DesertMule", "Animals.Types.Deer.MountainMule"],
+    "UrineSpray_Elk": ["Animals.Types.Elk"], "UrineSpray_Rabbit": ["Animals.Types.Rabbit", "Animals.Types.Hare"],
+    "UrineSpray_Boar": ["Animals.Types.Boar", "Animals.Types.Pig.Feral"],
+    "DecoyWalkingTom": ["Animals.Types.Bird.Turkey"], "DecoyMagnumFloater": ["Animals.Types.Bird.Duck"],
+    "DecoyMasterSeriesBossBuck": ["Animals.Types.Deer.WhiteTail"], "DecoyLoneHowler": ["Animals.Types.Canine.Coyote"],
+    "DecoyElk": ["Animals.Types.Elk"],
+}
+# grupos do app (para os contratos) de cada item
 ATRAI = {
     "Caller_Deer": ["cervo"], "Caller_Elk": ["alce"], "Caller_WildBoar": ["porco"],
-    "Caller_Predator": ["coiote", "lobo", "raposa", "felino"], "Caller_Turkey": ["peru"], "Caller_Pheasant": ["faisao"],
+    "Caller_Predator": ["coiote", "lobo", "felino", "urso"], "Caller_Turkey": ["peru"], "Caller_Pheasant": ["faisao"],
     "Caller_Goose": ["ganso"], "Caller_Duck": ["pato"],
-    "UrineSpray_Wolf": ["lobo", "coiote"], "UrineSpray_WhitetailDeer": ["cervo"], "UrineSpray_MuleDeer": ["cervo"],
+    "UrineSpray_Wolf": ["lobo"], "UrineSpray_WhitetailDeer": ["cervo"], "UrineSpray_MuleDeer": ["cervo"],
     "UrineSpray_Elk": ["alce"], "UrineSpray_Rabbit": ["coelho"], "UrineSpray_Boar": ["porco"],
-    "DecoyWalkingTom": ["peru"], "DecoyMagnumFloater": ["pato", "ganso"], "DecoyMasterSeriesBossBuck": ["cervo"],
-    "DecoyLoneHowler": ["coiote", "lobo"], "DecoyElk": ["alce"],
+    "DecoyWalkingTom": ["peru"], "DecoyMagnumFloater": ["pato"], "DecoyMasterSeriesBossBuck": ["cervo"],
+    "DecoyLoneHowler": ["coiote"], "DecoyElk": ["alce"],
 }
+
+
+def atrai_tags(item_id):
+    n = item_id or ""
+    for chave in sorted(ATRAI_TAGS, key=len, reverse=True):
+        if chave in n:
+            return ATRAI_TAGS[chave]
+    return []
+
+
 TIPOS_MOCHILA = ("Inventory.Weapon", "Inventory.Objects", "Inventory.GPS")
 
 
@@ -578,6 +616,8 @@ def mochila(dados, calibres, equip, lida, missoes, nome_especie, grupo_de, grupo
                 d["serve"], d["motivo"] = True, "essencial"
             else:
                 d["serve"], d["motivo"] = False, ""
+            if not missoes and papel not in ("binoculo", "gps"):
+                d["serve"] = None          # sem contrato: nada a cobrar dos equipamentos
         possuidos.append(d)
 
     # acessórios (miras, silenciadores, freios de boca, bipé) que você tem
@@ -721,3 +761,235 @@ def plano_mochila(sug, lida, slots, por_def, possuidos):
             plano.append({"acao": "municao", "arma": arma, "municao": mun, "nome": nomes_id.get(mun, mun),
                           "arma_nome": nomes_id.get(arma, arma)})
     return plano
+
+
+# ---------------------------------------------------------------- caçada por espécie (Diário de campo)
+NOME_TIPO_ARMA = [("CrossBow", "Besta"), ("Crossbow", "Besta"), ("Bow", "Arco"), ("Shotgun", "Espingarda"),
+                  ("Handgun", "Arma curta"), ("Pistol", "Arma curta"), ("Revolver", "Arma curta"), ("Rifle", "Rifle")]
+
+
+def _nome_tipo_arma(t):
+    return next((n for k, n in NOME_TIPO_ARMA if k in (t or "")), "Arma")
+
+
+def _casa_cal(a, b):
+    return bool(a and b) and (a == b or a.startswith(b + ".") or b.startswith(a + "."))
+
+
+def slots_mochila(dados, lida, equip):
+    """Os 8 espaços numerados: 1-2 armas, 3-8 equipamentos (e o GPS à parte)."""
+    por_def = {c.get("item"): c for c in dados.get("itens", [])}
+    img = lambda n: f"/api/img/{n}" if n else None
+    sl = dict((lida or {}).get("slots") or {})
+    n_arma, n_obj = int(sl.get("Inventory.Weapon") or 2), int(sl.get("Inventory.Objects") or 6)
+    itens = (lida or {}).get("itens") or []
+    saida = []
+    for tipo, n, base in (("Inventory.Weapon", n_arma, 1), ("Inventory.Objects", n_obj, 1 + n_arma)):
+        for k in range(n):
+            it = next((i for i in itens if i.get("tipo") == tipo and i.get("idx") == k), None)
+            c = por_def.get((it or {}).get("item")) or {}
+            saida.append({"n": base + k, "tipo": tipo, "idx": k, "item": (it or {}).get("item"), "id": c.get("id"),
+                          "nome": c.get("nome") or ((it or {}).get("item") or "").split("ID_")[-1].replace("_", " ") or None,
+                          "imagem": img(c.get("icone")), "cargas": (it or {}).get("cargas"), "categoria": c.get("tipo")})
+    return saida
+
+
+def kit_especie(dados, calibres, equip, lida, tag, nome_especie):
+    """Tudo o que serve para caçar uma espécie: balística, armas (com munição e acessórios), chamadores, chamarizes e iscas."""
+    animal = next((a for a in dados.get("animais", []) if a.get("tag") == tag), None) or {}
+    linha = next((c for c in calibres if c.get("animal") == tag), None) or next((c for c in calibres if _casa_tag(c.get("animal"), tag)), None) or {}
+    permitidos = linha.get("compativeis", [])
+    comprados = {b["id"] for b in equip.get("comprados", [])}
+    itens = dados.get("itens", [])
+    por_id = {c.get("id"): c for c in itens}
+    img = lambda n: f"/api/img/{n}" if n else None
+    tem = lambda c: c["id"] in comprados or bool(c.get("padrao"))
+    lida_itens = (lida or {}).get("itens") or []
+    n_arma = int(((lida or {}).get("slots") or {}).get("Inventory.Weapon") or 2)
+    onde = {}
+    for i in lida_itens:
+        if i.get("tipo") == "Inventory.Weapon":
+            onde[i.get("item")] = 1 + int(i.get("idx") or 0)
+        elif i.get("tipo") == "Inventory.Objects":
+            onde[i.get("item")] = 1 + n_arma + int(i.get("idx") or 0)
+    montados_todos = (lida or {}).get("municao") or {}
+    if not isinstance(montados_todos, dict):
+        montados_todos = {}
+    cab = (animal.get("grupo") or "").split(".")[-1]
+    ave = cab in ("Waterfowl", "UplandGame", "UplandBirds", "Birds", "Bird")
+    pequeno = cab == "SmallGame"
+
+    def serve_especie(cal):
+        return any(p == cal or p.startswith(cal + ".") for p in permitidos)
+
+    # munição que você tem
+    municoes = []
+    for c in itens:
+        if not (c.get("tipo") or "").endswith("Attachments.Ammo") or c.get("desativado"):
+            continue
+        cals = calibres_item(c)
+        if cals:
+            municoes.append({"id": c["id"], "nome": c.get("nome") or c["id"], "calibre": cals[0], "tem": tem(c),
+                             "serve": serve_especie(cals[0]), "preco": c.get("preco"), "imagem": img(c.get("icone"))})
+
+    acessorios_seus = [c for c in itens if (c.get("tipo") or "").startswith(PREFIXO_ACESSORIO) and not c["tipo"].endswith(".Ammo")
+                       and c.get("compat") and not c.get("desativado") and tem(c)]
+    req = {"tipos": set(), "dist_min": 0}
+
+    armas = []
+    vistos = set()
+    for c in itens:
+        t = c.get("tipo") or ""
+        if not t.startswith("Inventory.Weapon") or c.get("desativado") or c.get("item") in vistos:
+            continue
+        cals = calibres_item(c)
+        boas = [x for x in cals if serve_especie(x)]
+        if not boas:
+            continue
+        vistos.add(c.get("item"))
+        cargas_ok = [p for p in permitidos if any(_casa_cal(p, x) for x in boas)]   # ex.: Shell.12G -> Shell.12G.Bird
+        tipo = _nome_tipo_arma(t)
+        opcoes = [m for m in municoes if m["serve"] and any(_casa_cal(m["calibre"], w) for w in boas)]
+        opcoes.sort(key=lambda m: (not m["tem"], m["nome"]))
+        montados = montados_todos.get(c["id"]) if c.get("item") in onde else None
+        atual_mun = next((x for x in (montados or []) if (por_id.get(x) or {}).get("tipo", "").endswith("Attachments.Ammo")), None)
+        # indicada: espingarda com chumbo para aves; calibre leve para caça miúda; rifle para caça grossa
+        if ave:
+            indicada = tipo == "Espingarda" and any("Bird" in x for x in cargas_ok)
+        elif pequeno:
+            indicada = any(k in x for x in cargas_ok for k in (".22.", ".22-", ".223", "Bird", "Buck", "Arrow.350", "Bolt.350"))
+        else:
+            indicada = tipo in ("Rifle", "Arco", "Besta")
+        a = {"id": c["id"], "item": c.get("item"), "nome": c.get("nome") or c["id"], "imagem": img(c.get("icone")), "tipo": tipo,
+             "calibres": [nome_calibre(x) for x in boas], "tem": tem(c), "slot": onde.get(c.get("item")), "indicada": indicada,
+             "preco": c.get("preco"), "moeda": "créditos" if "Credits" in (c.get("moeda") or "") else "pontos de campo",
+             "municoes": [{"id": m["id"], "nome": m["nome"], "tem": m["tem"], "atual": m["id"] == atual_mun} for m in opcoes],
+             "municao_atual": atual_mun, "montados_conhecidos": montados is not None, "cargas": cargas_ok,
+             "municao_atual_nome": (por_id.get(atual_mun) or {}).get("nome") if atual_mun else None,
+             "municao_atual_serve": any(m["id"] == atual_mun for m in opcoes) if atual_mun else None}
+        if a["tem"]:
+            a["acessorios"] = acessorios_da_arma(c, montados, acessorios_seus, req, por_id)
+            if montados is None:
+                for e in a["acessorios"]:
+                    e["atual"] = e["atual_nome"] = None
+                    for o in e["opcoes"]:
+                        o["atual"] = False
+        armas.append(a)
+    armas.sort(key=lambda a: (not a["tem"], a["slot"] is None, not a["indicada"], a["tipo"], a["nome"]))
+
+    objetos = []
+    for c in itens:
+        t = c.get("tipo") or ""
+        if c.get("desativado") or not t.startswith("Inventory.Objects"):
+            continue
+        alvo = atrai_tags(c.get("item"))
+        if not alvo or not any(_casa_tag(x, tag) for x in alvo):
+            continue
+        n = c.get("item") or ""
+        papel = "chamariz" if "Decoy" in n else ("isca" if "Spray" in n else "chamador")
+        efeito = {"chamador": "Atrai a espécie até você (alcance de uns 500 m)",
+                  "chamariz": "Deixa a espécie mais calma perto de você",
+                  "isca": "Isca de cheiro: atrai pelo faro, a favor do vento"}[papel]
+        objetos.append({"id": c["id"], "item": n, "nome": c.get("nome") or c["id"], "imagem": img(c.get("icone")), "papel": papel,
+                        "efeito": efeito, "tem": tem(c), "slot": onde.get(n), "preco": c.get("preco"),
+                        "cargas": c.get("cargas") if (c.get("cargas") or 0) > 1 else None})
+    ordem = {"chamador": 0, "chamariz": 1, "isca": 2}
+    objetos.sort(key=lambda o: (ordem[o["papel"]], not o["tem"], o["slot"] is None, o["nome"]))
+
+    tipos_bal = {"Bullet": "Balas de rifle", "Shell": "Cartuchos de espingarda", "Arrow": "Flechas", "Bolt": "Virotes"}
+    balistica = []
+    for p in permitidos:
+        partes = p.split(".")
+        grupo = tipos_bal.get(partes[2] if len(partes) > 2 else "", "Outros")
+        n_armas = sum(1 for a in armas if a["tem"] and p in a["cargas"])
+        balistica.append({"id": p, "nome": nome_calibre(p), "grupo": grupo,
+                          "tem_municao": any(m["tem"] and m["calibre"] == p for m in municoes), "armas_suas": n_armas})
+    return {
+        "tag": tag, "nome": nome_especie(tag) or animal.get("titulo") or tag, "imagem": img(animal.get("imagem")),
+        "cabecalho": CABECALHOS.get(cab, cab or "Animais"),
+        "balistica": balistica, "proibidos": [nome_calibre(x) for x in linha.get("incompativeis", [])],
+        "armas": armas, "objetos": objetos, "slots": slots_mochila(dados, lida, equip), "lida": bool(lida_itens),
+    }
+
+
+def plano_kit(kit, escolha):
+    """Lista de comandos para o mod a partir da escolha feita na tela (arma, espaço, munição, acessórios, objetos).
+    escolha = {"arma": id_loja, "espaco": 1|2, "municao": id, "acessorios": {encaixe: id|""}, "objetos": [{"item":..., "espaco": n}]}"""
+    linhas, resumo = [], []
+    slots = kit["slots"]
+    arma = next((a for a in kit["armas"] if a["id"] == escolha.get("arma") and a["tem"]), None)
+    if arma:
+        n = int(escolha.get("espaco") or arma.get("slot") or 1)
+        destino = next((s for s in slots if s["n"] == n and s["tipo"] == "Inventory.Weapon"), None)
+        if destino and arma["slot"] != n:
+            if arma["slot"]:
+                linhas.append(f"mochila tirar {arma['item']}")
+            linhas.append(f"mochila por {arma['item']} Inventory.Weapon {destino['idx']}")
+            resumo.append({"onde": f"Espaço {n}", "sai": destino.get("nome"), "entra": arma["nome"]})
+        mun = escolha.get("municao")
+        if mun and mun != arma.get("municao_atual") and any(m["id"] == mun and m["tem"] for m in arma["municoes"]):
+            linhas.append(f"mochila municao {arma['id']} {mun}")
+            resumo.append({"onde": f"Munição · {arma['nome']}", "entra": next(m["nome"] for m in arma["municoes"] if m["id"] == mun)})
+        for enc in arma.get("acessorios") or []:
+            quer = (escolha.get("acessorios") or {}).get(enc["encaixe"])
+            if quer is None:
+                continue
+            if quer == "":
+                if enc.get("atual"):
+                    linhas.append(f"mochila tirar_acessorio {arma['id']} {enc['atual']}")
+                    resumo.append({"onde": enc["nome"], "sai": enc.get("atual_nome"), "entra": "nada"})
+            elif quer != enc.get("atual") and any(o["id"] == quer for o in enc["opcoes"]):
+                linhas.append(f"mochila acessorio {arma['id']} {quer}")
+                resumo.append({"onde": enc["nome"], "entra": next(o["nome"] for o in enc["opcoes"] if o["id"] == quer)})
+    usados = set()
+    for o in escolha.get("objetos") or []:
+        obj = next((x for x in kit["objetos"] if x["item"] == o.get("item") and x["tem"]), None)
+        if not obj or obj["slot"]:
+            continue
+        n = int(o.get("espaco") or 0)
+        destino = next((s for s in slots if s["n"] == n and s["tipo"] == "Inventory.Objects"), None)
+        if not destino or n in usados:
+            continue
+        usados.add(n)
+        linhas.append(f"mochila por {obj['item']} Inventory.Objects {destino['idx']}")
+        resumo.append({"onde": f"Espaço {n}", "sai": destino.get("nome"), "entra": obj["nome"]})
+    return linhas, resumo
+
+
+def sugestao_kit(kit, espaco_arma=None):
+    """'Montar para esta espécie': melhor arma sua, munição, acessórios como estão, e chamadores/chamarizes/iscas nos espaços livres
+    (ou no lugar de itens que não servem para a espécie). Binóculo e telêmetro não saem."""
+    suas = [a for a in kit["armas"] if a["tem"] and a["municoes"] and any(m["tem"] for m in a["municoes"])]
+    suas.sort(key=lambda a: (a["slot"] is None, not a["indicada"]))
+    escolha = {"objetos": []}
+    if suas:
+        a = suas[0]
+        escolha["arma"] = a["id"]
+        if a["slot"]:
+            escolha["espaco"] = a["slot"]
+        else:
+            armas_mochila = {s["n"]: s for s in kit["slots"] if s["tipo"] == "Inventory.Weapon"}
+            serve = {x["slot"] for x in kit["armas"] if x["slot"]}
+            livre = next((n for n, s in armas_mochila.items() if not s["item"]), None)
+            ruim = next((n for n, s in armas_mochila.items() if s["item"] and n not in serve), None)
+            escolha["espaco"] = espaco_arma or livre or ruim or max(armas_mochila or {2: 0})
+        boa = next((m for m in a["municoes"] if m["tem"] and m["atual"]), None) or next((m for m in a["municoes"] if m["tem"]), None)
+        if boa:
+            escolha["municao"] = boa["id"]
+    objs = kit["slots"]
+    ja = {o["item"] for o in kit["objetos"] if o["slot"]}
+    servem = {o["item"] for o in kit["objetos"]}
+    livres = [s["n"] for s in objs if s["tipo"] == "Inventory.Objects" and not s["item"]]
+    trocaveis = [s["n"] for s in objs if s["tipo"] == "Inventory.Objects" and s["item"] and s["item"] not in servem
+                 and not any(k in (s.get("categoria") or "") for k in ("Opticals", "Blind"))
+                 and not any(k in (s["item"] or "") for k in ("ScentKiller", "WindPowder"))]
+    papeis = set()
+    for o in kit["objetos"]:
+        if not o["tem"] or o["item"] in ja or o["papel"] in papeis:
+            continue
+        espaco = livres.pop(0) if livres else (trocaveis.pop(0) if trocaveis else None)
+        if not espaco:
+            break
+        papeis.add(o["papel"])
+        escolha["objetos"].append({"item": o["item"], "espaco": espaco})
+    return escolha

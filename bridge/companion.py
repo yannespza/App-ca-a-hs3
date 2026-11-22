@@ -74,22 +74,22 @@ GRUPOS = [
     ("pato", "Pato / marreca", ["duck", "mallard", "pintail", "bufflehead", "teal", "wigeon", "canvasback"]),
     ("ganso", "Ganso", ["goose"]),
     ("peru", "Peru-selvagem", ["turkey"]),
-    ("faisao", "Faisão / perdiz", ["pheasant", "chukar"]),
+    ("faisao", "Faisão / perdiz", ["pheasant", "chukar", "partridge", "grouse", "woodcock"]),
     ("codorna", "Codorna", ["quail"]),
     ("pomba", "Pomba", ["dove", "pigeon"]),
     ("antilope", "Antílope", ["antelope", "nilgai", "oryx"]),
-    ("felino", "Felino", ["feline", "bobcat", "cougar", "puma", "lion"]),
+    ("felino", "Felino", ["feline", "bobcat", "cougar", "puma", "lion", "lynx"]),
     ("roedor", "Cão-da-pradaria", ["prairiedog"]),
-    ("cervo", "Cervo", ["deer", "cervidae"]),
-    ("alce", "Wapiti / Alce", ["elk", "moose", "wapiti"]),
+    ("cervo", "Veado", ["deer", "cervidae"]),
+    ("alce", "Uapiti / Alce", ["elk", "moose", "wapiti"]),
     ("antilocapra", "Antilocapra", ["pronghorn"]),
-    ("porco", "Porco-do-mato", ["hog", "boar", "pig", "suidae", "javelina", "peccary"]),
-    ("coiote", "Coiote", ["coyote"]),
+    ("porco", "Javali / queixada", ["hog", "boar", "pig", "suidae", "javelina", "peccary"]),
+    ("coiote", "Coiote", ["coyote", "raccoondog"]),
     ("lobo", "Lobo", ["wolf"]),
-    ("raposa", "Raposa", ["fox"]),
-    ("coelho", "Coelho / Lebre", ["rabbit", "hare", "jackrabbit", "cottontail"]),
+    ("raposa", "Raposa", ["fox", "marten"]),
+    ("coelho", "Coelho / lebre", ["rabbit", "hare", "jackrabbit", "cottontail"]),
     ("urso", "Urso", ["bear"]),
-    ("carneiro", "Carneiro / Cabra", ["sheep", "bighorn", "goat", "ram"]),
+    ("carneiro", "Carneiro / cabra", ["sheep", "bighorn", "goat", "ram", "aoudad", "mouflon"]),
     ("bisao", "Bisão", ["bison", "buffalo"]),
 ]
 
@@ -102,25 +102,41 @@ def grupo_de(texto):
     return "outro", "Outro animal"
 
 
+# Nomes em português do Brasil, iguais aos do próprio jogo (diário de campo). O app usa primeiro os
+# títulos lidos do jogo (TITULOS_JOGO); esta tabela só vale enquanto os dados do jogo não foram lidos.
 NOMES_PT = {
     "Antelope.Nilgai": "Nilgai", "Antelope.ScimitarOryx": "Órix-de-cimitarra", "Bear.Black": "Urso-negro",
-    "Bird.Chukar": "Perdiz-chukar", "Bird.Dove.Mourning": "Rolinha-carpideira", "Bird.Duck.Black": "Pato-negro-americano",
-    "Bird.Duck.Bufflehead": "Pato-de-cabeça-branca", "Bird.Duck.NorthernPintail": "Arrabio", "Bird.Goose.Canada": "Ganso-do-canadá",
-    "Bird.MontezumaQuail": "Codorna-de-montezuma", "Bird.Pheasant": "Faisão", "Bird.Quail": "Codorna",
-    "Bird.Teal.GreenWinged": "Marreca-de-asa-verde", "Bird.Turkey.RioGrande": "Peru-selvagem Rio Grande",
-    "Bison.American": "Bisão-americano", "Canine.Coyote": "Coiote", "Deer.DesertMule": "Cervo-mula do deserto",
-    "Deer.MountainMule": "Cervo-mula da montanha", "Deer.WhiteTail": "Cervo-de-cauda-branca", "Elk": "Wapiti",
-    "Feline.Bobcat": "Lince-pardo", "Feline.Cougar": "Puma", "Fox.Red": "Raposa-vermelha", "Hare.JackRabbit": "Lebre jackrabbit",
-    "Peccary.Collared": "Cateto", "Pig.Feral": "Porco-selvagem", "PrairieDog.BlackTail": "Cão-da-pradaria",
-    "Pronghorn.American": "Antilocapra", "Rabbit.CottonTail": "Coelho-cottontail", "Sheep.Aoudad": "Carneiro-da-barbária",
-    "Sheep.Bighorn": "Carneiro-selvagem", "Wolf.Gray": "Lobo-cinzento",
+    "Bear.Brown": "Urso-pardo", "Bird.Chukar": "Perdiz-chukar", "Bird.Dove.Mourning": "Pomba-chorona",
+    "Bird.Duck.Black": "Pato-preto-americano", "Bird.Duck.Bufflehead": "Marreca-de-cabeça-bufa",
+    "Bird.Duck.NorthernPintail": "Marreca-de-rabo-pintado-do-norte", "Bird.Duck.Mallard": "Pato-real",
+    "Bird.Duck.Tufted": "Marreca-de-topete", "Bird.Goose.Canada": "Ganso-canadense-gigante",
+    "Bird.Goose.Graylag": "Ganso-patola-cinzento", "Bird.Grouse.Black": "Galo-lira-preto",
+    "Bird.MontezumaQuail": "Codorna-de-Montezuma", "Bird.Partridge.Gray": "Perdiz-cinzenta", "Bird.Pheasant": "Faisão-comum",
+    "Bird.Quail": "Codorna-escamada", "Bird.Teal.GreenWinged": "Marreca-de-asa-verde",
+    "Bird.Turkey.RioGrande": "Peru-selvagem do Rio Grande", "Bird.Woodcock": "Galinhola-eurasiana",
+    "Bison.American": "Bisão das planícies", "Bison": "Bisão-europeu", "Boar": "Javali da Europa Central",
+    "Canine.Coyote": "Coiote das planícies do Texas", "Deer.DesertMule": "Veado-mula do deserto",
+    "Deer.MountainMule": "Veado-mula das Montanhas Rochosas", "Deer.Red": "Veado-vermelho", "Deer.Roe": "Corça-ocidental",
+    "Deer.WhiteTail": "Veado-de-cauda-branca", "Elk": "Uapiti das Montanhas Rochosas",
+    "Feline.Bobcat": "Lince-pardo", "Feline.Cougar": "Puma", "Feline.Lynx": "Lince-do-norte", "Fox.Red": "Raposa-vermelha",
+    "Hare.Brown": "Lebre-comum", "Hare.JackRabbit": "Lebre-de-cauda-preta", "Marten": "Marta-do-pinheiro europeia",
+    "Moose": "Alce", "Peccary.Collared": "Queixada-de-coleira", "Pig.Feral": "Javali selvagem",
+    "PrairieDog.BlackTail": "Cão-da-pradaria-de-cauda-preta", "Pronghorn.American": "Antilocapra-americano",
+    "Rabbit.CottonTail": "Coelho-de-cauda-de-algodão", "RaccoonDog": "Cão-guaxinim-comum",
+    "Sheep.Aoudad": "Aoudad", "Sheep.Bighorn": "Carneiro-selvagem", "Sheep.Mouflon": "Muflão", "Wolf.Gray": "Lobo-cinzento",
 }
+TITULOS_JOGO = {}   # "Animals.Types.Deer.WhiteTail.Texas" -> "Veado-de-cauda-branca" (do diário do jogo, jogo_dados.json)
 
 
 def nome_especie(tag):
-    """Nome em português da espécie a partir da tag do jogo (Animals.Types.Deer.WhiteTail.Texas -> Cervo-de-cauda-branca)."""
+    """Nome em português da espécie a partir da tag do jogo (Animals.Types.Deer.WhiteTail.Texas -> Veado-de-cauda-branca)."""
     if not tag:
         return None
+    if tag in TITULOS_JOGO:
+        return TITULOS_JOGO[tag]
+    pref = [t for t in TITULOS_JOGO if t.startswith(tag + ".") or tag.startswith(t + ".")]
+    if pref:
+        return TITULOS_JOGO[sorted(pref, key=len)[0]]
     resto = tag.replace("Animals.Types.", "")
     for chave in sorted(NOMES_PT, key=len, reverse=True):
         if resto == chave or resto.startswith(chave + "."):
@@ -682,6 +698,10 @@ class Companion:
     def info_gerador(self):
         """Espécies que vivem na reserva atual e tipos de arma que você tem (para o gerador de contratos)."""
         dados = self.cache.json(self.caminho("jogo_dados.json"), None) or {}
+        for a in dados.get("animais", []):
+            t, titulo = a.get("tag"), (a.get("titulo") or "").strip()
+            if t and titulo and not t.endswith(".Hub"):
+                TITULOS_JOGO[t] = titulo
         nivel = (self.nivel() or "").lower().split("_")[0]
         grupos = []
         for a in dados.get("animais", []):
@@ -820,7 +840,7 @@ class Companion:
     # --- mochila
     # --- contratos do próprio jogo (lidos pelo mod em contratos_jogo.json)
     PALAVRAS_PT = [("porco", ["javali", "porco", "caititu", "queixada", "cateto"]), ("cervo", ["cervo", "veado", "corça"]),
-                   ("alce", ["alce", "wapiti"]), ("antilocapra", ["antilocapra", "pronghorn"]), ("pato", ["pato", "marreca", "arrabio"]),
+                   ("alce", ["alce", "wapiti", "uapiti"]), ("antilocapra", ["antilocapra", "pronghorn"]), ("pato", ["pato", "marreca", "arrabio"]),
                    ("ganso", ["ganso"]), ("peru", ["peru"]), ("faisao", ["faisão", "perdiz"]), ("codorna", ["codorna"]),
                    ("pomba", ["pomba", "rolinha"]), ("antilope", ["antílope", "nilgai", "órix"]), ("felino", ["lince", "puma", "felino"]),
                    ("roedor", ["cão-da-pradaria"]), ("coiote", ["coiote"]), ("lobo", ["lobo"]), ("raposa", ["raposa"]),
@@ -859,12 +879,12 @@ class Companion:
                           "dist_max": 9999 if tipo == "distancia" else 0})
         return saida
 
-    def dados_mochila(self, ids=None):
+    def _lida_mochila(self):
+        """mochila.json + munição/acessórios das armas (armas.json); pede ao jogo uma leitura nova de vez em quando."""
         agora = time.time()
         if self.em_reserva() and agora - getattr(self, "_mochila_pedida", 0) > 12:
             self._mochila_pedida = agora
             self.enviar_comando(["mochila ler"])
-        dados = self.cache.json(self.caminho("jogo_dados.json"), None)
         lida = self.cache.json(self.caminho("mochila.json"), None)
         if lida and not lida.get("itens") and lida.get("pronto") is not True:
             lida = None
@@ -880,6 +900,25 @@ class Companion:
             if self.em_reserva() and (faltam or velho) and agora - getattr(self, "_armas_pedidas", 0) > 30:
                 self._armas_pedidas = agora
                 self.enviar_comando(["mochila armas"])
+        return lida
+
+    def dados_kit(self, tag):
+        dados = self.cache.json(self.caminho("jogo_dados.json"), None)
+        if not dados:
+            return {"pronto": False}
+        lida = self._lida_mochila()
+        with self.lock:
+            r = extras.kit_especie(dados, self.tabela_calibres(), self.equipamento(), lida, tag, nome_especie)
+        r["pronto"] = True
+        r["em_reserva"] = self.em_reserva()
+        r["fila"] = getattr(self, "_mochila_fila_ate", 0) > time.time()
+        r["sugestao"] = extras.sugestao_kit(r)
+        return r
+
+    def dados_mochila(self, ids=None):
+        agora = time.time()
+        dados = self.cache.json(self.caminho("jogo_dados.json"), None)
+        lida = self._lida_mochila()
         do_jogo = self.contratos_jogo()
         with self.lock:
             ativas = self.por_status("ativa") + do_jogo
@@ -914,6 +953,20 @@ class Companion:
             linhas = [f"mochila acessorio {corpo['arma']} {corpo['acessorio']}"]
         elif acao == "tirar_acessorio" and ok_id(corpo.get("arma")) and ok_id(corpo.get("acessorio")):
             linhas = [f"mochila tirar_acessorio {corpo['arma']} {corpo['acessorio']}"]
+        elif acao in ("kit", "kit_auto") and ok_id(corpo.get("tag")):
+            kit = self.dados_kit(corpo["tag"])
+            if not kit.get("pronto") or not kit.get("lida"):
+                return {"ok": False, "erro": "A mochila ainda não foi lida do jogo. Espere alguns segundos."}
+            escolha = corpo.get("escolha") if acao == "kit" else extras.sugestao_kit(kit, corpo.get("espaco"))
+            linhas, _ = extras.plano_kit(kit, escolha if isinstance(escolha, dict) else {})
+            linhas = [l for l in linhas if all(ok_id(x) for x in l.split()[2:])]
+            if not linhas:
+                return {"ok": True, "nada": True}
+        elif acao == "kit_previa" and ok_id(corpo.get("tag")):
+            kit = self.dados_kit(corpo["tag"])
+            escolha = corpo.get("escolha") if isinstance(corpo.get("escolha"), dict) else extras.sugestao_kit(kit, corpo.get("espaco"))
+            _, resumo = extras.plano_kit(kit, escolha)
+            return {"ok": True, "resumo": resumo, "escolha": escolha}
         elif acao == "montar":
             ids = [str(x) for x in (corpo.get("missoes") or [])] or None
             plano = self.dados_mochila(ids).get("plano") or []
@@ -994,7 +1047,7 @@ class Companion:
     def ciclo(self):
         with self.lock:
             self.escrever_hud()
-            if not ARMA_TIPOS and time.time() - getattr(self, "_armas_em", 0) > 60:
+            if (not ARMA_TIPOS or not TITULOS_JOGO) and time.time() - getattr(self, "_armas_em", 0) > 60:
                 self._armas_em = time.time()
                 try:
                     self.info_gerador()
@@ -1210,6 +1263,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.responder(200, APP.dados_mochila(ids))
         if caminho == "/api/loja":
             return self.responder(200, APP.dados_loja())
+        if caminho == "/api/kit":
+            q = urllib.parse.parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
+            tag = (q.get("tag") or [""])[0]
+            return self.responder(200, APP.dados_kit(tag) if re.fullmatch(r"[\w.]+", tag or "") else {"pronto": False})
         if caminho == "/api/enciclopedia":
             return self.responder(200, APP.dados_enciclopedia())
         if caminho.startswith("/api/img/"):

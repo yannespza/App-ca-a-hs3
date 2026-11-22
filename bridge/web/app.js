@@ -230,7 +230,7 @@ function renderChat(d) {
   if (msgs.length === chatQtd) return;
   chatQtd = msgs.length;
   const log = $("chat-log");
-  log.innerHTML = (msgs.length ? "" : `<div class="msg assistant">Pergunte sobre vento, calibre, chamador, distância, roupa ou uma espécie (cervo, javali, pato, peru…) que eu te dou a dica, rapaz.</div>`)
+  log.innerHTML = (msgs.length ? "" : `<div class="msg assistant">Pergunte sobre vento, calibre, chamador, distância, roupa ou uma espécie (veado, javali, pato, peru…) que eu te dou a dica, rapaz.</div>`)
     + msgs.map(m => `<div class="msg ${m.role === "user" ? "user" : "assistant"}">${esc(m.content)}</div>`).join("");
   log.scrollTop = log.scrollHeight;
 }
@@ -465,11 +465,13 @@ async function renderArmario(forcar) {
     const itens = porTipo(T.tipo), n = Math.max(d.slots[T.tipo] || 0, itens.length);
     const cel = [];
     for (let k = 0; k < n; k++) {
+      const num = moNumero(T.tipo, k);
+      const selo = num ? `<b class="kit-num mo-num">${num}</b>` : "";
       const it = itens.find(x => x.idx === k);
       const mud = mudancas[T.tipo + ":" + k];
       const sug = mud ? `<div class="mo-sugere">Sugestão: <b>${esc(mud.nome)}</b></div>` : "";
       if (!it) {
-        cel.push(`<div class="mo-slot vazio ${pode ? "clic" : ""}" ${pode ? `onclick="moEscolher('${T.tipo}',${k})"` : ""}>
+        cel.push(`<div class="mo-slot vazio ${pode ? "clic" : ""}" ${pode ? `onclick="moEscolher('${T.tipo}',${k})"` : ""}>${selo}
           <div class="mo-mais">+</div><div class="mo-slot-nome">Espaço livre</div>${pode ? `<small>Clique para escolher</small>` : ""}${sug}</div>`);
         continue;
       }
@@ -484,7 +486,7 @@ async function renderArmario(forcar) {
       }
       const aces = (it.acessorios || []).length ? `<div class="mo-aces">${it.acessorios.map(e =>
           `<span class="${e.atual ? "tem" : ""}"><em>${esc(e.nome)}</em>${e.atual ? esc(e.atual_nome || "montado") : "nada"}</span>`).join("")}</div>` : "";
-      cel.push(`<div class="mo-slot ${it.serve ? "serve" : it.serve === false ? "nao" : ""}">
+      cel.push(`<div class="mo-slot ${it.serve ? "serve" : it.serve === false ? "nao" : ""}">${selo}
           ${moFoto(it, T.classe === "armas" ? "larga" : "")}
           <div class="mo-slot-info"><div class="mo-slot-nome">${esc(it.nome)}</div>${moSelo(it)}
             ${it.motivo ? `<small class="mo-motivo">${esc(it.motivo)}</small>` : ""}${mun}${aces}${sug}</div>
@@ -506,12 +508,19 @@ async function renderArmario(forcar) {
       ${d.requisitos.length ? `<div class="mo-precisa"><span>O que precisa:</span>${d.requisitos.map(r => `<b>${esc(r)}</b>`).join("")}</div>` : ""}
     </div>
     <div class="mo-bloco">
-      <div class="mo-rotulo">2 · Sua mochila no jogo <span class="mo-dica">verde = serve para os contratos · clique em Trocar ou num espaço livre para escolher o item</span></div>
+      <div class="mo-rotulo">2 · Sua mochila no jogo <span class="mo-dica">verde = serve para os contratos · para montar a caçada de um animal, abra o <b>Diário</b> e escolha a espécie</span></div>
       ${lida ? `<div class="mo-tabuleiro">${secao(MO_TIPOS[0])}${secao(MO_TIPOS[1])}${secao(MO_TIPOS[2])}</div>`
              : `<div class="mo-vazio-grande"><b>${d.em_reserva ? "Lendo a mochila…" : "Entre numa reserva no jogo"}</b><span>Os espaços aparecem aqui assim que o jogo responder.</span></div>`}
     </div>
   </div>`;
 }
+
+// espaços numerados como no Diário: 1 e 2 armas, 3 a 8 equipamentos (o GPS fica à parte)
+function moNumero(tipo, idx) {
+  const nArmas = (mochilaDados && mochilaDados.slots && mochilaDados.slots["Inventory.Weapon"]) || 2;
+  return tipo === "Inventory.Weapon" ? idx + 1 : tipo === "Inventory.Objects" ? nArmas + idx + 1 : null;
+}
+const moOnde = (tipo, idx) => { const n = moNumero(tipo, idx); return n ? `espaço ${n}` : "GPS"; };
 
 function moMissao(id) {
   const todas = mochilaDados.ativas.map(m => m.id);
@@ -565,7 +574,7 @@ function moEscolher(tipo, idx) {
   const porUso = (a, b) => naMochila.has(a.item) - naMochila.has(b.item);   // o que já está na mochila vai para o fim
   const servem = lista.filter(i => i.serve).sort(porUso), outros = lista.filter(i => !i.serve).sort(porUso);
   moModal(`<header class="mo-jan-topo"><div><h3>Escolher ${T.classe === "armas" ? "arma" : T.classe === "gps" ? "GPS" : "equipamento"}</h3>
-      <small>${T.nome} · espaço ${idx + 1}${atual ? ` · hoje: ${esc(atual.nome)}` : ""}</small></div>
+      <small>${T.nome} · ${moOnde(tipo, idx)}${atual ? ` · hoje: ${esc(atual.nome)}` : ""}</small></div>
       <input class="mo-busca" placeholder="Procurar…" oninput="moFiltrar(this.value)"><button class="mo-x" onclick="moFecharModal()">✕</button></header>
     ${cats.length > 1 ? `<div class="mo-cats"><button class="on" onclick="moCat(this,'')">Todos</button>${cats.map(c => `<button onclick="moCat(this,'${esc(c)}')">${esc(c)}</button>`).join("")}</div>` : ""}
     <div class="mo-jan-corpo">
@@ -632,7 +641,7 @@ function moConfirmarMontar() {
   const plano = mochilaDados.plano || [];
   const tipoNome = (t) => (MO_TIPOS.find(x => x.tipo === t) || {}).nome || t;
   const linhas = plano.map(x => x.acao === "por"
-    ? `<li><span class="mo-li-onde">${tipoNome(x.tipo)} · espaço ${x.idx + 1}</span>${x.sai ? `<s>${esc(x.sai)}</s> → ` : ""}<b>${esc(x.nome)}</b></li>`
+    ? `<li><span class="mo-li-onde">${tipoNome(x.tipo)} · ${moOnde(x.tipo, x.idx)}</span>${x.sai ? `<s>${esc(x.sai)}</s> → ` : ""}<b>${esc(x.nome)}</b></li>`
     : `<li><span class="mo-li-onde">Munição · ${esc(x.arma_nome)}</span><b>${esc(x.nome)}</b></li>`).join("");
   moModal(`<header class="mo-jan-topo"><div><h3>Montar mochila sugerida</h3><small>O que vai mudar no jogo</small></div>
       <button class="mo-x" onclick="moFecharModal()">✕</button></header>
@@ -731,6 +740,7 @@ function desenharDiario() {
   const busca = p.querySelector(".dm-busca");
   busca.oninput = () => { diarioBusca = busca.value; const pos = busca.selectionStart; desenharDiario(); const n = $("painel-enciclopedia").querySelector(".dm-busca"); n.focus(); n.setSelectionRange(pos, pos); };
   const sel = p.querySelector(".dm-item.sel"); if (sel) sel.scrollIntoView({ block: "nearest" });
+  if (cat.id === "animais" && it) carregarKit(it.tag);
 }
 
 function secao(titulo, corpo) { return corpo ? `<section class="dp-sec"><h4>${esc(titulo)}</h4>${corpo}</section>` : ""; }
@@ -752,13 +762,11 @@ function paginaAnimal(a) {
         <div>${(a.reservas || []).map(r => `<span class="chip latao">${esc(r)}</span>`).join("")}</div>
         ${a.descricao ? `<p class="dp-desc">${esc(a.descricao)}</p>` : ""}</div>
     </header>
+    <div id="kit" class="kit" data-tag="${esc(a.tag)}"><div class="kit-carregando">Montando a lista do que serve para esta espécie…</div></div>
     <div class="dp-colunas">
       <div>
         ${secao(a.secoes_titulo || "Aparência e hábitos", paragrafos(a.secoes))}
         ${secao(a.habitat_titulo || "Habitat / bioma preferido", paragrafos(a.habitat))}
-        ${secao("Calibres permitidos", chips(a.calibres))}
-        ${a.proibidos.length ? secao("Calibres proibidos (não conta / penaliza)", chips(a.proibidos, "vermelho")) : ""}
-        ${secao("Armas que servem", a.armas.length ? `<div class="dp-armas">${a.armas.map(w => `<span class="chip ${w.tem ? "" : "cinza"}" title="${w.tem ? "Você tem" : "Na loja"}">${w.tem ? "✔ " : ""}${esc(w.nome)} <small>${esc(w.calibre)}</small></span>`).join("")}</div>` : "")}
       </div>
       <div>
         ${secao("Dados de caça", dados.length ? `<table class="dp-tab">${dados.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("")}</table>` : "")}
