@@ -725,7 +725,26 @@ class Companion:
             return []
         if self._pois_cache[0] != path or self._pois_cache[1] != mt:
             self._pois_cache = (path, mt, mapa.carregar_pois(path))
-        return self._pois_cache[2]
+        vistos = set((self.dados.get("vistos_app") or {}).get(nivel) or [])
+        if not vistos:
+            return self._pois_cache[2]
+        # estruturas por onde você já passou contam como descobertas (o jogo só exporta a cada 5 min)
+        return [dict(p, descoberto=True) if not p.get("descoberto") and p.get("hash") in vistos else p
+                for p in self._pois_cache[2]]
+
+    def marcar_estruturas_perto(self):
+        """Marca como descoberta a estrutura de caça a menos de 35 m de você (sem perguntar nada ao jogo)."""
+        if not self.em_reserva():
+            return
+        nivel, pos = self.nivel(), self.estado.get("pos") or {}
+        if not nivel or pos.get("x") is None:
+            return
+        vistos = self.dados.setdefault("vistos_app", {}).setdefault(nivel, [])
+        for p in self.pois():
+            if p.get("categoria") == "estrutura" and not p.get("descoberto") and p.get("hash") is not None \
+                    and (p["x"] - pos["x"]) ** 2 + (p["y"] - pos["y"]) ** 2 < 3500 ** 2:
+                vistos.append(p["hash"])
+                self.salvar_pendente = True
 
     def nevoa_png(self, nivel):
         path = self.caminho(f"nevoa_{nivel}.bin")
@@ -1381,6 +1400,7 @@ class Companion:
                 self.processar(ev)
                 mudou = True
             self.cuidar_posicao()
+            self.marcar_estruturas_perto()
             if self.em_reserva():
                 if avaliar_missoes(self.dados, {"tipo": "posicao", "id": "local", "pos": self.estado["pos"], "ts": time.time()}, self.reserva()):
                     mudou = True
@@ -1463,7 +1483,9 @@ class Companion:
                 "ofertas": [m for m in lista if m["status"] == "oferta"],
                 "ativas": [m for m in lista if m["status"] == "ativa"],
                 "contratos_jogo": self.contratos_jogo(),
-                "finalizadas": [m for m in lista if m["status"] in ("concluida", "paga")][-8:][::-1],
+                # concluídos ficam à vista por 2 min (ou até o pagamento sair); depois só no histórico
+                "finalizadas": [m for m in lista if m["status"] == "concluida" or (m["status"] == "paga"
+                                and time.time() - (m.get("pago_em") or m.get("concluida_em") or 0) < 120)][-8:][::-1],
                 "gerando": self.gerando,
                 "reserva": r_atual,
                 "outras_reservas": self.outras_reservas(),

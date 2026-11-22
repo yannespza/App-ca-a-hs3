@@ -273,23 +273,7 @@ local function tryHookSpotted()
     return ok
 end
 
-local ticks, poisPedidos = 0, nil
-
--- descobriu um lugar/estrutura no jogo: exporta os pontos de novo daqui a 3 s (fora do gancho)
-local discoveryHooked = false
-local function tryHookDiscovery()
-    if discoveryHooked then return true end
-    local nav = FindFirstOf("NavigationPlayerStateComponent")
-    if not valid(nav) then return false end
-    local ok, err = pcall(function()
-        RegisterHook("/Script/NSGUINavigation.NavigationPlayerStateComponent:OnNavigationActorDiscoveryStateUpdated", function()
-            poisPedidos = ticks + 3
-        end)
-    end)
-    discoveryHooked = true   -- tenta uma vez só; se falhar, fica o intervalo de 2 min
-    log(ok and "Hook de descobertas ativo" or ("Sem hook de descobertas: " .. tostring(err)))
-    return true
-end
+local ticks = 0
 
 ------------------------------------------------------------------ eventos: abates
 local function readKill(info)
@@ -750,8 +734,9 @@ local function periodic()
     if ticks % 10 == 3 and #filaMochila == 0 then lerContratosJogo() end
     if ticks % 15 == 0 then pcall(writeEquipamento) end
     if ticks % 5 == 0 then pcall(writeAnimals) end
-    -- pontos descobertos: logo depois que o jogo avisa uma descoberta, e de 2 em 2 min por garantia
-    if curto and ((poisPedidos and ticks >= poisPedidos) or ticks % 120 == 0) then poisPedidos = nil; pcall(exportPois) end
+    -- pontos descobertos a cada 5 min (o app marca na hora as estruturas por onde você passa)
+    -- v0.1.34 tinha um gancho na descoberta: fechou o jogo ao descobrir uma estrutura. Não usar.
+    if curto and ticks % 300 == 0 then pcall(exportPois) end
 end
 
 -- utilidades disponíveis para scripts de desenvolvimento (pasta dev\)
@@ -759,14 +744,6 @@ HS3 = { log = log, emit = emit, json = jsonEncode, tagName = tagName, valid = va
 
 ------------------------------------------------------------------ laços
 LoopAsync(3000, function() return tryHookSpotted() end)
-LoopAsync(5000, function()
-    local ok, r = pcall(function()
-        local _, _, curto = currentLevel()
-        if not curto or curto:find("Hub") or curto:find("Menu") then return false end
-        return tryHookDiscovery()
-    end)
-    return ok and r
-end)
 
 LoopAsync(1000, function()
     ExecuteInGameThread(function() pcall(writeState); pcall(periodic) end)
