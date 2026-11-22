@@ -39,6 +39,16 @@ else:
     WEB_DIR = os.path.join(BASE_DIR, "web")
 
 if getattr(sys, "frozen", False) and (sys.stdout is None or sys.stderr is None):
+    try:   # registro grande: guarda só o fim
+        _p = os.path.join(BASE_DIR, "hs3companion.log")
+        if os.path.getsize(_p) > 300_000:
+            with open(_p, "rb") as _f:
+                _f.seek(-100_000, 2)
+                _fim = _f.read()
+            with open(_p, "wb") as _f:
+                _f.write(_fim[_fim.find(b"\n") + 1:])
+    except OSError:
+        pass
     _log = open(os.path.join(BASE_DIR, "hs3companion.log"), "a", encoding="utf-8", buffering=1)
     sys.stdout = sys.stderr = _log
 
@@ -204,6 +214,21 @@ def carregar_config():
     if cfg != {k: v for k, v in salvo.items()}:
         salvar_json(CONFIG_PATH, cfg)
     return cfg
+
+
+def ips_locais():
+    """Todos os endereços IPv4 de rede de casa deste PC (cabo, Wi-Fi; sem os virtuais conhecidos)."""
+    import socket
+    ips = []
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if ip not in ips and not ip.startswith(("127.", "169.254.")):
+                ips.append(ip)
+    except Exception:
+        pass
+    casa = lambda ip: ip.startswith("192.168.") or ip.startswith("10.") or any(ip.startswith(f"172.{n}.") for n in range(16, 32))
+    return sorted(ips, key=lambda ip: (not ip.startswith("192.168."), not casa(ip)))
 
 
 def ip_local():
@@ -1479,7 +1504,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.responder(403, {"erro": "só no PC"})
             ip = ip_local()
             porta = APP.cfg["porta"]
+            outros = [x for x in ips_locais() if x != ip]
             return self.responder(200, {"ligado": bool(APP.cfg.get("celular")), "ip": ip, "pin": APP.cfg.get("pin"),
+                                        "outros": [f"http://{x}:{porta}" for x in outros],
                                         "endereco": f"http://{ip}:{porta}" if ip else None,
                                         "url_qr": f"http://{ip}:{porta}/?pin={APP.cfg.get('pin')}" if ip else None})
         if caminho == "/api/estado":

@@ -795,6 +795,15 @@ do
     end
 end
 
+-- eventos de sessões antigas (o app já leu): recomeça o arquivo quando passar de 1 MB
+do
+    local f = io.open(EVENTS_FILE, "rb")
+    if f then
+        local tam = f:seek("end"); f:close()
+        if tam > 1000000 then os.remove(EVENTS_FILE) end
+    end
+end
+
 -- comandos que sobraram de uma sessão anterior (jogo fechado) não são executados
 do
     local f = io.open(CMD_FILE, "r")

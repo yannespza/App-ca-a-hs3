@@ -27,6 +27,7 @@ async function abrirCelular() {
           </ol>
         </div>
         <p>Sem câmera? Digite no navegador do celular <code>${esc(c.endereco)}</code> e o PIN <b class="cel-pin">${esc(c.pin)}</b>.</p>
+        ${c.outros && c.outros.length ? `<p class="mo-dica">Se não abrir, este PC também atende em: ${c.outros.map(x => `<code>${esc(x)}</code>`).join(" ")} (use o que começa igual ao endereço do seu celular no Wi-Fi).</p>` : ""}
         <p class="mo-dica">O PIN impede que outra pessoa na mesma rede mexa no seu jogo. Se quiser trocar, gere um novo: os aparelhos já conectados precisam ler o QR de novo.</p>
         <p class="mo-dica">Não abriu? No Windows, procure “Permitir um aplicativo pelo Firewall do Windows”, clique em Alterar configurações e marque o HS3Companion em “Particular” (e em “Público”, se a sua rede estiver como pública).</p>
         <div class="cel-botoes"><button class="kit-btn sec" onclick="celNovoPin()">Gerar novo PIN</button>
