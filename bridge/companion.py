@@ -835,7 +835,20 @@ class Companion:
         return self.cache.json(self.caminho("equipamento.json"), {})
 
     def tabela_calibres(self):
-        return self.cache.json(self.caminho("calibres.json"), [])
+        """Tabela espécie × calibre do jogo. Cada reserva exporta só o que carregou, então o app junta tudo
+        o que já viu (calibres_todos.json) para o Diário mostrar a balística de todas as espécies."""
+        atual = self.cache.json(self.caminho("calibres.json"), []) or []
+        if not hasattr(self, "_calibres_todos"):
+            self._calibres_todos = {l.get("animal"): l for l in carregar_json(os.path.join(BASE_DIR, "calibres_todos.json"), [])
+                                    if isinstance(l, dict) and l.get("animal")}
+        mudou = False
+        for l in atual:
+            if isinstance(l, dict) and l.get("animal") and self._calibres_todos.get(l["animal"]) != l:
+                self._calibres_todos[l["animal"]] = l
+                mudou = True
+        if mudou:
+            salvar_json(os.path.join(BASE_DIR, "calibres_todos.json"), list(self._calibres_todos.values()))
+        return list(self._calibres_todos.values())
 
     # --- mochila
     # --- contratos do próprio jogo (lidos pelo mod em contratos_jogo.json)
@@ -902,13 +915,49 @@ class Companion:
                 self.enviar_comando(["mochila armas"])
         return lida
 
+    def licencas(self):
+        """licencas.json da reserva atual (pedido ao jogo a cada 30 s) + a última leitura guardada de cada reserva."""
+        agora = time.time()
+        if self.em_reserva() and agora - getattr(self, "_licencas_pedidas", 0) > 30:
+            self._licencas_pedidas = agora
+            self.enviar_comando(["licencas"])
+        if not hasattr(self, "_licencas_todas"):
+            self._licencas_todas = carregar_json(os.path.join(BASE_DIR, "licencas_todas.json"), {})
+        atual = self.cache.json(self.caminho("licencas.json"), None)
+        if atual and atual.get("mapa") and self._licencas_todas.get(atual["mapa"]) != atual:
+            self._licencas_todas[atual["mapa"]] = atual
+            salvar_json(os.path.join(BASE_DIR, "licencas_todas.json"), self._licencas_todas)
+        nivel = (self.nivel() or "")
+        if atual and (not self.em_reserva() or (atual.get("mapa") and atual["mapa"] not in nivel)):
+            atual = None      # leitura de outra reserva: não vale para comprar aqui
+        return atual, self._licencas_todas
+
+    def comprar_licenca(self, tag):
+        if not re.fullmatch(r"Animals\.Types\.[\w.]+", tag or ""):
+            return {"ok": False, "erro": "Espécie inválida."}
+        lic_mod, todas = self.licencas()
+        info = extras.licenca_da_especie(tag, lic_mod, todas)
+        if not info:
+            return {"ok": False, "erro": "Esta espécie não tem licença no jogo."}
+        if not self.em_reserva() or not info["comprar_aqui"]:
+            return {"ok": False, "erro": "A licença só pode ser comprada dentro da reserva onde a espécie vive."}
+        cred = (self.estado.get("moedas") or {}).get("Currency.Credits") or 0
+        if info["preco"] > cred:
+            return {"ok": False, "erro": "Créditos insuficientes."}
+        ref = uuid.uuid4().hex[:6]
+        if not self.enviar_comando([f"licenca {tag} {int(info['preco'])} {ref}"]):
+            return {"ok": False, "erro": "O jogo não está respondendo."}
+        self._licencas_pedidas = 0
+        return {"ok": True, "ref": ref}
+
     def dados_kit(self, tag):
         dados = self.cache.json(self.caminho("jogo_dados.json"), None)
         if not dados:
             return {"pronto": False}
         lida = self._lida_mochila()
+        lic_mod, lic_todas = self.licencas()
         with self.lock:
-            r = extras.kit_especie(dados, self.tabela_calibres(), self.equipamento(), lida, tag, nome_especie)
+            r = extras.kit_especie(dados, self.tabela_calibres(), self.equipamento(), lida, tag, nome_especie, lic_mod, lic_todas)
         r["pronto"] = True
         r["em_reserva"] = self.em_reserva()
         r["fila"] = getattr(self, "_mochila_fila_ate", 0) > time.time()
@@ -1011,8 +1060,17 @@ class Companion:
             cred = (self.estado.get("moedas") or {}).get("Currency.Credits") or 0
             if (item.get("preco") or 0) > cred:
                 return {"ok": False, "erro": "Créditos insuficientes."}
-            self.enviar_comando([f"comprar {id_} {uuid.uuid4().hex[:6]}"])
-        return {"ok": True}
+            ref = uuid.uuid4().hex[:6]
+            if not self.enviar_comando([f"comprar {id_} {ref}"]):
+                return {"ok": False, "erro": "O jogo não está respondendo."}
+        return {"ok": True, "ref": ref}
+
+    def resultado_compra(self, ref):
+        with self.lock:
+            ev = next((e for e in reversed(self.dados["compras"]) if e.get("ref") == ref), None)
+        if not ev:
+            return {"pronto": False}
+        return {"pronto": True, "ok": bool(ev.get("ok")), "saldo": ev.get("depois")}
 
     # --- ciclo
     def texto_hud(self, m):
@@ -1263,6 +1321,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.responder(200, APP.dados_mochila(ids))
         if caminho == "/api/loja":
             return self.responder(200, APP.dados_loja())
+        if caminho == "/api/compra":
+            q = urllib.parse.parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
+            return self.responder(200, APP.resultado_compra((q.get("ref") or [""])[0]))
         if caminho == "/api/kit":
             q = urllib.parse.parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
             tag = (q.get("tag") or [""])[0]
@@ -1337,6 +1398,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.responder(200, APP.remover_pino())
         if p == "/api/mochila":
             return self.responder(200, APP.acao_mochila(corpo))
+        if p == "/api/licenca":
+            return self.responder(200, APP.comprar_licenca(str(corpo.get("tag") or "")))
         if p == "/api/comprar":
             return self.responder(200, APP.comprar(corpo.get("id")))
         if p == "/api/voltar":

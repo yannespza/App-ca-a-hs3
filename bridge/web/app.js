@@ -2,6 +2,21 @@ const $ = (id) => document.getElementById(id);
 const fmt = (n) => (n === null || n === undefined) ? "–" : Number(n).toLocaleString("pt-BR");
 const pct = (n) => (n === null || n === undefined) ? "–" : Math.round(n * 100) + "%";
 const metros = (n) => (n === null || n === undefined) ? "–" : (n >= 1000 ? (n / 1000).toFixed(2).replace(".", ",") + " km" : Math.round(n) + " m");
+// dica flutuante: qualquer elemento com data-dica (texto já escapado) mostra a caixa ao passar o mouse
+const dicaEspecies = (nome, l) => esc(`<b>${esc(nome)}</b> serve para ${l && l.length ? l.length + " espécie" + (l.length > 1 ? "s" : "") + ":<br>" + l.map(esc).join(", ") : "nenhuma espécie da tabela do jogo"}`);
+const dicaCaixa = document.createElement("div");
+dicaCaixa.className = "dica-flut";
+document.body.appendChild(dicaCaixa);
+document.addEventListener("mouseover", (e) => {
+  const el = e.target.closest && e.target.closest("[data-dica]");
+  if (!el || !el.dataset.dica) { dicaCaixa.style.display = "none"; return; }
+  dicaCaixa.innerHTML = el.dataset.dica;
+  dicaCaixa.style.display = "block";
+  const r = el.getBoundingClientRect(), w = dicaCaixa.offsetWidth, h = dicaCaixa.offsetHeight;
+  let x = Math.min(Math.max(8, r.left), innerWidth - w - 8), y = r.bottom + 8;
+  if (y + h > innerHeight - 8) y = r.top - h - 8;
+  dicaCaixa.style.left = x + "px"; dicaCaixa.style.top = y + "px";
+});
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const post = (url, body) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) }).then(r => r.json());
 
@@ -478,10 +493,11 @@ async function renderArmario(forcar) {
       let mun = "";
       if (it.municoes) {
         const ruim = it.municoes.some(m => m.atual && !m.serve) || !it.municoes.some(m => m.atual);
-        mun = it.municoes.length ? `<label class="mo-municao ${ruim ? "ruim" : ""}" onclick="event.stopPropagation()"><span>Munição</span>
+        const carregada = it.municoes.find(m => m.atual);
+        mun = it.municoes.length ? `<label class="mo-municao ${ruim ? "ruim" : ""}" onclick="event.stopPropagation()" ${carregada ? `data-dica="${dicaEspecies(carregada.nome, carregada.especies)}"` : ""}><span>Munição</span>
             <select ${pode ? "" : "disabled"} onchange="moAcao({acao:'municao',arma:'${esc(it.id)}',municao:this.value})">
               ${it.municoes.some(m => m.atual) ? "" : `<option value="">— escolha —</option>`}
-              ${it.municoes.map(m => `<option value="${esc(m.id)}" ${m.atual ? "selected" : ""}>${m.serve ? "✔" : "✖"} ${esc(m.nome)}</option>`).join("")}
+              ${it.municoes.map(m => `<option value="${esc(m.id)}" ${m.atual ? "selected" : ""} title="${esc("Serve para: " + (m.especies || []).join(", "))}">${m.serve ? "✔" : "✖"} ${esc(m.nome)}</option>`).join("")}
             </select></label>` : `<div class="mo-aviso">Você não tem munição para esta arma</div>`;
       }
       const aces = (it.acessorios || []).length ? `<div class="mo-aces">${it.acessorios.map(e =>
@@ -678,8 +694,21 @@ function itemLoja(i) {
 }
 async function comprarItem(id, nome, preco) {
   if (!confirm(`Comprar "${nome}" por $${fmt(preco)} na loja do jogo?`)) return;
-  const r = await post("/api/comprar", { id });
-  if (!r.ok) moAviso(r.erro, "erro"); else { moAviso("Compra enviada ao jogo.", "ok"); setTimeout(renderLoja, 2500); }
+  let r;
+  try { r = await post("/api/comprar", { id }); } catch { return moAviso("O app não respondeu.", "erro"); }
+  if (!r.ok) return moAviso(r.erro, "erro");
+  moAviso("Comprando no jogo…");
+  for (let i = 0; i < 12; i++) {           // o jogo responde em 1–3 s
+    await new Promise(ok => setTimeout(ok, 1000));
+    let s;
+    try { s = await (await fetch("/api/compra?ref=" + r.ref)).json(); } catch { continue; }
+    if (!s.pronto) continue;
+    if (s.ok) moAviso(`Comprado: ${nome}. Saldo agora $${fmt(s.saldo)}.`, "ok");
+    else moAviso(`O jogo recusou a compra de ${nome}. Ele pode ser de um DLC que você não tem.`, "erro");
+    setTimeout(() => { if (abaAtual === "loja") renderLoja(); if (abaAtual === "enciclopedia" && diario) renderEnciclopedia(); if (kitTag) carregarKit(kitTag, true); }, 1500);
+    return;
+  }
+  moAviso("O jogo não confirmou a compra. Confira na loja do jogo.", "erro");
 }
 
 // ---------------------------------------------------------------- Diário de campo

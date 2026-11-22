@@ -756,6 +756,16 @@ LoopAsync(1000, function()
                     if arg == "ler" then rodarMochila(function(mo, ctx) mo.ler(ctx) end)
                     elseif arg == "armas" then rodarMochila(function(mo, ctx) if mo.armas then mo.armas(ctx) end end)
                     else filaMochila[#filaMochila + 1] = line end
+                elseif cmd == "licencas" or cmd == "licenca" then
+                    -- licencas (lê) | licenca <tag da espécie> <preço> <ref> (compra/renova na reserva atual)
+                    local ch, e = loadfile(DIR .. "Scripts\\licencas.lua")
+                    if not ch then log("licencas.lua: " .. tostring(e)); return end
+                    local li = ch()
+                    if cmd == "licencas" then li.ler(ctxScripts())
+                    else
+                        local tag, preco, r = line:match("^licenca%s+(%S+)%s+(%d+)%s*(%S*)")
+                        if tag and not jaPago("licenca", r) then li.comprar(ctxScripts(), tag, tonumber(preco), r) end
+                    end
                 elseif cmd == "script" and arg ~= "" and arg:match("^[%w_%-]+%.lua$") then
                     local chunk, e = loadfile(DIR .. "dev" .. "\\" .. arg)
                     if not chunk then log("script erro ao carregar: " .. tostring(e)); return end

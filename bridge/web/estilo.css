@@ -526,3 +526,16 @@ button, input, select { font: inherit; color: inherit; }
 .mo-opcao-sub.aviso { color: #f0a27a; }
 .mo-num { position: absolute; top: 8px; left: 8px; z-index: 2; }
 @media (max-width: 1300px) { .kit-colunas { grid-template-columns: 1fr; } }
+.dica-flut { position: fixed; z-index: 9999; display: none; max-width: 360px; pointer-events: none; padding: 8px 11px; border-radius: 9px;
+  background: #0c1311; border: 1px solid var(--linha-2); box-shadow: 0 8px 24px rgba(0,0,0,.5); font-size: 12.5px; line-height: 1.45; color: #d3dacd; }
+.dica-flut b { color: var(--nevoa); }
+.kit-lic { flex-direction: row; align-items: center; gap: 16px; }
+.kit-lic img { width: 96px; height: 96px; object-fit: contain; flex: none; }
+.kit-lic.acabou { border-color: #6e3a2c; }
+.kit-lic-info { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.kit-lic-sit { font-size: 14px; } .kit-lic-sit small { color: var(--liquen); }
+.kit-lic.acabou .kit-lic-sit b { color: #f0a27a; }
+.kit-lic-marcas { display: flex; flex-wrap: wrap; gap: 4px; }
+.kit-lic-marcas i { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--linha-2); }
+.kit-lic-marcas i.livre { background: var(--musgo); border-color: var(--musgo); }
+.kit-lic-marcas i.usada { background: #3b2a22; border-color: #6e3a2c; }

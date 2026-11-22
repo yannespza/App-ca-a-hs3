@@ -632,7 +632,8 @@ def mochila(dados, calibres, equip, lida, missoes, nome_especie, grupo_de, grupo
         cabe = lambda c: bool(c) and any(c == w or c.startswith(w + ".") or w.startswith(c + ".") for w in ids_cal)
         opcoes = [m for m in municoes if cabe(m.get("calibre"))]
         opcoes.sort(key=lambda m: (not m["serve"], m["nome"]))
-        a["municoes"] = [{"id": m["id"], "nome": m["nome"], "serve": m["serve"], "atual": m["id"] == a.get("municao_atual")} for m in opcoes]
+        a["municoes"] = [{"id": m["id"], "nome": m["nome"], "serve": m["serve"], "atual": m["id"] == a.get("municao_atual"),
+                          "especies": especies_da_carga(m.get("calibre"), calibres, nome_especie)} for m in opcoes]
         a["acessorios"] = acessorios_da_arma(por_id.get(a["id"]) or {}, municao_atual.get(a["id"]), acessorios_seus, req, por_id)
 
     # sugestão de mochila
@@ -763,6 +764,77 @@ def plano_mochila(sug, lida, slots, por_def, possuidos):
     return plano
 
 
+# ---------------------------------------------------------------- licenças e DLC (lidos do jogo)
+LICENCAS = {  # tag da espécie -> (licença na loja, animais por licença, preço) — lido do jogo em 22/11/2026
+    "Antelope.Nilgai": ("DA_Nilgai_License", 4, 67), "Antelope.ScimitarOryx": ("DA_ScimitarOryx_License", 4, 48),
+    "Bear.Black": ("DA_Bear_Black_License", 6, 66), "Bear.Black.Alaska": ("DA_Bear_Glazier_Black_License", 6, 66),
+    "Bear.Brown.Poland": ("DA_Bear_Brown_License", 4, 66), "Bear.Grizzly": ("DA_Bear_Grizzly_License", 4, 66),
+    "Bird.Chukar": ("DA_Chukar_License", 15, 32), "Bird.Dove.Mourning": ("DA_MourningDove_License", 10, 20),
+    "Bird.Duck.Black": ("DA_Duck_Black_License", 10, 20), "Bird.Duck.Bufflehead": ("DA_Duck_Bufflehead_License", 20, 100),
+    "Bird.Duck.Harlequin": ("DA_Duck_Harlequin_License", 20, 100),
+    "Bird.Duck.Mallard.Poland": ("DA_Duck_Mallard_License", 10, 20),
+    "Bird.Duck.NorthernPintail": ("DA_Duck_NorthernPintail_License", 10, 20),
+    "Bird.Duck.NorthernPintail.Alaska": ("DA_Duck_NorthernPintail_Alaska_License", 10, 20),
+    "Bird.Duck.Tufted.Poland": ("DA_TuftedDuck_License", 10, 28), "Bird.Goose.Canada": ("DA_Goose_Canada_License", 10, 24),
+    "Bird.Goose.Canada.Alaska": ("DA_Goose_Canada_Alaska_License", 10, 24),
+    "Bird.Goose.Graylag.Poland": ("DA_GreylagGoose_License", 10, 24),
+    "Bird.Grouse.Black.Poland": ("DA_BlackGrouse_License", 10, 28), "Bird.Grouse.Ptarmigan": ("DA_RockPtarmigan_License", 10, 28),
+    "Bird.Grouse.Ruffed": ("DA_RuffedGrouse_License", 10, 28), "Bird.Grouse.Sooty": ("DA_SootyGrouse_License", 10, 28),
+    "Bird.MontezumaQuail": ("DA_Montezuma_Quail_License", 10, 28),
+    "Bird.Partridge.Gray.Poland": ("DA_Partridge_Gray_License", 10, 24), "Bird.Pheasant": ("DA_Pheasant_License", 10, 24),
+    "Bird.Pheasant.Poland": ("DA_Pheasant_Poland_License", 10, 24), "Bird.Quail": ("DA_Quail_License", 10, 28),
+    "Bird.Teal.GreenWinged": ("DA_Teal_GreenWinged_License", 10, 28),
+    "Bird.Turkey.RioGrande": ("DA_Turkey_RioGrande_License", 8, 64), "Bird.Woodcock.Poland": ("DA_Woodcock_License", 10, 32),
+    "Bison.Alaska": ("DA_Bison_Alaskan_License", 4, 67), "Bison.American.Plains": ("DA_Bison_American_License", 4, 67),
+    "Bison.Poland": ("DA_Bison_European_License", 4, 78), "Boar.Poland": ("DA_Boar_European_License", 8, 64),
+    "Canine.Coyote.Plains": ("DA_Coyote_Plains_License", 6, 66), "Deer.BlackSitka": ("DA_SitkaBlacktailDeer_License", 8, 64),
+    "Deer.Caribou": ("DA_Caribou_License", 8, 64), "Deer.DesertMule": ("DA_DesertMule_License", 10, 89),
+    "Deer.MountainMule": ("DA_MountainMule_License", 8, 89), "Deer.Red.Poland": ("DA_RedDeer_License", 6, 72),
+    "Deer.Roe.Poland": ("DA_WesternRoeDeer_License", 8, 64),
+    "Deer.WhiteTail.Colorado": ("DA_WhiteTailDeer_Colorado_License", 8, 89),
+    "Deer.WhiteTail.Texas": ("DA_WhiteTailDeer_Texas_License", 8, 89), "Elk": ("DA_Elk_License", 4, 48),
+    "Feline.Bobcat.Colorado": ("DA_ColoradoBobcat_License", 4, 70), "Feline.Bobcat.Texas": ("DA_TexasBobcat_License", 4, 70),
+    "Feline.Cougar": ("DA_Cougar_License", 5, 70), "Feline.Lynx.Alaska": ("DA_CanadaLynx_License", 4, 70),
+    "Feline.Lynx.Poland": ("DA_Lynx_License", 4, 70), "Fox.Alaska": ("DA_ArticFox_License", 8, 78),
+    "Fox.Red": ("DA_RedFox_License", 6, 48), "Fox.Red.Poland": ("DA_RedFox_Poland_License", 8, 78),
+    "Goat.Mountain": ("DA_MountainGoat_License", 10, 10), "Hare.Alaska": ("DA_AlaskanHare_License", 10, 30),
+    "Hare.Brown.Poland": ("DA_BrownHare_License", 10, 30), "Hare.JackRabbit": ("DA_Jackrabbit_License", 10, 36),
+    "Hare.Snowshoe": ("DA_SnowshoeHare_License", 10, 30), "Marten.Poland": ("DA_PineMarten_Poland_License", 10, 48),
+    "Moose.Poland": ("DA_Moose_License", 4, 67), "Peccary.Collared": ("DA_Peccarry_Collared_License", 10, 64),
+    "Pig.Feral": ("DA_Pig_Feral_License", 8, 89), "PrairieDog.BlackTail": ("DA_PrairieDog_BlackTail_License", 10, 36),
+    "Pronghorn.American": ("DA_Pronghorn_American_License", 6, 76),
+    "Rabbit.CottonTail.Colorado": ("DA_Rabbit_CottonTail_Colorado_License", 10, 30),
+    "Rabbit.CottonTail.Texas": ("DA_Rabbit_CottonTail_Texas_License", 10, 30),
+    "Rabbit.European": ("DA_Rabbit_European_License", 10, 10), "RaccoonDog.Poland": ("DA_RaccoonDog_Poland_License", 6, 92),
+    "Sheep.Aoudad": ("DA_Sheep_Aoudad_License", 8, 76), "Sheep.Bighorn.Colorado": ("DA_Sheep_Bighorn_Colorado_License", 8, 76),
+    "Sheep.Bighorn.Texas": ("DA_Sheep_Bighorn_Texas_License", 8, 76), "Sheep.Dall": ("DA_DallSheep_License", 8, 76),
+    "Sheep.Mouflon.Poland": ("DA_Sheep_Mouflon_License", 8, 76), "Wolf.Gray": ("DA_Wolf_Gray_License", 6, 79),
+    "Wolf.Gray.Poland": ("DA_Eurasian_GrayWolf_License", 4, 61),
+}
+DLC = {"DA_LabradorStoreItem": "MyNaconGift", "DA_FloorStand_Large_TX_Predators_Deluxe": "ApexPredator", "DA_CompositionStand_Small_TX_Bobcat_Deluxe": "ApexPredator", "DA_CompositionStand_Medium_TX_Coyote_Deluxe": "ApexPredator", "DA_LargeCompositionStand_TX_Predators_DeluxeComposition": "ApexPredator", "DA_LargeCompositionStand_TX_MuleDeer_Defense_DeluxeComposition": "ApexPredator", "DA_FloorstandLarge_CO_Bobcat_DeluxeComposition": "ApexPredator", "DA_CornerStandLarge_CO_Predators_DeluxeComposition": "ApexPredator", "DA_SmallCompositionStand_CO_Bobcat_DeluxeComposition": "ApexPredator", "DA_MediumCompositionStand_CO_Predators_DeluxeComposition": "ApexPredator", "DA_LargeCompositionStand_CO_Predators_DeluxeComposition": "ApexPredator", "DA_LargeCompositionStand_CO_Bison_Defense_DeluxeComposition": "ApexPredator", "DA_AmericanFoxHoundStoreItem": "ClassicAmerican", "DA_Winchester_Model1892_ShortRifle_StoreItem": "ClassicAmerican", "D_Cap_VerneyCarron_Woolchap_StoreItem_Orange": "ClassicAmerican", "D_Cap_VerneyCarron_Woolchap_StoreItem_Khaki": "ClassicAmerican", "D_Cap_VerneyCarron_Woolchap_StoreItem_Fox": "ClassicAmerican", "DA_Remington_Model783_StoreItem": "ApexPredator", "D_DogGoggles_RexSpecs_Orange_StoreItem": "ApexPredator", "DA_Remington_870_SPS_SMTP_StoreItem": "ApexPredator", "D_DogVest_Browning_ProtectPro_Orange_StoreItem": "ApexPredator", "PolarisRangerEV_Camo_StoreDataAsset": "ApexPredator", "D_HubCustom_CO_Armory_Fancy": "ApexPredator", "D_HubCustom_CO_Balcony_Fancy": "ApexPredator", "D_HubCustom_CO_Bedroom_Fancy": "ApexPredator", "D_HubCustom_CO_Garage_Fancy": "ApexPredator", "D_HubCustom_CO_Hallway_Fancy": "ApexPredator", "D_HubCustom_CO_Kitchen_Fancy": "ApexPredator", "D_HubCustom_CO_LivingRoom_Fancy": "ApexPredator", "D_HubCustom_CO_Study_Fancy": "ApexPredator", "D_HubCustom_PL_Armory_Fancy": "ApexPredator", "D_HubCustom_PL_Balcony_Fancy": "ApexPredator", "D_HubCustom_PL_Bedroom_Fancy": "ApexPredator", "D_HubCustom_PL_Garage_Fancy": "ApexPredator", "D_HubCustom_PL_Hallway_Fancy": "ApexPredator", "D_HubCustom_PL_Kitchen_Fancy": "ApexPredator", "D_HubCustom_PL_LivingRoom_Fancy": "ApexPredator", "D_HubCustom_PL_Study_Fancy": "ApexPredator", "D_HubCustom_TX_Armory_Fancy": "ApexPredator", "D_HubCustom_TX_Balcony_Fancy": "ApexPredator", "D_HubCustom_TX_Bedroom_Fancy": "ApexPredator", "D_HubCustom_TX_Garage_Fancy": "ApexPredator", "D_HubCustom_TX_Hallway_Fancy": "ApexPredator", "D_HubCustom_TX_Kitchen_Fancy": "ApexPredator", "D_HubCustom_TX_LivingRoom_Fancy": "ApexPredator", "D_HubCustom_TX_Study_Fancy": "ApexPredator", "D_StoreItemAsset_HBC_ArmoryCabinetsSet_b": "ApexPredator", "DA_Caller_Turkey_Bombshell_StoreItem": "ApexPredator", "DA_Bushnell_Fusion_12x50_StoreItem": "ApexPredator"}  # item da loja -> pacote (ContentIdentifier)
+
+
+def licenca_da_especie(tag, lic_mod, lic_todas):
+    """Situação da licença: lic_mod = licencas.json da reserva atual; lic_todas = última leitura de cada reserva."""
+    chave = (tag or "").replace("Animals.Types.", "")
+    info = LICENCAS.get(chave)
+    if not info:
+        return None
+    loja, maximo, preco = info
+    r = {"loja": loja, "max": maximo, "preco": preco, "comprar_aqui": False, "tem": False, "usados": None, "restam": None,
+         "ilimitada": False, "reserva": None}
+    fontes = ([lic_mod] if lic_mod else []) + [x for x in (lic_todas or {}).values() if x is not lic_mod]
+    for f in fontes:
+        l = next((x for x in f.get("licencas") or [] if x.get("tag") == tag), None)
+        if l:
+            r.update(tem=True, usados=l.get("usados") or 0, ilimitada=bool(l.get("ilimitada")), reserva=f.get("mapa"))
+            r["restam"] = None if r["ilimitada"] else max(0, maximo - r["usados"])
+            break
+    if lic_mod and tag in (lic_mod.get("permitidas") or []):
+        r["comprar_aqui"] = True
+    return r
+
+
 # ---------------------------------------------------------------- caçada por espécie (Diário de campo)
 NOME_TIPO_ARMA = [("CrossBow", "Besta"), ("Crossbow", "Besta"), ("Bow", "Arco"), ("Shotgun", "Espingarda"),
                   ("Handgun", "Arma curta"), ("Pistol", "Arma curta"), ("Revolver", "Arma curta"), ("Rifle", "Rifle")]
@@ -794,7 +866,16 @@ def slots_mochila(dados, lida, equip):
     return saida
 
 
-def kit_especie(dados, calibres, equip, lida, tag, nome_especie):
+def especies_da_carga(carga, calibres, nome_especie):
+    """Nomes das espécies em que uma munição (ex.: Inventory.Ammo.Shell.12G.Slug) é permitida."""
+    if not carga:
+        return []
+    nomes = {nome_especie(l.get("animal")) for l in calibres if not (l.get("animal") or "").endswith(".Hub")
+             and any(p == carga or p.startswith(carga + ".") or carga.startswith(p + ".") for p in l.get("compativeis", []))}
+    return sorted(n for n in nomes if n)
+
+
+def kit_especie(dados, calibres, equip, lida, tag, nome_especie, lic_mod=None, lic_todas=None):
     """Tudo o que serve para caçar uma espécie: balística, armas (com munição e acessórios), chamadores, chamarizes e iscas."""
     animal = next((a for a in dados.get("animais", []) if a.get("tag") == tag), None) or {}
     linha = next((c for c in calibres if c.get("animal") == tag), None) or next((c for c in calibres if _casa_tag(c.get("animal"), tag)), None) or {}
@@ -862,8 +943,9 @@ def kit_especie(dados, calibres, equip, lida, tag, nome_especie):
             indicada = tipo in ("Rifle", "Arco", "Besta")
         a = {"id": c["id"], "item": c.get("item"), "nome": c.get("nome") or c["id"], "imagem": img(c.get("icone")), "tipo": tipo,
              "calibres": [nome_calibre(x) for x in boas], "tem": tem(c), "slot": onde.get(c.get("item")), "indicada": indicada,
-             "preco": c.get("preco"), "moeda": "créditos" if "Credits" in (c.get("moeda") or "") else "pontos de campo",
-             "municoes": [{"id": m["id"], "nome": m["nome"], "tem": m["tem"], "atual": m["id"] == atual_mun} for m in opcoes],
+             "preco": c.get("preco"), "moeda": "créditos" if "Credits" in (c.get("moeda") or "") else "pontos de campo", "dlc": DLC.get(c["id"]),
+             "municoes": [{"id": m["id"], "nome": m["nome"], "tem": m["tem"], "atual": m["id"] == atual_mun,
+                           "especies": especies_da_carga(m["calibre"], calibres, nome_especie)} for m in opcoes],
              "municao_atual": atual_mun, "montados_conhecidos": montados is not None, "cargas": cargas_ok,
              "municao_atual_nome": (por_id.get(atual_mun) or {}).get("nome") if atual_mun else None,
              "municao_atual_serve": any(m["id"] == atual_mun for m in opcoes) if atual_mun else None}
@@ -891,7 +973,7 @@ def kit_especie(dados, calibres, equip, lida, tag, nome_especie):
                   "chamariz": "Deixa a espécie mais calma perto de você",
                   "isca": "Isca de cheiro: atrai pelo faro, a favor do vento"}[papel]
         objetos.append({"id": c["id"], "item": n, "nome": c.get("nome") or c["id"], "imagem": img(c.get("icone")), "papel": papel,
-                        "efeito": efeito, "tem": tem(c), "slot": onde.get(n), "preco": c.get("preco"),
+                        "efeito": efeito, "tem": tem(c), "slot": onde.get(n), "preco": c.get("preco"), "dlc": DLC.get(c["id"]),
                         "cargas": c.get("cargas") if (c.get("cargas") or 0) > 1 else None})
     ordem = {"chamador": 0, "chamariz": 1, "isca": 2}
     objetos.sort(key=lambda o: (ordem[o["papel"]], not o["tem"], o["slot"] is None, o["nome"]))
@@ -902,13 +984,16 @@ def kit_especie(dados, calibres, equip, lida, tag, nome_especie):
         partes = p.split(".")
         grupo = tipos_bal.get(partes[2] if len(partes) > 2 else "", "Outros")
         n_armas = sum(1 for a in armas if a["tem"] and p in a["cargas"])
-        balistica.append({"id": p, "nome": nome_calibre(p), "grupo": grupo,
+        balistica.append({"id": p, "nome": nome_calibre(p), "grupo": grupo, "especies": especies_da_carga(p, calibres, nome_especie),
                           "tem_municao": any(m["tem"] and m["calibre"] == p for m in municoes), "armas_suas": n_armas})
     return {
         "tag": tag, "nome": nome_especie(tag) or animal.get("titulo") or tag, "imagem": img(animal.get("imagem")),
         "cabecalho": CABECALHOS.get(cab, cab or "Animais"),
         "balistica": balistica, "proibidos": [nome_calibre(x) for x in linha.get("incompativeis", [])],
         "armas": armas, "objetos": objetos, "slots": slots_mochila(dados, lida, equip), "lida": bool(lida_itens),
+        "licenca": licenca_da_especie(tag, lic_mod, lic_todas),
+        "licenca_imagem": next((img(l.get("imagem")) for e in dados.get("especies", []) if e.get("tag") == tag
+                                for l in e.get("licencas") or [] if l.get("imagem")), None),
     }
 
 

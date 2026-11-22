@@ -43,7 +43,7 @@ function desenharKit() {
   const grupos = {};
   kit.balistica.forEach(b => (grupos[b.grupo] ||= []).push(b));
   const balistica = Object.entries(grupos).map(([g, l]) => `<div class="kit-bal-grupo"><span>${esc(g)}</span>
-      ${l.map(b => `<button class="kit-cal ${b.armas_suas ? "" : "sem"}" onclick="kitArmas('${esc(b.id)}','${esc(b.nome)}')" title="${b.armas_suas ? `Você tem ${b.armas_suas} arma(s) para este calibre` : "Você não tem arma para este calibre"}">
+      ${l.map(b => `<button class="kit-cal ${b.armas_suas ? "" : "sem"}" onclick="kitArmas('${esc(b.id)}','${esc(b.nome)}')" data-dica="${dicaEspecies(b.nome, b.especies)}">
         ${esc(b.nome)}<small>${b.armas_suas ? b.armas_suas + " arma" + (b.armas_suas > 1 ? "s" : "") : "sem arma"}</small></button>`).join("")}</div>`).join("");
   const proib = kit.proibidos.length ? `<div class="dp-proib"><b>Proibido para esta espécie:</b> ${chips(kit.proibidos, "vermelho")}</div>` : "";
 
@@ -60,6 +60,7 @@ function desenharKit() {
   const objetos = kit.objetos.length ? kit.objetos.map(o => {
     const acao = o.slot ? `<span class="mo-selo sim">no espaço ${o.slot}</span>`
       : o.tem ? (pode ? `<button class="kit-btn" onclick="kitPorObjeto('${esc(o.item)}')">Pôr na mochila</button>` : `<span class="mo-dica">Você tem</span>`)
+      : o.dlc ? `<span class="mo-dica" data-dica="${esc("Item do pacote extra (DLC) " + o.dlc + ". O jogo só vende se você tiver esse DLC.")}">DLC ${esc(o.dlc)}</span>`
       : `<button class="kit-btn sec" onclick="comprarItem('${esc(o.id)}','${esc(o.nome).replace(/'/g, "")}',${o.preco || 0})">Comprar $${fmt(o.preco)}</button>`;
     return `<div class="kit-obj ${o.slot ? "na" : ""} ${o.tem ? "" : "loja"}">${kitFoto(o)}<div class="kit-obj-info">
         <span class="kit-papel ${o.papel}">${{ chamador: "Chamador", chamariz: "Chamariz", isca: "Isca de cheiro" }[o.papel]}</span>
@@ -76,8 +77,48 @@ function desenharKit() {
       <div class="kit-bloco"><h4>Balística <small>clique num calibre para ver as armas</small></h4>${balistica || `<p class="mo-dica">O jogo não lista calibres para esta espécie.</p>`}${proib}</div>
       <div class="kit-bloco"><h4>Arma na mochila <small>${suas} arma${suas === 1 ? "" : "s"} sua${suas === 1 ? "" : "s"} servem</small></h4>${armasTxt}
         ${pode && suas ? `<button class="kit-btn" onclick="kitArmas('','')">Escolher arma</button>` : ""}</div>
+      ${kitLicenca()}
       <div class="kit-bloco largo"><h4>Chamadores, chamarizes e iscas</h4><div class="kit-objs">${objetos}</div></div>
     </div></section>`;
+}
+
+// ---- licença de caça da espécie
+function kitLicenca() {
+  const l = kit.licenca;
+  if (!l) return "";
+  const n = l.max;
+  const marcas = l.ilimitada ? "" : `<div class="kit-lic-marcas">${Array.from({ length: n }, (_, i) =>
+      `<i class="${l.tem && i < l.usados ? "usada" : l.tem ? "livre" : "nao"}"></i>`).join("")}</div>`;
+  const situacao = !l.tem ? "Você não tem licença para esta espécie"
+    : l.ilimitada ? "Licença ilimitada"
+    : l.restam > 0 ? `Restam <b>${l.restam}</b> de ${n} animais` : "<b>Licença esgotada</b>: você já usou os " + n + " animais";
+  const precisa = !l.tem || (!l.ilimitada && l.restam === 0);
+  const botao = !precisa ? "" : l.comprar_aqui
+    ? `<button class="kit-btn" ${kitPode() || kit.em_reserva ? "" : "disabled"} onclick="kitComprarLicenca()">Comprar licença · $${fmt(l.preco)}</button>`
+    : `<span class="mo-dica">Para comprar, entre numa reserva onde esta espécie vive.</span>`;
+  return `<div class="kit-bloco largo kit-lic ${precisa ? "acabou" : ""}">
+      ${kit.licenca_imagem ? `<img src="${kit.licenca_imagem}" alt="" onerror="this.remove()">` : ""}
+      <div class="kit-lic-info"><h4>Licença de caça <small>${n} animais por licença · $${fmt(l.preco)}</small></h4>
+        <div class="kit-lic-sit">${situacao}${l.tem && l.reserva && !l.comprar_aqui ? ` <small>(leitura de ${esc(nomeMapa(l.reserva))})</small>` : ""}</div>
+        ${marcas}${botao}</div></div>`;
+}
+async function kitComprarLicenca() {
+  const l = kit.licenca;
+  if (!confirm(`Comprar a licença de ${kit.nome} por $${fmt(l.preco)}? Ela vale para ${l.max} animais nesta reserva.`)) return;
+  let r;
+  try { r = await post("/api/licenca", { tag: kit.tag }); } catch { return moAviso("O app não respondeu.", "erro"); }
+  if (!r.ok) return moAviso(r.erro || "Não deu certo.", "erro");
+  moAviso("Comprando a licença no jogo…");
+  for (let i = 0; i < 12; i++) {
+    await new Promise(ok => setTimeout(ok, 1000));
+    let s;
+    try { s = await (await fetch("/api/compra?ref=" + r.ref)).json(); } catch { continue; }
+    if (!s.pronto) continue;
+    moAviso(s.ok ? `Licença comprada. Saldo agora $${fmt(s.saldo)}.` : "O jogo não aceitou a compra da licença.", s.ok ? "ok" : "erro");
+    setTimeout(() => carregarKit(kitTag, true), 1500);
+    return;
+  }
+  moAviso("O jogo não confirmou a compra. Confira as licenças no jogo.", "erro");
 }
 
 // ---- escolher arma (todas ou só de um calibre)
@@ -119,7 +160,7 @@ function desenharKitArma() {
   const espacos = armas.map(s => `<button class="kit-escolha ${e.espaco === s.n ? "on" : ""}" onclick="kitEscolha.espaco=${s.n};desenharKitArma()">
       <b class="kit-num">${s.n}</b><span>${s.item === a.item ? "fica aqui" : s.item ? "sai: " + esc(s.nome) : "espaço livre"}</span></button>`).join("");
   const minhas = a.municoes.filter(m => m.tem);
-  const muni = minhas.length ? minhas.map(m => `<button class="kit-escolha ${e.municao === m.id ? "on" : ""}" onclick="kitEscolha.municao='${esc(m.id)}';desenharKitArma()">
+  const muni = minhas.length ? minhas.map(m => `<button class="kit-escolha ${e.municao === m.id ? "on" : ""}" data-dica="${dicaEspecies(m.nome, m.especies)}" onclick="kitEscolha.municao='${esc(m.id)}';desenharKitArma()">
       <span>${esc(m.nome)}</span>${m.atual ? `<small>carregada</small>` : ""}</button>`).join("")
     : `<p class="mo-aviso">Você não tem munição desta arma que sirva para ${esc(kit.nome)}. Compre na loja do jogo.</p>`;
   const aces = (a.acessorios || []).map(enc => {
