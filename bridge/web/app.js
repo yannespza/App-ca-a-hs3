@@ -121,7 +121,15 @@ function setaJogador(yaw) {
 }
 
 let pinoPendente = null;
+// animal clicado: no celular o ícone vai para a esquerda da tela, sobrando espaço para o cartão à direita
+function centrarAnimal(ll) {
+  marcarSeguindo(false);
+  const w = mapa.getSize().x;
+  const deslocar = w < 820 ? w * 0.3 : 0;
+  mapa.panTo(mapa.unproject(mapa.project(ll).add([deslocar, 0])));
+}
 function perguntarPino(ll, rotulo) {
+  marcarSeguindo(false);
   pinoPendente = { ll, rotulo };
   const html = `<div class="pp-caixa" style="text-align:center"><b>${esc(rotulo || "Novo pino")}</b><br>
     <button class="btn-papel verde" id="pp-ok" style="margin-top:6px;padding:10px 14px" onclick="confirmarPino(event)">📍 Colocar pino aqui</button></div>`;
@@ -167,7 +175,14 @@ async function passarTempo(corpo) {
   moFecharModal();
   if (!r.ok) alert(r.erro || "Não consegui passar o tempo.");
 }
-function centralizar() { if (ultimoEstado?.estado?.pos) mapa.setView(toLL(ultimoEstado.estado.pos), 0); }
+// o mapa segue o jogador; arrastar solta, o botão "Eu" volta a seguir
+let seguindo = true;
+function marcarSeguindo(v) { seguindo = v; const b = $("btn-eu"); if (b) b.classList.toggle("ativo", v); }
+function centralizar() {
+  marcarSeguindo(true);
+  if (ultimoEstado?.estado?.pos) mapa.setView(toLL(ultimoEstado.estado.pos), Math.max(mapa.getZoom(), -1));
+}
+mapa.on("dragstart", () => marcarSeguindo(false));
 
 $("f-pois").onchange = (e) => e.target.checked ? grupoPois.addTo(mapa) : mapa.removeLayer(grupoPois);
 $("f-estr").onchange = (e) => e.target.checked ? grupoEstr.addTo(mapa) : mapa.removeLayer(grupoEstr);
@@ -227,7 +242,7 @@ function atualizarAnimais(lista) {
     if (!m) {
       m = L.marker(toLL(a.pos), { icon: icone, riseOnHover: true });
       m.bindTooltip("", { className: "cartao-animal", direction: "right", offset: [16, 0], opacity: 1 });
-      m.on("click", () => perguntarPino(m.getLatLng(), m._rotulo));
+      m.on("click", () => { centrarAnimal(m.getLatLng()); m.openTooltip(); });
       grupoAnimais.addLayer(m);
       marcAnimais[a.id] = m;
     } else {
@@ -248,6 +263,7 @@ function atualizarMarcadores(d) {
   if (st.pos) {
     if (!marcJogador) marcJogador = L.marker(toLL(st.pos), { icon: setaJogador(st.yaw), zIndexOffset: 1000 }).addTo(mapa).bindTooltip("Você");
     else { marcJogador.setLatLng(toLL(st.pos)); marcJogador.setIcon(setaJogador(st.yaw)); }
+    if (seguindo && jaCentralizou) mapa.panTo(toLL(st.pos), { animate: true, duration: 0.5 });
     if (!jaCentralizou && nivelAtual) { mapa.setView(toLL(st.pos), -1); jaCentralizou = true; }
   }
   const pino = st.pino_jogo || d.pino_app;
@@ -302,7 +318,7 @@ function renderAtivas(d) {
       <div class="barra"><div style="width:${Math.min(100, 100 * m.progresso / m.meta)}%"></div></div>
       <div class="at-acoes"><span class="sub" style="margin-right:auto">${m.progresso}/${m.meta}</span>
         ${m.local ? `<button class="btn-papel" onclick="acao('focar','${m.id}')">📍 Pino</button>` : ""}
-        <button class="btn-papel cinza" onclick="if(confirm('Abandonar este contrato?'))acao('abandonar','${m.id}')">Abandonar</button></div>
+        <button class="btn-papel cinza" onclick="abandonar('${m.id}')">Abandonar</button></div>
     </div>`);
   const fim = d.finalizadas.slice(0, 3).map(m => `<div class="ativa concl"><div class="at-titulo"><span>${esc(m.titulo)}</span>
       <span class="estado-pg ${m.status === "paga" ? "ok" : ""}">${m.status === "paga" ? "Pago" : (m.enviado ? "Pagando…" : "Concluído")}</span></div></div>`);
@@ -366,7 +382,7 @@ function mostrarAtualizacao(a, versao) {
 async function clicarAtualizar() {
   const a = ultimaAtualizacao;
   if (a && a.disponivel) {
-    if (!confirm(`Atualizar para a versão ${a.nova}?\n\nO programa reinicia sozinho em alguns segundos. A parte do mod vale na próxima vez que você abrir o jogo.`)) return;
+    if (!await perguntar(`Atualizar para a versão ${a.nova}?\n\nO programa reinicia sozinho em alguns segundos. A parte do mod vale na próxima vez que você abrir o jogo.`)) return;
     atualizando = true; versaoAntes = ultimoEstado && ultimoEstado.versao;
     await post("/api/atualizar");
   } else {
@@ -377,8 +393,28 @@ async function clicarAtualizar() {
     else if (!r.disponivel) moAviso(`Você já está na versão mais recente (v${r.atual}).`, "ok");
   }
 }
+async function abandonar(id) {
+  if (await perguntar("Abandonar este contrato?", "Abandonar")) acao("abandonar", id);
+}
+// confirmação dentro do app (o confirm() do navegador não aparece no app do celular)
+function perguntar(texto, sim = "Confirmar") {
+  return new Promise((fim) => {
+    const fundo = document.createElement("div");
+    fundo.className = "pergunta-fundo";
+    fundo.innerHTML = `<div class="pergunta" role="dialog" aria-modal="true"><p></p>
+      <div class="pergunta-botoes"><button class="btn-papel cinza" data-r="0">Cancelar</button><button class="btn-papel verde" data-r="1"></button></div></div>`;
+    fundo.querySelector("p").textContent = texto;
+    fundo.querySelector('[data-r="1"]').textContent = sim;
+    const fechar = (r) => { fundo.remove(); document.removeEventListener("keydown", tecla); fim(r); };
+    const tecla = (e) => { if (e.key === "Escape") fechar(false); if (e.key === "Enter") fechar(true); };
+    fundo.addEventListener("click", (e) => { if (e.target === fundo) fechar(false); const r = e.target.dataset && e.target.dataset.r; if (r) fechar(r === "1"); });
+    document.addEventListener("keydown", tecla);
+    document.body.appendChild(fundo);
+    fundo.querySelector('[data-r="1"]').focus();
+  });
+}
 async function sair() {
-  if (!confirm("Fechar o HS3 Companion?")) return;
+  if (!await perguntar("Fechar o HS3 Companion?")) return;
   try { await post("/api/sair"); } catch {}
   document.body.innerHTML = '<div style="padding:60px;text-align:center;font-family:Georgia;font-size:22px;color:#e9dcbc">HS3 Companion fechado. Pode fechar esta janela.</div>';
   setTimeout(() => window.close(), 800);
@@ -498,7 +534,8 @@ $("f-hud").onchange = (e) => post("/api/config", { chave: "contratos_no_jogo", v
 async function voltarAgora() { const r = await post("/api/voltar"); if (!r.ok) moAviso(r.erro, "erro"); }
 
 function barraStat(nome, v) {
-  return `<div class="st"><span>${nome}</span><span class="b"><i style="width:${Math.max(0, Math.min(100, v))}%"></i></span><b>${Math.round(v)}</b></div>`;
+  // degradê fixo do vermelho (exposto) ao verde (camuflado); a parte que falta fica coberta
+  return `<div class="st"><span>${nome}</span><span class="b"><i style="left:${Math.max(0, Math.min(100, v))}%"></i></span><b>${Math.round(v)}</b></div>`;
 }
 
 // ---------------------------------------------------------------- Mochila
@@ -806,7 +843,7 @@ async function renderLoja() {
   const d = await (await fetch("/api/loja")).json();
   const det = d.deteccao || {};
   const med = (nome, v, dica) => `<div class="medidor"><div class="item-sub">${nome}</div><div class="v">${v == null ? "–" : Math.round(v * 100) + "%"}</div>
-      <div class="b"><i style="width:${(v || 0) * 100}%"></i></div><div class="item-sub">${dica}</div></div>`;
+      <div class="b"><i style="left:${Math.min(100, (v || 0) * 100)}%"></i></div><div class="item-sub">${dica}</div></div>`;
   let html = `<header class="pag-topo"><h2>Roupas e camuflagem ${ajuda("loja")}</h2><p>Sua camuflagem agora e o que dá para comprar. Em tudo aqui, <b>quanto maior, melhor</b>: mais escondido, mais silencioso, menos cheiro, mais rápido.</p></header>
     <h3>Sua camuflagem agora</h3><div class="medidores">
       ${med("Visual", det.visual, "quanto maior, menos os animais te veem")}${med("Silêncio", det.som, "quanto maior, menos te ouvem")}${med("Cheiro", det.cheiro, "quanto maior, menos te sentem pelo faro")}</div>
@@ -830,7 +867,7 @@ function itemLoja(i) {
     <div style="margin-top:6px">${acao}</div></div>`;
 }
 async function comprarItem(id, nome, preco) {
-  if (!confirm(`Comprar "${nome}" por $${fmt(preco)} na loja do jogo?`)) return;
+  if (!await perguntar(`Comprar "${nome}" por $${fmt(preco)} na loja do jogo?`)) return;
   let r;
   try { r = await post("/api/comprar", { id }); } catch { return moAviso("O app não respondeu.", "erro"); }
   if (!r.ok) return moAviso(r.erro, "erro");

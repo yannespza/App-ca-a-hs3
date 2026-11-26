@@ -104,7 +104,7 @@ function kitLicenca() {
 }
 async function kitComprarLicenca() {
   const l = kit.licenca;
-  if (!confirm(`Comprar a licença de ${kit.nome} por $${fmt(l.preco)}? Ela vale para ${l.max} animais nesta reserva.`)) return;
+  if (!await perguntar(`Comprar a licença de ${kit.nome} por $${fmt(l.preco)}? Ela vale para ${l.max} animais nesta reserva.`)) return;
   let r;
   try { r = await post("/api/licenca", { tag: kit.tag }); } catch { return moAviso("O app não respondeu.", "erro"); }
   if (!r.ok) return moAviso(r.erro || "Não deu certo.", "erro");

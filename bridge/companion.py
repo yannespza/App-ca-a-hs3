@@ -73,7 +73,7 @@ CONFIG_PADRAO = {
     "pasta_mod": "",          # achada sozinha (ou escolhida na tela Instalação do app)
     "porta": 8765,
     "abrir_navegador": True,
-    "missoes_ativas": 6,
+    "missoes_ativas": 4,
     "ofertas": 8,
     "voltar_ao_ultimo_local": True,
     "contratos_no_jogo": True,
@@ -81,7 +81,7 @@ CONFIG_PADRAO = {
     "github_token": "",
     "celular": True,          # aceita o celular na mesma rede Wi-Fi (com PIN)
     "pin": "",                # criado sozinho na primeira vez
-    "versao_config": 2,
+    "versao_config": 3,
 }
 
 # ------------------------------------------------------------------ catálogo
@@ -198,9 +198,10 @@ def carregar_config():
     cfg = dict(CONFIG_PADRAO)
     salvo = carregar_json(CONFIG_PATH, {})
     cfg.update({k: v for k, v in salvo.items() if k in CONFIG_PADRAO})   # descarta opções antigas (Ollama etc.)
-    if salvo.get("versao_config", 1) < 2:
+    if salvo.get("versao_config", 1) < 3:
         # versões antigas gravaram 3 ofertas / 3 ativos: passa para os limites novos
         cfg["missoes_ativas"], cfg["ofertas"] = CONFIG_PADRAO["missoes_ativas"], CONFIG_PADRAO["ofertas"]
+        cfg["versao_config"] = CONFIG_PADRAO["versao_config"]
     if not os.path.isfile(os.path.join(cfg.get("pasta_mod") or "", "Scripts", "main.lua")):
         # primeira vez (ou o jogo mudou de lugar): procura o jogo e usa o mod se já estiver instalado
         try:
@@ -1114,6 +1115,8 @@ class Companion:
         agora = time.time()
         if nivel and nivel != self.estava_em and "Hub" not in nivel:
             destino = self.dados["ultima_pos"].get(nivel)
+            if destino and not destino.get("chao"):
+                destino = None   # posição gravada antes da v0.1.39 (podia ser no meio de uma queda)
             self.anterior = destino if destino and (distancia_m(self.estado["pos"], destino) or 0) > 150 else None
             if self.cfg.get("voltar_ao_ultimo_local") and destino and (distancia_m(self.estado["pos"], destino) or 0) > 150:
                 self.teleporte = (destino, agora + 6)
@@ -1129,7 +1132,11 @@ class Companion:
             return
         if nivel and "Hub" not in nivel and agora >= getattr(self, "pausa_pos_ate", 0):
             p = self.estado["pos"]
-            self.dados["ultima_pos"][nivel] = {"x": p["x"], "y": p["y"], "z": p["z"], "ts": agora}
+            # só guarda com o caçador no chão: altura quase igual nas últimas leituras (nada de queda ou pulo)
+            alturas = (getattr(self, "_alturas", []) + [p["z"]])[-4:]
+            self._alturas = alturas
+            if len(alturas) == 4 and max(alturas) - min(alturas) < 40:
+                self.dados["ultima_pos"][nivel] = {"x": p["x"], "y": p["y"], "z": p["z"], "ts": agora, "chao": True}
 
     def voltar_agora(self):
         with self.lock:

@@ -52,9 +52,10 @@ function M.sincronizar(ctx)
 
     local txt, titulo, itens = lerPedido(ctx.DIR)
     local atuais = nossos(painel)
-    if #atuais == #itens and estado.assinatura == txt then return end
+    local mudou = not (#atuais == #itens and estado.assinatura == txt)
 
     -- refaz: tira os antigos e cria os novos
+    if mudou then
     for _, a in ipairs(atuais) do pcall(function() a.w:RemoveFromParent() end) end
     local WBL = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary")
     local classe = StaticFindObject(CLASSE)
@@ -74,14 +75,20 @@ function M.sincronizar(ctx)
             end
         end
     end
+    end
 
-    -- sem contrato do jogo rastreado: a caixa fica escondida pelo jogo; mostramos com o nosso título
+    -- sem contrato do jogo rastreado: a caixa fica escondida pelo jogo; mostramos com o nosso título.
+    -- Conferido a cada vez: quando um contrato do jogo termina, o jogo esconde a caixa de novo (v0.1.39).
     local temContratoDoJogo = false
     pcall(function() temContratoDoJogo = tracker.TrackedContract ~= nil and tracker.TrackedContract:IsValid() end)
     if not temContratoDoJogo then
         if #itens > 0 then
-            pcall(function() tracker.ContractTitle:SetText(FText(titulo or "Contratos do Velho Earl")) end)
-            pcall(function() tracker:SetVisibility(SO_VISUAL) end)
+            local vis = -1
+            pcall(function() vis = tracker:GetVisibility() end)
+            if mudou or vis ~= SO_VISUAL or not estado.forcamos_visivel then
+                pcall(function() tracker.ContractTitle:SetText(FText(titulo or "Contratos do Velho Earl")) end)
+            end
+            if vis ~= SO_VISUAL then pcall(function() tracker:SetVisibility(SO_VISUAL) end) end
             estado.forcamos_visivel = true
         elseif estado.forcamos_visivel then
             pcall(function() tracker:SetVisibility(RECOLHIDO) end)
@@ -89,6 +96,7 @@ function M.sincronizar(ctx)
         end
     end
     estado.assinatura = txt
+    if not mudou then return end
     ctx.log(string.format("hud: %d objetivo(s) do app na caixa de contratos%s", #itens, temContratoDoJogo and " (junto do contrato do jogo)" or ""))
 end
 

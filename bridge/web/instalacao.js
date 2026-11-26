@@ -64,7 +64,7 @@ async function instInstalar() {
   desenharInstalacao();
 }
 async function instZerar() {
-  if (!confirm("Começar do zero no app? Contratos, abates e patente voltam ao início (uma cópia fica guardada na pasta do programa).")) return;
+  if (!await perguntar("Começar do zero no app? Contratos, abates e patente voltam ao início (uma cópia fica guardada na pasta do programa).")) return;
   const r = await post("/api/instalacao", { acao: "zerar" });
   if (!r.ok) return moAviso(r.erro || "Não deu certo.", "erro");
   moFecharModal();

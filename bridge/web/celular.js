@@ -50,7 +50,7 @@ async function abrirCelular() {
     </div>`);
 }
 async function celNovoPin() {
-  if (!confirm("Gerar um PIN novo? O celular vai precisar ler o QR code de novo.")) return;
+  if (!await perguntar("Gerar um PIN novo? O celular vai precisar ler o QR code de novo.")) return;
   await post("/api/celular", { acao: "novo_pin" });
   abrirCelular();
 }
@@ -62,4 +62,4 @@ async function celLigar(ligado) {
 
 // dentro do app Android: botão para procurar outro PC
 if (window.HS3 && typeof window.HS3.esquecer === "function") document.body.classList.add("apk");
-function trocarPc() { if (confirm("Procurar outro PC na rede?")) window.HS3.esquecer(); }
+async function trocarPc() { if (await perguntar("Procurar outro PC na rede?")) window.HS3.esquecer(); }
