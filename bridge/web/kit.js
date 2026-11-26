@@ -91,12 +91,14 @@ function kitLicenca() {
       `<i class="${l.tem && i < l.usados ? "usada" : l.tem ? "livre" : "nao"}"></i>`).join("")}</div>`;
   const situacao = !l.tem ? "Você não tem licença para esta espécie"
     : l.ilimitada ? "Licença ilimitada"
-    : l.restam > 0 ? `Restam <b>${l.restam}</b> de ${n} animais` : "<b>Licença esgotada</b>: você já usou os " + n + " animais";
+    : l.restam > 2 ? `Restam <b>${l.restam}</b> de ${n} animais`
+    : l.restam > 0 ? `<b>Está acabando:</b> restam só ${l.restam} de ${n} animais` : "<b>Licença esgotada</b>: você já usou os " + n + " animais";
+  const pouca = l.tem && !l.ilimitada && l.restam > 0 && l.restam <= 2;
   const precisa = !l.tem || (!l.ilimitada && l.restam === 0);
-  const botao = !precisa ? "" : l.comprar_aqui
+  const botao = !(precisa || pouca) ? "" : l.comprar_aqui
     ? `<button class="kit-btn" ${kitPode() || kit.em_reserva ? "" : "disabled"} onclick="kitComprarLicenca()">Comprar licença · $${fmt(l.preco)}</button>`
     : `<span class="mo-dica">Para comprar, entre numa reserva onde esta espécie vive.</span>`;
-  return `<div class="kit-bloco largo kit-lic ${precisa ? "acabou" : ""}">
+  return `<div class="kit-bloco largo kit-lic ${precisa || pouca ? "acabou" : ""}">
       ${kit.licenca_imagem ? `<img src="${kit.licenca_imagem}" alt="" onerror="this.remove()">` : ""}
       <div class="kit-lic-info"><h4>Licença de caça ${ajuda("licenca")}<small>${n} animais por licença · $${fmt(l.preco)}</small></h4>
         <div class="kit-lic-sit">${situacao}${l.tem && l.reserva && !l.comprar_aqui ? ` <small>(leitura de ${esc(nomeMapa(l.reserva))})</small>` : ""}</div>

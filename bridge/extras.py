@@ -249,6 +249,7 @@ def enciclopedia_jogo(dados, calibres, catalogo_equip, abates, vistos, nome_espe
     comprados = {b["id"] for b in catalogo_equip.get("comprados", [])}
     vestidos = {r.get("item") for r in catalogo_equip.get("roupa", [])}
     na_mochila = {m.get("item") for m in catalogo_equip.get("mochila", [])}
+    comprados |= {c.get("id") for c in dados.get("itens", []) if c.get("item") in na_mochila}   # itens de DLC
     esp_cal = especies_por_calibre(calibres)
     calibre_por_arma = {a["arma"]: a["calibre"] for a in abates if a.get("arma") and a.get("calibre")}
 
@@ -606,7 +607,7 @@ def mochila(dados, calibres, equip, lida, missoes, nome_especie, grupo_de, grupo
     possuidos = []
     for c in itens:
         tipo = c.get("tipo") or ""
-        if c.get("desativado") or not (c["id"] in comprados or c.get("padrao")):
+        if c.get("desativado") or not (c["id"] in comprados or c.get("padrao") or c.get("item") in na_mochila):
             continue
         if not (tipo.startswith("Inventory.") or tipo.endswith("Attachments.Ammo")):
             continue
@@ -980,8 +981,9 @@ def kit_especie(dados, calibres, equip, lida, tag, nome_especie, lic_mod=None, l
     itens = dados.get("itens", [])
     por_id = {c.get("id"): c for c in itens}
     img = lambda n: f"/api/img/{n}" if n else None
-    tem = lambda c: c["id"] in comprados or bool(c.get("padrao"))
     lida_itens = (lida or {}).get("itens") or []
+    na_mochila_kit = {i.get("item") for i in lida_itens} | {m.get("item") for m in equip.get("mochila", [])}
+    tem = lambda c: c["id"] in comprados or bool(c.get("padrao")) or c.get("item") in na_mochila_kit
     n_arma = int(((lida or {}).get("slots") or {}).get("Inventory.Weapon") or 2)
     onde = {}
     for i in lida_itens:
