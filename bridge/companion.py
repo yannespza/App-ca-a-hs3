@@ -729,6 +729,7 @@ class Companion:
             return []
         for z in lista:
             z["especie_nome"] = nome_especie(z.get("especie")) or z.get("especie")
+            z["grupo"] = grupo_de(z.get("especie"))[0]
         return lista
 
     def pois(self):

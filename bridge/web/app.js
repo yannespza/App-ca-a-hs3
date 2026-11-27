@@ -33,6 +33,32 @@ mapa.fitBounds(limites);
 let camadaImagem = null, camadaNevoa = null, nivelAtual = null, nevoaVersao = 0;
 const grupoPois = L.layerGroup().addTo(mapa);
 const grupoEstr = L.layerGroup();
+const grupoZonas = L.layerGroup().addTo(mapa);
+// zonas de necessidade descobertas (como no mapa do jogo): silhueta da espécie + cor do tipo
+const TIPO_ZONA = { Eating: ["Comer", "comer"], Drinking: ["Beber", "beber"], Sleeping: ["Descansar", "dormir"] };
+let zonasTexto = "";
+async function carregarZonas() {
+  let texto = "", lista = [];
+  try { texto = await (await fetch("/api/zonas")).text(); lista = JSON.parse(texto); } catch { return; }
+  if (texto === zonasTexto) return;
+  zonasTexto = texto;
+  grupoZonas.clearLayers();
+  for (const z of lista) {
+    if (!z.descoberta) continue;
+    const [nome, cls] = TIPO_ZONA[z.tipo] || [z.tipo, "comer"];
+    L.marker(toLL(z), { icon: L.divIcon({ className: "", html: `<div class="mk-zona ${cls}">${silhueta(z.grupo || "outro")}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }) })
+      .bindTooltip(`<b>${esc(z.especie_nome || "")}</b><br>Zona de ${nome.toLowerCase()}`)
+      .on("click", () => { marcarSeguindo(false); abrirZona(z); })
+      .addTo(grupoZonas);
+  }
+}
+let diarioPedido = null;
+function abrirZona(z) {
+  if (!z.especie) return;
+  diarioPedido = z.especie; diarioCat = "animais"; diarioBusca = "";
+  document.querySelector('#abas button[data-aba="enciclopedia"]')?.click();
+  if (diario) desenharDiario();
+}
 const grupoAnimais = L.layerGroup().addTo(mapa);
 const grupoMissoes = L.layerGroup().addTo(mapa);
 let marcJogador = null, marcPino = null;
@@ -103,7 +129,7 @@ function atualizarMapaBase(info) {
     camadaImagem = L.imageOverlay(`/api/mapa.jpg?n=${encodeURIComponent(nivelAtual)}&lado=${lado}`, limites, { className: "mapa-img" }).addTo(mapa);
     camadaImagem.bringToBack();
     nevoaVersao = -1;
-    carregarPois();
+    carregarPois(); carregarZonas();
   }
   if (info.nevoa && info.nevoa_versao !== nevoaVersao) {
     nevoaVersao = info.nevoa_versao;
@@ -111,7 +137,7 @@ function atualizarMapaBase(info) {
     if ($("f-nevoa").checked) nova.addTo(mapa);
     if (camadaNevoa) mapa.removeLayer(camadaNevoa);
     camadaNevoa = nova;
-    carregarPois();
+    carregarPois(); carregarZonas();
   }
 }
 
@@ -185,6 +211,7 @@ function centralizar() {
 mapa.on("dragstart", () => marcarSeguindo(false));
 
 $("f-pois").onchange = (e) => e.target.checked ? grupoPois.addTo(mapa) : mapa.removeLayer(grupoPois);
+$("f-zonas").onchange = (e) => e.target.checked ? grupoZonas.addTo(mapa) : mapa.removeLayer(grupoZonas);
 $("f-estr").onchange = (e) => e.target.checked ? grupoEstr.addTo(mapa) : mapa.removeLayer(grupoEstr);
 $("f-animais").onchange = (e) => e.target.checked ? grupoAnimais.addTo(mapa) : mapa.removeLayer(grupoAnimais);
 $("f-nevoa").onchange = (e) => {
@@ -519,6 +546,7 @@ async function atualizar() {
 atualizar();
 setInterval(atualizar, 2000);
 setInterval(() => { if (nivelAtual) carregarPois(); }, 15000);
+setInterval(() => { if (nivelAtual) carregarZonas(); }, 20000);
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
 
 
@@ -970,6 +998,11 @@ function desenharDiario() {
   }
   const daReserva = (i) => !reservas.length || (i.reservas || []).includes(diarioReserva);
   const lista = cat.itens.filter(i => daReserva(i) && (!q || (i.nome + " " + (i.sub || i.cabecalho || "") + " " + (i.calibre || "")).toLowerCase().includes(q)));
+  if (diarioPedido && cat.id === "animais") {      // aberto pelo mapa (zona de um animal)
+    const alvo = cat.itens.find(i => i.tag === diarioPedido);
+    if (alvo) { diarioSel = alvo.id; diarioAberto = true; if (!lista.includes(alvo)) lista.unshift(alvo); }
+    diarioPedido = null;
+  }
   if (!diarioSel || !lista.some(i => i.id === diarioSel)) diarioSel = (lista[0] || {}).id;
   const grupos = {};
   lista.forEach(i => (grupos[i.cabecalho || i.sub || cat.nome] ||= []).push(i));
