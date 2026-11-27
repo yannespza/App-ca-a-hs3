@@ -347,6 +347,8 @@ def conta(m, evento, dentro, arma_tipo_de):
     """True se o evento conta para o contrato `combo` m."""
     c = m.get("cond") or {}
     tipo = evento.get("tipo")
+    if c.get("carcaca") is not None:
+        return tipo in ("abate_confirmado", "carcaca_recolhida") and str(evento.get("id")) == str(c["carcaca"])
     if c.get("marcar"):
         return tipo == "marcado" and (not m.get("grupo") or evento.get("grupo") == m["grupo"])
     if c.get("visitar"):
@@ -440,3 +442,15 @@ def dica(pergunta):
     temas = [k for k, ps in PALAVRAS_DICA.items() if any(p in t for p in ps)] or ["geral"]
     linhas = [random.choice(DICAS[k]) for k in temas[:2]]
     return " ".join(linhas)
+
+
+def carcaca(id_animal, especie_nome, centro, raio_m=50):
+    """Controle: recolher a carcaça de um animal que morreu de causa natural (missão rápida do Guarda-florestal)."""
+    nome = especie_nome or "animal"
+    m = _base(f"Carcaça de {nome.lower()}",
+              f"Rapaz, achamos um(a) {nome.lower()} morto(a) por causas naturais. Vá até a área marcada, ache a carcaça e recolha antes que atraia predadores.",
+              f"Recolha a carcaça de {nome.lower()} dentro da área marcada no mapa.", 1, 120)
+    m.update({"tipo": "combo", "cond": {"carcaca": id_animal}, "vendedor": "NPC.Vendor.Ranger", "rapida": True,
+              "local": {"x": centro[0], "y": centro[1], "z": centro[2], "nome": f"Área da carcaça (~{raio_m} m)", "raio_m": raio_m}})
+    m["reputacao"] = 15
+    return m

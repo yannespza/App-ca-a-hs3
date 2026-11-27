@@ -895,6 +895,10 @@ class Companion:
             d["abates"].append(ab)
             d["marcados"].pop(id_, None)
             d["posicoes"].pop(id_, None)
+            if id_ in d.get("carcacas", {}):
+                d["carcacas"][id_]["fim"] = time.time()
+                ab["natural"] = True
+                return avaliar_missoes(d, {"tipo": "carcaca_recolhida", "id": id_, "ts": time.time()}, self.reserva())
             return avaliar_missoes(d, dict(ab, tipo="abate_confirmado"), self.reserva())
         elif tipo == "compra":
             d["compras"] = (d["compras"] + [ev])[-50:]
@@ -1140,6 +1144,40 @@ class Companion:
         return {"ok": True, "resposta": resposta}
 
     # --- voltar ao último local
+    def vigiar_mortos(self):
+        """Animal morto de causa natural (o jogo marca no mapa e ninguém atirou nele) vira contrato de recolher a carcaça."""
+        if not self.em_reserva() or time.time() - getattr(self, "_mortos_visto", 0) < 5:
+            return
+        self._mortos_visto = time.time()
+        arq = self.cache.json(self.caminho("mortos.json"), None)
+        if not isinstance(arq, dict) or not isinstance(arq.get("mortos"), list):
+            return
+        d = self.dados
+        carc = d.setdefault("carcacas", {})
+        atuais = {str(m.get("id")): m for m in arq["mortos"] if isinstance(m, dict)}
+        pos = (self.estado or {}).get("pos")
+        reserva = self.reserva()
+        for id_, m in atuais.items():
+            if m.get("tiro") or id_ in carc:
+                continue
+            r = random.Random(f"carcaca{id_}")
+            ang, dist = r.uniform(0, 6.283), r.uniform(5, 35) * 100     # centro da área a até 35 m do animal
+            centro = (m["x"] + dist * math.cos(ang), m["y"] + dist * math.sin(ang), m.get("z", 0))
+            missao = missoes.carcaca(id_, nome_especie(m.get("especie")) if m.get("especie") else None, centro)
+            missao["reserva"] = reserva
+            d["missoes"].append(missao)
+            carc[id_] = {"x": m["x"], "y": m["y"], "missao": missao["id"], "ts": time.time()}
+            self.salvar_pendente = True
+        # sumiu da lista com você perto = recolhida
+        for id_, c in list(carc.items()):
+            if id_ in atuais or c.get("fim"):
+                continue
+            if pos and distancia_m(pos, {"x": c["x"], "y": c["y"], "z": pos.get("z", 0)}) is not None \
+                    and distancia_m(pos, {"x": c["x"], "y": c["y"], "z": pos.get("z", 0)}) < 60:
+                c["fim"] = time.time()
+                avaliar_missoes(d, {"tipo": "carcaca_recolhida", "id": id_, "ts": time.time()}, reserva)
+                self.salvar_pendente = True
+
     def contar_dias(self):
         """Dia do jogo contado pelo app: a hora volta de ~24 para ~0 (noite passando ou "dormir")."""
         h = (self.estado or {}).get("hora")
@@ -1434,11 +1472,14 @@ class Companion:
                 return {"ok": True, "nada": True}
         else:
             return {"ok": False, "erro": "Ação inválida."}
+        linhas, erro = self.com_compras(linhas)
+        if erro:
+            return {"ok": False, "erro": erro}
         foto = self.foto_setup()
         if foto:
             self.dados["setup_anterior"] = foto      # "Setup anterior" = como estava antes desta troca
         if acao in ("setup_voltar", "setup_aplicar"):
-            fase1 = [l for l in linhas if l.split()[1] in ("tirar", "por")]
+            fase1 = [l for l in linhas if l.split()[0] == "mochila" and l.split()[1] in ("tirar", "por")]
             fase2 = [l for l in linhas if l not in fase1]
             if fase1 and fase2:
                 # a arma recém-posta demora para aceitar acessórios: manda munição/acessórios depois
@@ -1455,6 +1496,26 @@ class Companion:
         self._mochila_fila_ate = time.time() + len(linhas) + 3
         self._mochila_pedida = time.time() + len(linhas)
         return {"ok": True, "trocas": len(linhas), "segundos": len(linhas) + 2}
+
+    def com_compras(self, linhas):
+        """Munição/acessório que você ainda não comprou: compra antes de montar (o jogo não aceita item não comprado)."""
+        equip = self.equipamento()
+        comprados = {b["id"] for b in equip.get("comprados", [])}
+        cat = {c.get("id"): c for c in self.catalogo()}
+        cred = (self.estado.get("moedas") or {}).get("Currency.Credits") or 0
+        saida, custo = [], 0
+        for l in linhas:
+            partes = l.split()
+            if len(partes) == 4 and partes[1] in ("municao", "acessorio"):
+                item = cat.get(partes[3]) or {}
+                if item and partes[3] not in comprados and not item.get("padrao"):
+                    custo += item.get("preco") or 0
+                    if custo > cred:
+                        return None, f"Créditos insuficientes para comprar {item.get('nome') or partes[3]}."
+                    saida.append(f"comprar {partes[3]} {uuid.uuid4().hex[:6]}")
+                    comprados.add(partes[3])
+            saida.append(l)
+        return saida, None
 
     # ------------------------------------------------------------ setups da mochila (anterior e salvos)
     def foto_setup(self):
@@ -1609,6 +1670,7 @@ class Companion:
                 mudou = True
             self.cuidar_posicao()
             self.contar_dias()
+            self.vigiar_mortos()
             self.marcar_estruturas_perto()
             self.revisar_contratos()
             if self.em_reserva():

@@ -283,6 +283,7 @@ local function tryHookSpotted()
 end
 
 local ticks = 0
+local mortosAssinatura = nil
 
 ------------------------------------------------------------------ eventos: abates
 local function readKill(info)
@@ -793,6 +794,19 @@ local function periodic()
     -- pontos descobertos a cada 5 min (o app marca na hora as estruturas por onde você passa)
     -- v0.1.34 tinha um gancho na descoberta: fechou o jogo ao descobrir uma estrutura. Não usar.
     if curto and ticks % 300 == 0 then pcall(exportPois) end
+    -- animais mortos no mapa (natural = sem tiro do jogador); só regrava quando a lista muda (v0.1.43)
+    if curto and ticks % 10 == 5 then
+        pcall(function()
+            local ch = loadfile(DIR .. "Scripts\\mortos.lua")
+            if not ch then return end
+            local M = ch()
+            local lista, ass = M.ler()
+            if ass ~= mortosAssinatura then
+                mortosAssinatura = ass
+                writeFile(DIR .. "mortos.json", jsonEncode({ ts = os.time(), mortos = M.completar(lista) }))
+            end
+        end)
+    end
 end
 
 -- utilidades disponíveis para scripts de desenvolvimento (pasta dev\)

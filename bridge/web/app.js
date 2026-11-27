@@ -277,6 +277,12 @@ function atualizarMarcadores(d) {
     marcPino.setLatLng(toLL(pino)).bindTooltip(`${esc(rot)} · ${metros(distancia(st.pos, pino))}`);
   } else if (marcPino) { mapa.removeLayer(marcPino); marcPino = null; }
   grupoMissoes.clearLayers();
+  for (const m of d.ativas) if (m.local && m.local.raio_m) {
+    // área de busca (carcaça): círculo no tamanho real
+    const c = toLL(m.local), borda = toLL({ x: m.local.x + m.local.raio_m * 100, y: m.local.y });
+    L.circle(c, { radius: Math.abs(borda[1] - c[1]), color: "#d39a32", weight: 2, dashArray: "6 5", fillOpacity: 0.12 })
+      .bindTooltip(`<b>${esc(m.titulo)}</b><br>${esc(m.local.nome)}`).addTo(grupoMissoes);
+  }
   for (const m of d.ativas) if (m.local) {
     L.marker(toLL(m.local), { icon: L.divIcon({ className: "", html: '<div class="mk-missao">🚩</div>', iconSize: [24, 24], iconAnchor: [4, 24] }) })
       .bindTooltip(`<b>${esc(m.titulo)}</b><br>${esc(m.local.nome)}`).addTo(grupoMissoes);
