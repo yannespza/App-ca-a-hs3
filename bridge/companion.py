@@ -7,6 +7,7 @@ Só usa a biblioteca padrão do Python.
 import hmac
 import socket
 import json
+import random
 import re
 import urllib.parse
 import math
@@ -853,6 +854,14 @@ class Companion:
         d = self.dados
         tipo = ev.get("tipo")
         if tipo == "marcado":
+            # peso: só uma faixa estimada (~15%), sempre a mesma para o mesmo animal; o peso exato não fica guardado
+            real = ev.pop("peso_kg", None)
+            if isinstance(real, (int, float)) and real > 0:
+                r = random.Random(f"peso{ev.get('id')}")
+                lo = real * (1 - r.uniform(0.02, 0.13))
+                hi = lo * 1.15
+                casas = 1 if real < 5 else 0
+                ev["peso_faixa"] = [round(lo, casas), round(hi, casas)]
             chave, nome = grupo_de(ev.get("especie"))
             ev.update({"grupo": chave, "grupo_nome": nome, "especie_nome": nome_especie(ev.get("especie")),
                        "sexo_nome": SEXO.get(ev.get("sexo"), "?"), "visto_em": time.time(), "reserva": self.nivel()})
@@ -1363,6 +1372,7 @@ class Companion:
             r["lida_idade"] = round(agora - lida["ts"]) if lida and lida.get("ts") else None
             r["fila"] = getattr(self, "_mochila_fila_ate", 0) > agora
             r["tem_anterior"] = bool(self.dados.get("setup_anterior"))
+            r["especies_salvas"] = self.dados.get("mo_especies")
             r["setups"] = [x.get("nome") for x in self.dados.get("setups") or []]
             return r
 
@@ -1427,6 +1437,18 @@ class Companion:
         foto = self.foto_setup()
         if foto:
             self.dados["setup_anterior"] = foto      # "Setup anterior" = como estava antes desta troca
+        if acao in ("setup_voltar", "setup_aplicar"):
+            fase1 = [l for l in linhas if l.split()[1] in ("tirar", "por")]
+            fase2 = [l for l in linhas if l not in fase1]
+            if fase1 and fase2:
+                # a arma recém-posta demora para aceitar acessórios: manda munição/acessórios depois
+                if not self.enviar_comando(fase1):
+                    return {"ok": False, "erro": "O jogo não está respondendo."}
+                threading.Timer(len(fase1) + 4, lambda: self.enviar_comando(fase2)).start()
+                total = len(fase1) + 4 + len(fase2)
+                self._mochila_fila_ate = time.time() + total + 3
+                self._mochila_pedida = time.time() + total
+                return {"ok": True, "trocas": len(linhas), "segundos": total + 2}
         if not self.enviar_comando(linhas):
             return {"ok": False, "erro": "O jogo não está respondendo."}
         # o mod faz uma troca por segundo e depois salva e relê
@@ -1984,6 +2006,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.responder(200, {"ok": bool(ok), "erro": None if ok else "Entre numa reserva no jogo primeiro."})
         if p == "/api/instalacao":
             return self.responder(200, APP.acao_instalacao(corpo))
+        if p == "/api/mo_especies":
+            lista = [str(x) for x in (corpo.get("lista") or []) if re.fullmatch(r"[\w.]+", str(x))][:40]
+            with APP.lock:
+                APP.dados["mo_especies"] = lista
+                salvar_json(DADOS_PATH, APP.dados)
+            return self.responder(200, {"ok": True})
         if p == "/api/setups":
             return self.responder(200, APP.setups(corpo))
         if p == "/api/municao":

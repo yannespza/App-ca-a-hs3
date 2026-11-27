@@ -260,7 +260,16 @@ local function tryHookSpotted()
                 local p = payload:get()
                 local l = p.AnimalLocation
                 especiePorId[p.CreatureId] = { TagName = p.AnimalTag.TagName }
+                -- peso real do animal (o app mostra só uma faixa estimada)
+                local peso
+                pcall(function()
+                    for _, c in ipairs(FindAllOf("AnimalCosmeticsComponent") or {}) do
+                        local ok, id = pcall(function() return c:GetOwner().EcoSimCreatureId end)
+                        if ok and id == p.CreatureId then peso = c.ReplicatedCosmeticInfo.WeightG / 1000; break end
+                    end
+                end)
                 emit("marcado", {
+                    peso_kg = peso,
                     id = p.CreatureId, especie = tagName(p.AnimalTag), sexo = p.AnimalSex,
                     lendario = p.LegendaryStatus, genetica = p.GeneticScore,
                     potencial = p.GeneticPotentialScore, idade_dias = p.AnimalAgeDays,

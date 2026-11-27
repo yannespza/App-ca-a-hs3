@@ -223,11 +223,12 @@ function fichaAnimal(a) {
     <div class="ficha-lin"><span>Genética</span><b>${pct(a.genetica)}</b></div>
     <div class="ficha-barra"><i style="width:${(a.genetica || 0) * 100}%"></i><em style="left:${(pot || 0) * 100}%"></em></div>
     <div class="ficha-lin"><span>Potencial genético</span><b>${pct(pot)}</b></div>
+    ${a.peso_faixa ? `<div class="ficha-lin"><span>Peso estimado</span><b>${a.peso_faixa.map(x => String(x).replace(".", ",")).join("–")} kg</b></div>` : ""}
     <div class="ficha-lin"><span>Distância</span><b>${metros(a.distancia_m)}</b></div>
     <div class="ficha-lin"><span>Direção</span><b>${direcaoTexto(a.direcao)}</b></div>
     <div class="ficha-lin"><span>Posição</span><b>${a.ao_vivo ? "🟢 ao vivo" : "⚪ última conhecida"}</b></div>
     <div class="ficha-lin"><span>Marcado há</span><b>${a.minutos} min</b></div>
-    <div class="ficha-rod">Nº ${esc(a.id)} · clique para colocar um pino até ele</div>
+    <div class="ficha-rod">Nº ${esc(a.id)}</div>
   </div>`;
 }
 
@@ -580,6 +581,15 @@ async function renderArmario(forcar) {
   if (!forcar && assin === moAssinatura && p.innerHTML) return;
   moAssinatura = assin;
   mochilaDados = d;
+  // espécies escolhidas ficam guardadas no app do PC: valem no PC e no celular
+  if (!moEspSincronizado && Array.isArray(d.especies_salvas)) {
+    moEspSincronizado = true;
+    if (JSON.stringify(d.especies_salvas) !== JSON.stringify(mochilaEspecies)) {
+      mochilaEspecies = d.especies_salvas;
+      try { localStorage.setItem("hs3_mo_esp", JSON.stringify(mochilaEspecies)); } catch {}
+      return renderArmario(true);
+    }
+  }
   if (!d.pronto) {
     p.innerHTML = `<div class="mo-vazio-grande"><b>Falta ler os dados do jogo</b><span>Abra a aba <b>Diário de campo</b> e clique em “Ler dados do jogo” com o jogo aberto numa reserva.</span></div>`;
     return;
@@ -692,8 +702,11 @@ function moNumero(tipo, idx) {
 const moOnde = (tipo, idx) => { const n = moNumero(tipo, idx); return n ? `espaço ${n}` : "GPS"; };
 
 // ---- espécies escolhidas para a mochila
+let moEspSincronizado = false;
 function moEspSalvar() {
   try { localStorage.setItem("hs3_mo_esp", JSON.stringify(mochilaEspecies)); } catch {}
+  moEspSincronizado = true;
+  post("/api/mo_especies", { lista: mochilaEspecies }).catch(() => {});
   renderArmario(true);
 }
 function moEspAlternar(tag) {
