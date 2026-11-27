@@ -282,6 +282,27 @@ local function readKill(info)
     pcall(function() t.zona = tagName(info.Zone) end)
     pcall(function() t.regiao = info.Region:ToString() end)
     pcall(function() t.genetica = info.ScoreInfo.GeneticScore end)
+    -- ficha completa da carcaça (v0.1.41): peso, idade, potencial, pontuação, lendário, área
+    pcall(function() t.potencial = info.ScoreInfo.MaxGeneticPotential end)
+    pcall(function() t.creditos_jogo = info.ScoreInfo.Credits end)
+    pcall(function() t.xp_jogo = info.ScoreInfo.XP end)
+    pcall(function() t.area = info.Area.PrimaryAssetName:ToString() end)
+    pcall(function()
+        local c = info.AnimalCosmeticInfo
+        t.especie_jogo = tagName(c.AnimalTag)
+        t.sexo = c.Sex
+        t.lendario = c.LegendaryStatus
+        t.faixa_idade = c.AgeGroup
+        t.idade_dias = c.AgeDays
+        t.peso_kg = c.WeightG / 1000
+    end)
+    pcall(function()
+        local e = info.ScoreInfo.AnimalScoreSummary.Entries
+        local pts, maxp = 0, 0
+        for j = 1, #e do pts = pts + (e[j].ScoreModifier or 0); maxp = maxp + (e[j].ScoreMax or 0) end
+        t.pontos_trofeu, t.pontos_max = pts, maxp
+    end)
+    pcall(function() t.morte_ticks = info.TimeOfDeath.Ticks end)
     pcall(function() t.classe = info.Animal:GetClass():GetFName():ToString() end)
     pcall(function()
         local a = info.Animal:K2_GetActorLocation()
@@ -308,9 +329,19 @@ local function readKill(info)
                 t.especie = tagName(esp)
             end
         end)
+        -- primeiro impacto: hora do tiro (tempo até a morte) e velocidade do animal (alvo em movimento)
+        pcall(function()
+            local h = shot.SingleHits[1]
+            t.tiro_ticks = h.TimeOfShot.Ticks
+            local v = h.AnimalVelocity
+            t.vel_animal = math.sqrt(v.X * v.X + v.Y * v.Y) / 100
+        end)
         local o = shot.ProjectileOrigin
         t.origem = { x = o.X, y = o.Y, z = o.Z }
     end)
+    if t.morte_ticks and t.tiro_ticks and t.morte_ticks >= t.tiro_ticks then
+        t.segundos_ate_morte = (t.morte_ticks - t.tiro_ticks) / 1e7
+    end
     if t.pos and t.origem then
         local dx, dy, dz = t.pos.x - t.origem.x, t.pos.y - t.origem.y, t.pos.z - t.origem.z
         t.distancia_m = math.sqrt(dx * dx + dy * dy + dz * dz) / 100
@@ -400,6 +431,22 @@ local function exportPois()
         end)
     end
     writeFile(DIR .. "pois_" .. curto .. ".json", jsonEncode(lista))
+    -- zonas de necessidade (comer, beber, dormir) com o estado de descoberta (v0.1.41)
+    pcall(function()
+        local zonas = {}
+        for _, z in ipairs(FindAllOf("AnimalZoneBase") or {}) do
+            pcall(function()
+                local zt = tagName(z.ZoneTag)
+                if not zt or zt:find("Burrow") or not (zt:find("Eating") or zt:find("Drinking") or zt:find("Sleeping")) then return end
+                local l = z:K2_GetActorLocation()
+                if math.abs(l.X) < 1 and math.abs(l.Y) < 1 then return end
+                local h = z.NavigationActorComponent.NavigationActorData.Hash
+                zonas[#zonas + 1] = { especie = tagName(z.CreatureTag), tipo = zt:match("([^%.]+)$"), x = l.X, y = l.Y,
+                    raio = z.ZoneRadius, grupo = z.GroupID, hash = h, descoberta = estados[h] == "Map.UI.POI.Discovered" }
+            end)
+        end
+        writeFile(DIR .. "zonas_" .. curto .. ".json", jsonEncode(zonas))
+    end)
 end
 
 local function exportFog()

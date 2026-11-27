@@ -500,9 +500,12 @@ async function atualizar() {
   };
   barras(s.por_grupo || [], "cac-especies");
   barras((s.por_arma || []).map(([n, v]) => [n.replace(/^ID_/, "").replace(/_/g, " "), v]), "cac-armas");
-  $("ultimos").innerHTML = d.abates.length ? `<table class="tabela"><thead><tr><th>Animal</th><th>Genética</th><th>Distância</th><th>Arma</th><th>Reserva</th></tr></thead><tbody>` +
+  $("ultimos").innerHTML = d.abates.length ? `<table class="tabela"><thead><tr><th>Animal</th><th>Peso</th><th>Troféu</th><th>Genética</th><th>Distância</th><th>Morte</th><th>Arma</th><th>Reserva</th></tr></thead><tbody>` +
     d.abates.slice(0, 15).map(a => `<tr><td><b>${esc(a.especie_nome || a.grupo_nome)}</b>${a.sexo_nome && a.sexo_nome !== "?" ? ` <small>${esc(a.sexo_nome)}</small>` : ""}</td>
-      <td>${pct(a.genetica)}</td><td>${metros(a.distancia_m)}</td><td>${esc((a.arma || "").replace(/^ID_/, "").replace(/_/g, " "))}</td><td>${esc(a.reserva ? nomeMapa(a.reserva) : "–")}</td></tr>`).join("") + `</tbody></table>`
+      <td>${a.peso_kg ? `${a.peso_kg.toFixed(1).replace(".", ",")} kg` : "–"}</td>
+      <td>${a.pontos_trofeu ? `${a.pontos_trofeu.toFixed(1).replace(".", ",")}${a.lendario ? " ★" : ""}` : "–"}</td>
+      <td>${pct(a.genetica)}</td><td>${metros(a.distancia_m)}</td>
+      <td title="Tempo entre o tiro e a morte">${a.segundos_ate_morte != null ? `${a.segundos_ate_morte < 10 ? a.segundos_ate_morte.toFixed(1).replace(".", ",") : Math.round(a.segundos_ate_morte)} s` : "–"}</td><td>${esc((a.arma || "").replace(/^ID_/, "").replace(/_/g, " "))}</td><td>${esc(a.reserva ? nomeMapa(a.reserva) : "–")}</td></tr>`).join("") + `</tbody></table>`
     : `<p class="vazio">Nenhum abate ainda. Cada animal recolhido no jogo aparece aqui.</p>`;
 }
 

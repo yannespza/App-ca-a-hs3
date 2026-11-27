@@ -571,7 +571,8 @@ class Companion:
         for chave, padrao in (("missoes", []), ("abates", []), ("marcados", {}), ("grupos_vistos", []),
                               ("eventos_offset", 0), ("pagamentos_dia", {}), ("recompensas", []),
                               ("chat", []), ("pino_app", None), ("posicoes", {}), ("ultima_pos", {}),
-                              ("especies_vistas", {}), ("compras", []), ("reputacao_maxima", 0)):
+                              ("especies_vistas", {}), ("compras", []), ("reputacao_maxima", 0),
+                              ("dia_jogo", 0), ("avistamentos", [])):
             d.setdefault(chave, padrao)
 
     # --- instalação e jogo novo
@@ -717,6 +718,18 @@ class Companion:
                 self.dados["posicoes"][id_] = {"x": a["x"], "y": a["y"], "z": a["z"], "yaw": a.get("yaw"),
                                                "ts": vivos.get("ts", time.time())}
 
+    def zonas(self):
+        """Zonas de necessidade da reserva atual (exportadas pelo mod com o estado de descoberta)."""
+        nivel = self.nivel()
+        if not nivel:
+            return []
+        lista = carregar_json(self.caminho(f"zonas_{nivel}.json"), []) or []
+        if not isinstance(lista, list):
+            return []
+        for z in lista:
+            z["especie_nome"] = nome_especie(z.get("especie")) or z.get("especie")
+        return lista
+
     def pois(self):
         nivel = self.nivel()
         if not nivel:
@@ -847,6 +860,13 @@ class Companion:
             if novo and ev.get("especie"):
                 d["especies_vistas"][ev["especie"]] = d["especies_vistas"].get(ev["especie"], 0) + 1
             d["marcados"][str(ev.get("id"))] = ev
+            # histórico de avistamentos (base do censo e do manejo); o mesmo animal só entra de novo após 10 min
+            av = d["avistamentos"]
+            ult = next((x for x in reversed(av[-200:]) if x.get("id") == ev.get("id")), None)
+            if not ult or time.time() - ult.get("ts", 0) > 600:
+                av.append({k: ev.get(k) for k in ("id", "especie", "sexo", "potencial", "genetica", "idade_dias", "lendario", "pos")}
+                          | {"ts": time.time(), "dia": d.get("dia_jogo", 0), "hora": (self.estado or {}).get("hora"), "reserva": self.nivel()})
+                del av[:-4000]
             self.registrar_grupo(chave)
             if novo:
                 return avaliar_missoes(d, {"tipo": "marcado", "id": ev.get("id"), "ts": time.time()}, self.reserva())
@@ -856,10 +876,11 @@ class Companion:
                 return []
             ab = dict(ev)
             marc = d["marcados"].get(id_)
-            especie = (marc or {}).get("especie")
+            especie = (marc or {}).get("especie") or ab.get("especie_jogo")
             chave, nome = grupo_de(especie or ab.get("classe"))
             ab.update({"grupo": chave, "grupo_nome": nome, "especie": especie,
-                       "especie_nome": nome_especie(especie) or nome, "sexo_nome": (marc or {}).get("sexo_nome"),
+                       "especie_nome": nome_especie(especie) or nome, "sexo_nome": (marc or {}).get("sexo_nome") or SEXO.get(ab.get("sexo")),
+                       "dia_jogo": d.get("dia_jogo", 0), "hora_jogo": (self.estado or {}).get("hora"),
                        "acao_nome": ACOES.get(ab.get("acao"), "Recolhido"), "ts": time.time(), "reserva": self.nivel()})
             self.registrar_grupo(chave)
             d["abates"].append(ab)
@@ -1110,6 +1131,17 @@ class Companion:
         return {"ok": True, "resposta": resposta}
 
     # --- voltar ao último local
+    def contar_dias(self):
+        """Dia do jogo contado pelo app: a hora volta de ~24 para ~0 (noite passando ou "dormir")."""
+        h = (self.estado or {}).get("hora")
+        if not isinstance(h, (int, float)) or not self.em_reserva():
+            return
+        antes = getattr(self, "_hora_antes", None)
+        self._hora_antes = h
+        if antes is not None and h < antes - 6:
+            self.dados["dia_jogo"] = self.dados.get("dia_jogo", 0) + 1
+            salvar_json(DADOS_PATH, self.dados)
+
     def cuidar_posicao(self):
         nivel = self.nivel() if self.em_reserva() else None
         agora = time.time()
@@ -1463,6 +1495,7 @@ class Companion:
                 self.processar(ev)
                 mudou = True
             self.cuidar_posicao()
+            self.contar_dias()
             self.marcar_estruturas_perto()
             self.revisar_contratos()
             if self.em_reserva():
@@ -1729,6 +1762,9 @@ class Handler(BaseHTTPRequestHandler):
         if caminho == "/api/pois":
             with APP.lock:
                 return self.responder(200, [{k: v for k, v in p.items() if not k.startswith("_")} for p in APP.pois()])
+        if caminho == "/api/zonas":
+            with APP.lock:
+                return self.responder(200, APP.zonas())
         if caminho == "/api/mochila":
             q = urllib.parse.parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
             ids = [x for x in (q.get("missoes", [""])[0]).split(",") if x]
