@@ -848,6 +848,12 @@ LoopAsync(1000, function()
                         local tag, preco, r = line:match("^licenca%s+(%S+)%s+(%d+)%s*(%S*)")
                         if tag and not jaPago("licenca", r) then li.comprar(ctxScripts(), tag, tonumber(preco), r) end
                     end
+                elseif cmd == "municao" then
+                    -- municao [créditos por bala] [ref]: enche a reserva das armas da mochila até o máximo do jogo
+                    local ch, e = loadfile(DIR .. "Scripts\\municao.lua")
+                    if not ch then log("municao.lua: " .. tostring(e)); return end
+                    local preco, r = line:match("^municao%s*(%d*)%s*(%S*)")
+                    if not jaPago("municao", r) then ch().recarregar(ctxScripts(), tonumber(preco) or 0, r) end
                 elseif cmd == "script" and arg ~= "" and arg:match("^[%w_%-]+%.lua$") then
                     local chunk, e = loadfile(DIR .. "dev" .. "\\" .. arg)
                     if not chunk then log("script erro ao carregar: " .. tostring(e)); return end

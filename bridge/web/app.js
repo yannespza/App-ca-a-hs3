@@ -559,6 +559,14 @@ const moFoto = (i, cls) => `<div class="mo-foto ${cls || ""}">${i && i.imagem ? 
 const moSelo = (i) => i.serve ? `<span class="mo-selo sim">✔ serve</span>` : i.serve === false ? `<span class="mo-selo nao">não serve</span>` : "";
 
 function lidaJa(d) { return d.lida_ts && d.mochila.length; }
+async function moRecarregar() {
+  const b = document.querySelector(".mo-recarregar");
+  if (b) { b.disabled = true; b.textContent = "Recarregando…"; }
+  let r;
+  try { r = await (await fetch("/api/municao", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })).json(); } catch { r = { ok: false, erro: "Sem resposta do app." }; }
+  if (b) b.textContent = r.ok ? "✔ Pedido enviado ao jogo" : (r.erro || "Não deu");
+  setTimeout(() => renderArmario(true), 2500);
+}
 async function renderArmario(forcar) {
   const p = $("painel-armario");
   if (!forcar && (document.querySelector(".mo-modal") || p.contains(document.activeElement) && ["SELECT", "INPUT"].includes(document.activeElement.tagName))) return;
@@ -652,7 +660,7 @@ async function renderArmario(forcar) {
 
   p.innerHTML = `<div class="mochila">
     <div class="mo-topo">
-      <div><h2>Mochila ${ajuda("mochila")}</h2>${status}</div>
+      <div><h2>Mochila ${ajuda("mochila")}</h2>${status}${d.em_reserva ? ` <button class="btn-papel mo-recarregar" onclick="moRecarregar()" title="Enche a reserva de munição das armas da mochila até o máximo do jogo">↻ Recarregar munição</button>` : ""}</div>
       <div class="mo-montar">${botaoMontar}${plano.length ? ajuda("mochila_montar") : ""}</div>
     </div>
     <div class="mo-bloco">

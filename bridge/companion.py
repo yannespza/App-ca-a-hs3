@@ -1289,6 +1289,15 @@ class Companion:
             atual = None      # leitura de outra reserva: não vale para comprar aqui
         return atual, self._licencas_todas
 
+    def recarregar_municao(self):
+        """Enche a reserva de munição das armas da mochila (no jogo a munição não custa nada)."""
+        if not self.em_reserva():
+            return {"ok": False, "erro": "Entre numa reserva no jogo primeiro."}
+        ref = uuid.uuid4().hex[:6]
+        if not self.enviar_comando([f"municao 0 {ref}"]):
+            return {"ok": False, "erro": "O jogo não está respondendo."}
+        return {"ok": True, "ref": ref}
+
     def comprar_licenca(self, tag):
         if not re.fullmatch(r"Animals\.Types\.[\w.]+", tag or ""):
             return {"ok": False, "erro": "Espécie inválida."}
@@ -1893,6 +1902,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.responder(200, {"ok": bool(ok), "erro": None if ok else "Entre numa reserva no jogo primeiro."})
         if p == "/api/instalacao":
             return self.responder(200, APP.acao_instalacao(corpo))
+        if p == "/api/municao":
+            return self.responder(200, APP.recarregar_municao())
         if p == "/api/licenca":
             return self.responder(200, APP.comprar_licenca(str(corpo.get("tag") or "")))
         if p == "/api/comprar":
