@@ -662,6 +662,11 @@ async function renderArmario(forcar) {
     <div class="mo-topo">
       <div><h2>Mochila ${ajuda("mochila")}</h2>${status}${d.em_reserva ? ` <button class="btn-papel mo-recarregar" onclick="moRecarregar()" title="Enche a reserva de munição das armas da mochila até o máximo do jogo">↻ Recarregar munição</button>` : ""}</div>
       <div class="mo-montar">${botaoMontar}${plano.length ? ajuda("mochila_montar") : ""}</div>
+      <div class="mo-setups">
+        <button class="btn-papel" ${pode && d.tem_anterior ? "" : "disabled"} onclick="moAcao({acao:'setup_voltar'})" title="Desfaz a última troca feita pelo app">↶ Setup anterior</button>
+        ${(d.setups || []).map((n, i) => `<span class="mo-setup"><button class="btn-papel" ${pode ? "" : "disabled"} onclick="moAcao({acao:'setup_aplicar', idx:${i}})" title="Enviar este setup para a mochila">${esc(n)}</button><button class="mo-setup-x" onclick="moSetup('apagar', ${i})" title="Apagar">×</button></span>`).join("")}
+        <span class="mo-setup-novo"><input id="mo-setup-nome" maxlength="40" placeholder="Nome do setup (ex.: Cervos Colorado)"><button class="btn-papel" ${lida ? "" : "disabled"} onclick="moSetup('salvar')">Salvar setup atual</button></span>
+      </div>
     </div>
     <div class="mo-bloco">
       <div class="mo-rotulo">1 · O que você vai caçar? ${ajuda("mochila_especies")}</div>
@@ -836,6 +841,14 @@ async function moAcao(corpo) {
   setTimeout(() => renderArmario(true), (seg + 5) * 1000);
 }
 
+async function moSetup(acao, idx) {
+  if (acao === "apagar" && !await perguntar("Apagar este setup salvo?", "Apagar")) return;
+  const nome = acao === "salvar" ? ($("mo-setup-nome")?.value || "") : undefined;
+  let r;
+  try { r = await post("/api/setups", { acao, idx, nome }); } catch { return moAviso("O app não respondeu.", "erro"); }
+  moAviso(r.ok ? (acao === "salvar" ? "Setup salvo." : "Setup apagado.") : (r.erro || "Não deu certo."), r.ok ? "ok" : "erro");
+  renderArmario(true);
+}
 function moConfirmarMontar() {
   const plano = mochilaDados.plano || [];
   const tipoNome = (t) => (MO_TIPOS.find(x => x.tipo === t) || {}).nome || t;

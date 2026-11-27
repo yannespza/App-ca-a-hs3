@@ -1362,6 +1362,8 @@ class Companion:
             r["no_jogo"] = r["em_reserva"]
             r["lida_idade"] = round(agora - lida["ts"]) if lida and lida.get("ts") else None
             r["fila"] = getattr(self, "_mochila_fila_ate", 0) > agora
+            r["tem_anterior"] = bool(self.dados.get("setup_anterior"))
+            r["setups"] = [x.get("nome") for x in self.dados.get("setups") or []]
             return r
 
     def acao_mochila(self, corpo):
@@ -1406,14 +1408,94 @@ class Companion:
                     linhas.append(f"mochila municao {t['arma']} {t['municao']}")
             if not linhas:
                 return {"ok": True, "nada": True}
+        elif acao == "setup_voltar":
+            linhas = self.plano_setup(self.dados.get("setup_anterior"))
+            if linhas is None:
+                return {"ok": False, "erro": "Ainda não há um setup anterior guardado."}
+            if not linhas:
+                return {"ok": True, "nada": True}
+        elif acao == "setup_aplicar":
+            setups = self.dados.get("setups") or []
+            i = int(corpo.get("idx") if str(corpo.get("idx", "")).isdigit() else -1)
+            if not 0 <= i < len(setups):
+                return {"ok": False, "erro": "Setup não encontrado."}
+            linhas = self.plano_setup(setups[i].get("foto"))
+            if not linhas:
+                return {"ok": True, "nada": True}
         else:
             return {"ok": False, "erro": "Ação inválida."}
+        foto = self.foto_setup()
+        if foto:
+            self.dados["setup_anterior"] = foto      # "Setup anterior" = como estava antes desta troca
         if not self.enviar_comando(linhas):
             return {"ok": False, "erro": "O jogo não está respondendo."}
         # o mod faz uma troca por segundo e depois salva e relê
         self._mochila_fila_ate = time.time() + len(linhas) + 3
         self._mochila_pedida = time.time() + len(linhas)
         return {"ok": True, "trocas": len(linhas), "segundos": len(linhas) + 2}
+
+    # ------------------------------------------------------------ setups da mochila (anterior e salvos)
+    def foto_setup(self):
+        """Retrato da mochila agora: o que está em cada espaço e munição/acessórios de cada arma."""
+        lida = self._lida_mochila()
+        if not lida or not lida.get("itens"):
+            return None
+        itens = [{"tipo": i.get("tipo"), "idx": i.get("idx"), "item": i.get("item")} for i in lida["itens"]
+                 if i.get("tipo") in ("Inventory.Weapon", "Inventory.Objects") and i.get("item")]
+        mun = lida.get("municao") if isinstance(lida.get("municao"), dict) else {}
+        return {"itens": itens, "armas": {k: list(v) for k, v in mun.items()}, "ts": time.time()}
+
+    def plano_setup(self, foto):
+        """Comandos para deixar a mochila igual à foto (None = sem foto)."""
+        if not foto:
+            return None
+        agora = self.foto_setup()
+        if not agora:
+            return []
+        ok_id = lambda x: bool(x) and bool(re.fullmatch(r"[\w:.\-]+", str(x)))
+        atual = {(i["tipo"], i["idx"]): i["item"] for i in agora["itens"]}
+        onde = {i["item"]: (i["tipo"], i["idx"]) for i in agora["itens"]}
+        linhas = []
+        for i in foto.get("itens") or []:
+            chave = (i.get("tipo"), i.get("idx"))
+            if atual.get(chave) == i.get("item") or not ok_id(i.get("item")):
+                continue
+            if i["item"] in onde:
+                linhas.append(f"mochila tirar {i['item']}")
+            linhas.append(f"mochila por {i['item']} {i['tipo']} {int(i['idx'])}")
+        armas_agora = agora.get("armas") or {}
+        for arma, quer in (foto.get("armas") or {}).items():
+            if not ok_id(arma):
+                continue
+            tem = set(armas_agora.get(arma) or [])
+            for x in quer:
+                if x not in tem and ok_id(x):
+                    linhas.append(f"mochila {'municao' if '_Ammo_' in x else 'acessorio'} {arma} {x}")
+            for x in tem - set(quer):
+                if "_Ammo_" not in x and ok_id(x):
+                    linhas.append(f"mochila tirar_acessorio {arma} {x}")
+        return linhas
+
+    def setups(self, corpo):
+        """Predefinições de setup com nome: listar, salvar o atual, apagar."""
+        lista = self.dados.setdefault("setups", [])
+        acao = corpo.get("acao")
+        if acao == "salvar":
+            nome = str(corpo.get("nome") or "").strip()[:40] or f"Setup {len(lista) + 1}"
+            foto = self.foto_setup()
+            if not foto:
+                return {"ok": False, "erro": "A mochila ainda não foi lida do jogo."}
+            lista.append({"nome": nome, "foto": foto})
+            del lista[:-20]
+        elif acao == "apagar" and str(corpo.get("idx", "")).isdigit() and int(corpo["idx"]) < len(lista):
+            lista.pop(int(corpo["idx"]))
+        elif acao == "renomear" and str(corpo.get("idx", "")).isdigit() and int(corpo["idx"]) < len(lista):
+            lista[int(corpo["idx"])]["nome"] = str(corpo.get("nome") or "").strip()[:40] or lista[int(corpo["idx"])]["nome"]
+        salvar_json(DADOS_PATH, self.dados)
+        return {"ok": True, "setups": [{"nome": x["nome"], "armas": [i["item"].split("ID_", 1)[-1].replace("_", " ")
+                                                                    for i in x["foto"]["itens"] if i["tipo"] == "Inventory.Weapon"]}
+                                       for x in lista],
+                "tem_anterior": bool(self.dados.get("setup_anterior"))}
 
     def dados_loja(self):
         with self.lock:
@@ -1902,6 +1984,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.responder(200, {"ok": bool(ok), "erro": None if ok else "Entre numa reserva no jogo primeiro."})
         if p == "/api/instalacao":
             return self.responder(200, APP.acao_instalacao(corpo))
+        if p == "/api/setups":
+            return self.responder(200, APP.setups(corpo))
         if p == "/api/municao":
             return self.responder(200, APP.recarregar_municao())
         if p == "/api/licenca":

@@ -761,3 +761,13 @@ body.apk .so-apk { display: inline-flex !important; }
 }
 
 .btn-mapa.ativo { outline: 2px solid var(--blaze); outline-offset: -2px; }
+
+/* setups da mochila */
+.mo-setups { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0 4px; }
+.mo-setup { display: inline-flex; align-items: center; }
+.mo-setup .btn-papel { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.mo-setup-x { border: 1px solid var(--linha-2); border-left: 0; background: var(--casca-2); color: var(--nevoa); border-radius: 0 7px 7px 0; padding: 6px 8px; cursor: pointer; }
+.mo-setup-novo { display: inline-flex; gap: 6px; margin-left: auto; }
+.mo-setup-novo input { background: var(--casca-2); border: 1px solid var(--linha-2); color: var(--nevoa); border-radius: 7px; padding: 6px 8px; min-width: 200px; }
+.mo-recarregar { margin-left: 8px; }
+@media (max-width: 820px) { .mo-setup-novo { margin-left: 0; width: 100%; } .mo-setup-novo input { flex: 1; min-width: 0; } }
