@@ -1465,6 +1465,25 @@ class Companion:
             atual = None      # leitura de outra reserva: não vale para comprar aqui
         return atual, self._licencas_todas
 
+    NIVEL_EARL, MAX_NIVEL_EARL = 200, 10
+
+    def pontos_earl(self):
+        """Pontos próprios do Earl (todas as reservas): a reputação de cada contrato dele que foi pago,
+        menos a perda dos contratos abortados. Entram na patente no recálculo final."""
+        v = 0
+        for m in self.dados.get("missoes") or []:
+            if m.get("status") == "paga":
+                v += int(m.get("reputacao") or 0)
+            elif (m.get("penalidade") or {}).get("reputacao"):
+                v -= int(m["penalidade"]["reputacao"])
+        v = max(0, v)
+        nv = min(self.MAX_NIVEL_EARL, v // self.NIVEL_EARL)
+        topo = nv >= self.MAX_NIVEL_EARL
+        return {"nome": "Earl", "valor": v, "nivel": nv, "max": self.MAX_NIVEL_EARL,
+                "proximo": None if topo else (nv + 1) * self.NIVEL_EARL,
+                "progresso": 1.0 if topo else (v - nv * self.NIVEL_EARL) / self.NIVEL_EARL,
+                "contratos": sum(1 for m in self.dados.get("missoes") or [] if m.get("status") == "paga")}
+
     def vigiar_licencas(self):
         """Espécies da reserva atual com 1 ou 0 animal restante na licença (aviso no mapa)."""
         if not self.em_reserva() or time.time() - getattr(self, "_lic_vista", 0) < 5:
@@ -2021,6 +2040,7 @@ class Companion:
                 agentes.append({"tag": tag, "nome": nome, "valor": v, "nivel": nivel,
                                 "proximo": None if nivel >= 5 else (nivel + 1) * 200,
                                 "progresso": 1.0 if nivel >= 5 else (v - nivel * 200) / 200})
+            earl = self.pontos_earl()
             r_atual = self.reserva()
             lista = [m for m in self.dados["missoes"] if r_atual and m.get("reserva") == r_atual]
             for m in lista:
@@ -2031,7 +2051,7 @@ class Companion:
                 "conectado": self.conectado(),
                 "em_reserva": self.em_reserva(),
                 "estado": st,
-                "reputacao_mapa_atual": rep, "agentes": agentes,
+                "reputacao_mapa_atual": rep, "agentes": agentes, "earl": earl,
                 "mapa": self.info_mapa(),
                 "pino_app": self.dados.get("pino_app"),
                 "rastreados": rastreados, "ultimo_marcado": getattr(self, "ultimo_marcado", None),

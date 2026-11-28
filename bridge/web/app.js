@@ -646,7 +646,7 @@ async function atualizar() {
   $("btn-voltar").style.display = d.tem_local_salvo ? "" : "none";
   $("aviso-teleporte").textContent = d.aviso_teleporte || "";
   const ag = d.agentes || [];
-  agentesDados = ag;
+  agentesDados = ag; earlDados = d.earl || null;
   const total = ag.reduce((t, a) => t + a.valor, 0);
   $("p-rep").textContent = ag.length ? `${fmt(total)}` : "–";
   $("p-rep").title = ag.map(a => `${a.nome}: nível ${a.nivel} (${a.valor})`).join("\n");
@@ -762,15 +762,20 @@ async function moRecarregar() {
   if (b) b.textContent = r.ok ? "✔ Pedido enviado ao jogo" : (r.erro || "Não deu");
   setTimeout(() => renderArmario(true), 2500);
 }
-let agentesDados = [];
+let agentesDados = [], earlDados = null;
 function abrirAgentes() {
+  const e = earlDados;
+  const linhaEarl = e ? `<div class="ag-lin ag-earl"><div class="ag-cab"><b>Earl</b><span>Nível ${e.nivel}${e.nivel >= e.max ? " (máximo)" : ""}</span></div>
+    <div class="ag-barra"><i style="width:${Math.round(e.progresso * 100)}%"></i></div>
+    <small>${fmt(e.valor)} pontos · ${e.contratos} contrato${e.contratos === 1 ? "" : "s"} pago${e.contratos === 1 ? "" : "s"}, todas as reservas${e.proximo ? ` · faltam ${fmt(e.proximo - e.valor)} para o nível ${e.nivel + 1}` : ""}</small></div>` : "";
   const linhas = agentesDados.map(a => `<div class="ag-lin"><div class="ag-cab"><b>${esc(a.nome)}</b><span>Nível ${a.nivel}${a.nivel >= 5 ? " (máximo)" : ""}</span></div>
     <div class="ag-barra"><i style="width:${Math.round(a.progresso * 100)}%"></i></div>
     <small>${fmt(a.valor)} pontos${a.proximo ? ` · faltam ${fmt(a.proximo - a.valor)} para o nível ${a.nivel + 1}` : ""}</small></div>`).join("");
   moModal(`<header class="mo-jan-topo"><div><h3>Reputação nesta reserva</h3><small>Os quatro agentes de campo do jogo</small></div>
       <button class="mo-x" onclick="moFecharModal()">✕</button></header>
     <div class="mo-jan-corpo ag-lista">${linhas || "<p>Entre numa reserva para ver a reputação dos agentes.</p>"}
-    <p class="mo-dica">Cada nível pede 200 pontos (até 1000). Os contratos do Earl dizem antes de aceitar qual agente recebe os pontos.</p></div>`);
+    <p class="mo-dica">Cada nível pede 200 pontos (até 1000). Os contratos do Earl dizem antes de aceitar qual agente recebe os pontos.</p>
+    ${linhaEarl}<p class="mo-dica">O Earl também ganha pontos com cada contrato dele que você completa (abortar tira). No fim, a patente vai somar os agentes de todas as reservas e o Earl.</p></div>`);
 }
 const moMunSel = {};   // munição escolhida no carrossel (ainda não mandada para o jogo), por arma
 function moMunPassar(arma, n, passo, k) { moMunSel[arma] = (k + passo + n) % n; renderArmario(true); }

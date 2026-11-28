@@ -880,3 +880,5 @@ body.apk .so-apk { display: inline-flex !important; }
 .lic-item.zerou { border-color: #d0573f; background: rgba(52, 18, 12, .94); }
 .lic-item.zerou b { color: #ff9b85; }
 @media (max-width: 700px) { .lic-item { font-size: 12px; padding: 6px 10px; } }
+.ag-earl { border-top: 1px dashed var(--linha); padding-top: 10px; margin-top: 6px; }
+.ag-earl .ag-barra i { background: linear-gradient(90deg, #8a6a2a, #e0b04a); }
