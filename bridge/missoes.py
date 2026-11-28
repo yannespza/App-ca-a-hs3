@@ -468,6 +468,7 @@ def agente_de(m):
     c = m.get("cond") or {}
     if c.get("marcar") or c.get("visitar") or c.get("carcaca") is not None:
         return "NPC.Vendor.Ranger"                 # censo, reconhecimento, manejo
-    if c.get("variedade") or (m.get("meta") or 1) >= 3 and not c.get("dist_min"):
-        return "NPC.Vendor.Butcher"                # volume de carne, várias espécies
-    return "NPC.Vendor.SportsShooter"              # tiro, distância, troféu
+    tiro = ("dist_min", "um_tiro", "arma", "calibre", "nao_detectado", "genetica", "sexo")
+    if any(k in c for k in tiro):
+        return "NPC.Vendor.SportsShooter"          # tiro, distância, troféu, equipamento
+    return "NPC.Vendor.Butcher"                    # abate simples, várias espécies, atrair: carne

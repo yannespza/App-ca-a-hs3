@@ -149,7 +149,7 @@ def patente(abates, missoes):
 
 
 CABECALHOS = {
-    "BigGame": "Caça grossa", "SmallGame": "Caça miúda", "Predators": "Predadores", "Predator": "Predadores",
+    "BigGame": "Animais de grande porte", "SmallGame": "Animais de pequeno porte", "Predators": "Predadores", "Predator": "Predadores",
     "Birds": "Aves", "Bird": "Aves", "UplandBirds": "Aves de campo", "UplandGame": "Aves de campo", "Waterfowl": "Aves aquáticas", "Varmint": "Pragas",
 }
 MEDALHAS = {"Bronze": "Bronze", "Silver": "Prata", "Gold": "Ouro", "Diamond": "Diamante", "Platinum": "Platina"}
@@ -309,7 +309,7 @@ def enciclopedia_jogo(dados, calibres, catalogo_equip, abates, vistos, nome_espe
     for x in animais:
         if contagem[x["nome"]] > 1 and x["reservas"]:
             x["nome"] = f'{x["nome"]} ({", ".join(x["reservas"])})'
-    ordem_cab = ["Caça grossa", "Predadores", "Caça miúda", "Aves de campo", "Aves aquáticas", "Aves", "Pragas"]
+    ordem_cab = ["Animais de grande porte", "Predadores", "Animais de pequeno porte", "Aves de campo", "Aves aquáticas", "Aves", "Pragas"]
     animais.sort(key=lambda x: (ordem_cab.index(x["cabecalho"]) if x["cabecalho"] in ordem_cab else 99, x["nome"]))
 
     # ---- itens da loja

@@ -1739,7 +1739,7 @@ class Companion:
             for m in self.dados["missoes"]:
                 if m.get("reserva") and m["reserva"] != r:
                     continue
-                recente = m["status"] in ("concluida", "paga") and agora - (m.get("concluida_em") or m.get("pago_em") or 0) < 120
+                recente = m["status"] == "concluida" or (m["status"] == "paga" and agora - (m.get("pago_em") or 0) < 5)
                 if m["status"] == "ativa" or recente:
                     linhas.append(self.texto_hud(m))
         txt = "\n".join(linhas) + "\n"
@@ -1869,9 +1869,9 @@ class Companion:
                 "ofertas": [m for m in lista if m["status"] == "oferta"],
                 "ativas": [m for m in lista if m["status"] == "ativa"],
                 "contratos_jogo": self.contratos_jogo(),
-                # concluídos ficam à vista por 2 min (ou até o pagamento sair); depois só no histórico
+                # concluído fica à vista só até o pagamento confirmar (+5 s para você ver o "pago"); depois só no histórico
                 "finalizadas": [m for m in lista if m["status"] == "concluida" or (m["status"] == "paga"
-                                and time.time() - (m.get("pago_em") or m.get("concluida_em") or 0) < 120)][-8:][::-1],
+                                and time.time() - (m.get("pago_em") or m.get("concluida_em") or 0) < 5)][-8:][::-1],
                 "gerando": self.gerando,
                 "reserva": r_atual,
                 "outras_reservas": self.outras_reservas(),
