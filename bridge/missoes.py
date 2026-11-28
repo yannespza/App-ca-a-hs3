@@ -441,6 +441,14 @@ def conta(m, evento, dentro, arma_tipo_de):
         return False
     if c.get("sem_luneta") and evento.get("tem_luneta") is not False:
         return False
+    if c.get("semana"):
+        feitos = list(m.get("grupos_feitos") or [])
+        faltam_esp = c.get("especies_min", 1) - len(set(feitos))
+        vagas = m.get("meta", 1) - len(m.get("contados") or [])
+        if evento.get("grupo") in feitos and vagas <= faltam_esp:
+            return False                      # as vagas que sobram precisam ser de espécies novas
+        m.setdefault("grupos_feitos", []).append(evento.get("grupo"))
+        return True
     if c.get("vital") and not acertou_vital(evento.get("orgaos")):
         return False
     if "perto_presa_m" in c:
@@ -706,4 +714,21 @@ def descarte(grupo, nome_grupo, nivel=0):
               f"Abata {meta} {plural(nome, meta)} com potencial genético de {int(teto * 100)}% ou menos (confira no binóculo).",
               meta, 500 + 150 * nivel)
     m.update({"tipo": "combo", "grupo": grupo, "cond": {"genetica_max": teto}, "vendedor": "NPC.Vendor.Ranger"})
+    return m
+
+
+def desafio_semanal(grupos, nome_grupo, nivel, dia):
+    """Desafio da semana: vários abates de espécies diferentes em 7 dias do jogo. Paga bem."""
+    if not grupos:
+        return None
+    esp = min(len(grupos), 3 + (nivel >= 3))
+    meta = esp + 3
+    m = _base("Desafio da semana",
+              "Essa é das grandes, rapaz. Tenho clientes de fora querendo variedade. Você tem uma semana inteira do jogo: "
+              "traga carne e troféu de bichos diferentes. Cumpriu, eu pago dobrado.",
+              f"Em até 7 dias do jogo: abata {meta} animais de pelo menos {esp} espécies diferentes.",
+              meta, 4000 + 1000 * nivel)
+    m.update({"tipo": "combo", "cond": {"semana": True, "especies_min": esp}, "desafio": True, "prazo_dia": dia + 7,
+              "vendedor": "NPC.Vendor.Butcher"})
+    m["reputacao"] = 100 + 20 * nivel
     return m

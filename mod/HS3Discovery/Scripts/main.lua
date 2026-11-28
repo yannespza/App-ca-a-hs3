@@ -160,7 +160,11 @@ local function readState()
     end)
     pcall(function()
         local e = FindFirstOf("EnvironmentManagerComponent")
-        if e and e:IsValid() then s.hora = e.CurrentSolarTime end
+        if e and e:IsValid() then
+            s.hora = e.CurrentSolarTime
+            pcall(function() s.vento = { angulo = e.WindAngle } end)      -- só um número do relógio do clima
+            pcall(function() s.vento.forca = e:GetNormalizedWindSpeed() end)
+        end
     end)
     -- cão em campo (só leitura; sonda 28/11): posição, estado, raça, energia e nome
     pcall(function()
@@ -438,6 +442,8 @@ pcall(function()
     RegisterKeyBind(Key.F9, function()
         emit("foto_trofeu", {})
     end)
+    RegisterKeyBind(Key.F8, function() emit("tecla", { tecla = "carro" }) end)   -- trazer o carro para perto
+    RegisterKeyBind(Key.F7, function() emit("tecla", { tecla = "marca" }) end)   -- marcar este lugar no app
 end)
 
 pcall(function()

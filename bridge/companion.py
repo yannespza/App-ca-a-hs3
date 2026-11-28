@@ -961,6 +961,23 @@ class Companion:
             d.setdefault("trofeus", []).append(reg)
             threading.Timer(2.0, self.print_trofeu, args=(reg,)).start()
             return []
+        elif tipo == "tecla":
+            pos = (self.estado or {}).get("pos") or {}
+            if not pos or not self.em_reserva():
+                return []
+            if ev.get("tecla") == "carro":       # F8: carro a ~10 m, do lado direito de onde você olha
+                yaw = math.radians(((self.estado or {}).get("yaw") or 0) + 90)
+                x, y = pos["x"] + math.cos(yaw) * 1000, pos["y"] + math.sin(yaw) * 1000
+                self.enviar_comando([f"carro {x:.0f} {y:.0f}"])
+                self.aviso_tecla = {"ts": time.time(), "texto": "F8: trazendo o carro para perto de você."}
+            elif ev.get("tecla") == "marca":     # F7: marca este lugar no mapa do app
+                nv = self.nivel()
+                lista = d.setdefault("marcas", {}).setdefault(nv, [])
+                lista.append({"id": uuid.uuid4().hex[:6], "x": pos["x"], "y": pos["y"], "z": pos.get("z"), "ts": time.time(),
+                              "dia": d.get("dia_jogo"), "hora": (self.estado or {}).get("hora")})
+                del lista[:-40]
+                self.aviso_tecla = {"ts": time.time(), "texto": "F7: lugar marcado no mapa do app."}
+            return []
         elif tipo == "foto_trofeu":
             # F9 no jogo: foto escolhida por você. Vai para o troféu empalhado nos últimos 15 min (no lugar da automática);
             # sem troféu recente, vira uma foto nova na sala
@@ -1582,6 +1599,96 @@ class Companion:
                 "progresso": 1.0 if topo else (v - nv * self.NIVEL_EARL) / self.NIVEL_EARL,
                 "contratos": sum(1 for m in self.dados.get("missoes") or [] if m.get("status") == "paga")}
 
+    # ------------------------------------------------------------ sessão de jogo (resumo)
+    def cuidar_sessao(self):
+        agora = time.time()
+        cred = (self.estado.get("moedas") or {}).get("Currency.Credits") if self.estado else None
+        ligado = self.conectado() and self.em_reserva()
+        se = getattr(self, "sessao", None)
+        if ligado:
+            if not se:
+                self.sessao = {"inicio": agora, "visto": agora, "cred_ini": cred, "cred": cred,
+                               "abates_ini": len(self.dados["abates"]), "pagas_ini": sum(1 for m in self.dados["missoes"] if m["status"] == "paga"),
+                               "marcados_ini": len(self.dados.get("avistamentos") or [])}
+            else:
+                se["visto"], se["cred"] = agora, cred if cred is not None else se.get("cred")
+        elif se and agora - se["visto"] > 600:       # 10 min sem jogo: a sessão acabou
+            r = self.resumo_sessao()
+            if r and r["minutos"] >= 5:
+                self.dados.setdefault("sessoes", []).append(dict(r, fim=se["visto"]))
+                del self.dados["sessoes"][:-20]
+                self.salvar_pendente = True
+            self.sessao = None
+
+    def resumo_sessao(self):
+        se = getattr(self, "sessao", None)
+        if not se:
+            ult = (self.dados.get("sessoes") or [None])[-1]
+            return {"ativa": False, "ultima": ult}
+        d = self.dados
+        ganho = (se["cred"] - se["cred_ini"]) if isinstance(se.get("cred"), (int, float)) and isinstance(se.get("cred_ini"), (int, float)) else None
+        return {"ativa": True, "inicio": se["inicio"], "minutos": int((se["visto"] - se["inicio"]) / 60),
+                "abates": len(d["abates"]) - se["abates_ini"], "creditos": ganho,
+                "contratos": sum(1 for m in d["missoes"] if m["status"] == "paga") - se["pagas_ini"],
+                "avistados": len(d.get("avistamentos") or []) - se["marcados_ini"]}
+
+    # ------------------------------------------------------------ agenda do bando (horários que você viu nas zonas)
+    def agenda_agora(self):
+        if not self.em_reserva():
+            return []
+        agora = time.time()
+        if agora - getattr(self, "_agenda_ts", 0) < 30:
+            return getattr(self, "_agenda", [])
+        self._agenda_ts = agora
+        h = (self.estado or {}).get("hora")
+        pos = (self.estado or {}).get("pos")
+        if not isinstance(h, (int, float)):
+            self._agenda = []
+            return []
+        hh = int(h)
+        perto = lambda x: min(abs(x - hh), 24 - abs(x - hh)) <= 1
+        melhor = {}
+        for z in self.zonas():
+            if not z.get("descoberta") or not z.get("horas") or not any(perto(x) for x in z["horas"]):
+                continue
+            dist = distancia_m(pos, {"x": z["x"], "y": z["y"], "z": 0}) if pos else None
+            k = (z.get("especie"), z.get("tipo"))
+            if k not in melhor or (dist or 1e9) < (melhor[k]["dist"] or 1e9):
+                melhor[k] = {"especie": z.get("especie"), "especie_nome": z.get("especie_nome"), "grupo": z.get("grupo"), "tipo": z.get("tipo"),
+                             "x": z["x"], "y": z["y"], "dist": round(dist) if dist else None, "vistos": z.get("vistos", 0)}
+        self._agenda = sorted(melhor.values(), key=lambda a: a["dist"] or 1e9)[:6]
+        return self._agenda
+
+    def apagar_marca(self, id_):
+        with self.lock:
+            for lista in (self.dados.get("marcas") or {}).values():
+                lista[:] = [m for m in lista if m.get("id") != id_]
+            self.salvar_pendente = True
+        return {"ok": True}
+
+    def cuidar_desafio(self):
+        """Desafio semanal do Earl: um por semana do jogo; vence no fim da semana."""
+        d = self.dados
+        dia = d.get("dia_jogo", 0)
+        r = self.reserva()
+        mudou = False
+        for m in d["missoes"]:
+            if m.get("prazo_dia") is not None and m["status"] in ("oferta", "ativa") and dia > m["prazo_dia"]:
+                m["status"] = "abandonada"
+                m["expirou"] = True
+                mudou = True
+        if r and self.em_reserva() and not any(m.get("desafio") and m["status"] in ("oferta", "ativa") for m in d["missoes"]) \
+                and dia >= d.get("desafio_dia", -99) + 7:
+            grupos, cap = self.info_gerador()
+            m = missoes.desafio_semanal(grupos, nome_grupo, int(cap.get("nivel") or 0), dia)
+            if m:
+                m["reserva"] = r
+                d["missoes"].append(m)
+                d["desafio_dia"] = dia
+                mudou = True
+        if mudou:
+            self.salvar_pendente = True
+
     def vigiar_zonas_novas(self):
         """Zona de necessidade que passou a descoberta vira evento (contrato de reconhecimento)."""
         if not self.em_reserva() or time.time() - getattr(self, "_zn_vista", 0) < 20:
@@ -1629,6 +1736,7 @@ class Companion:
                     reg["arquivo_auto"] = nome
                 self.salvar_pendente = True
                 if manual:
+                    self.foto_nova = {"ts": time.time(), "arquivo": nome}
                     self.hud_oculto_ate = 0      # devolve os contratos à tela do jogo
                     self.escrever_hud()
         except Exception as e:
@@ -2099,6 +2207,13 @@ class Companion:
             self.reembolsar_cameras()
             self.vigiar_licencas()
             self.vigiar_zonas_novas()
+            self.cuidar_sessao()
+            if time.time() - getattr(self, "_desafio_visto", 0) > 30:
+                self._desafio_visto = time.time()
+                try:
+                    self.cuidar_desafio()
+                except Exception as e:
+                    print("desafio:", e)
             self.vigiar_mortos()
             self.marcar_estruturas_perto()
             self.revisar_contratos()
@@ -2144,7 +2259,27 @@ class Companion:
             "melhor_genetica": melhor and {"especie": melhor.get("especie_nome"), "genetica": melhor.get("genetica")},
             "missoes_concluidas": sum(1 for m in self.dados["missoes"] if m["status"] in ("concluida", "paga")),
             "creditos_ganhos": sum(m.get("creditos_pagos", 0) for m in self.dados["missoes"] if m.get("enviado")),
+            "recordes": self.recordes(ab),
+            "sessoes": list(reversed(self.dados.get("sessoes") or []))[:5],
         }
+
+    @staticmethod
+    def recordes(ab):
+        """Melhor troféu (pontos) de cada espécie; sem pontos, a melhor genética."""
+        rec = {}
+        for a in ab:
+            e = a.get("especie_nome") or a.get("grupo_nome")
+            if not e:
+                continue
+            nota = (a.get("pontos_trofeu") or 0, a.get("genetica") or 0)
+            if e not in rec or nota > rec[e]["_nota"]:
+                rec[e] = {"_nota": nota, "especie": e, "pontos": a.get("pontos_trofeu"), "genetica": a.get("genetica"),
+                          "peso_kg": a.get("peso_kg"), "ts": a.get("ts"), "reserva": a.get("reserva"), "sexo": a.get("sexo_nome"),
+                          "lendario": a.get("lendario"), "distancia_m": a.get("distancia_m")}
+        saida = sorted(rec.values(), key=lambda r: (-(r["pontos"] or 0), -(r["genetica"] or 0)))
+        for r in saida:
+            r.pop("_nota", None)
+        return saida
 
     def snapshot(self):
         with self.lock:
@@ -2215,6 +2350,9 @@ class Companion:
                 "licencas_alerta": getattr(self, "licencas_alerta", []), "aviso_app": getattr(self, "aviso_app", None),
                 "carcaca_nova": getattr(self, "carcaca_nova", None), "boletim_novo": getattr(self, "boletim_novo", None),
                 "novidade_vista": self.dados.get("novidade_vista"),
+                "foto_nova": getattr(self, "foto_nova", None), "aviso_tecla": getattr(self, "aviso_tecla", None),
+                "marcas": (self.dados.get("marcas") or {}).get(self.nivel()) or [],
+                "sessao": self.resumo_sessao(), "agenda": self.agenda_agora(),
                 "ofertas": [m for m in lista if m["status"] == "oferta"],
                 "ativas": [m for m in lista if m["status"] == "ativa"],
                 "contratos_jogo": self.contratos_jogo(),
@@ -2570,6 +2708,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.responder(200, APP.voltar_agora())
         if p == "/api/config":
             return self.responder(200, APP.configurar(corpo.get("chave"), corpo.get("valor")))
+        if p == "/api/marca":
+            return self.responder(200, APP.apagar_marca(str(corpo.get("id") or "")))
         if p == "/api/novidade_vista":
             with APP.lock:
                 APP.dados["novidade_vista"] = str(corpo.get("id") or "")[:40]

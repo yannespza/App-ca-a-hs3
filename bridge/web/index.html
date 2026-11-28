@@ -51,6 +51,7 @@
     <div class="topo-acoes">
       <button class="btn sec so-pc" onclick="abrirCelular()" title="Abrir este app no celular">📱 Celular</button>
       <button class="btn sec so-apk" onclick="trocarPc()" title="Conectar a outro PC">Trocar de PC</button>
+      <button class="btn sec" id="btn-noite" onclick="alternarNoite()" title="Tema escuro para jogar à noite">☾ Noite</button>
       <button class="btn sec so-pc btn-vertical" id="btn-vertical" onclick="alternarVertical()" title="Mapa em cima e escritório do Earl embaixo (monitor em pé)">⇅ Vertical</button>
       <button id="btn-atualizar" class="btn sec" onclick="clicarAtualizar()">Procurar atualização</button>
       <button class="btn fantasma so-pc" onclick="sair()" title="Fecha o HS3 Companion">Fechar</button>
@@ -101,6 +102,8 @@
             <section class="cac-bloco"><h3>Por espécie</h3><div id="cac-especies" class="barras"></div></section>
             <section class="cac-bloco"><h3>Por arma</h3><div id="cac-armas" class="barras"></div></section>
             <section class="cac-bloco largo"><h3>Últimos abates</h3><div id="ultimos"></div></section>
+            <section class="cac-bloco largo"><h3>Sessão de jogo</h3><div id="cac-sessao"></div></section>
+            <section class="cac-bloco largo"><h3>Recordes pessoais</h3><div id="cac-recordes"></div></section>
             <section class="cac-bloco largo"><h3>Sala de troféus</h3><div id="sala-trofeus"></div></section>
           </div>
         </div>

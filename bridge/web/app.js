@@ -101,10 +101,15 @@ function desenharManejo() {
     const cor = corEspecie(lista[0].especie);
     const pts = lista.map(z => toLL(z));
     if (pts.length >= 3) L.polygon(hull(pts), { color: cor, weight: 1, fillColor: cor, fillOpacity: 0.08, interactive: false }).addTo(grupoManejo);
+    // ordem do dia: pelas horas em que você viu o bando em cada zona; sem horas, comer → beber → descansar
     const ordem = ["Eating", "Drinking", "Sleeping", "Roaming"];
-    const rota = lista.slice().sort((a, b) => ordem.indexOf(a.tipo) - ordem.indexOf(b.tipo)).map(z => toLL(z));
+    const horaMedia = z => (z.horas && z.horas.length) ? z.horas.reduce((t, h) => t + h, 0) / z.horas.length : null;
+    const comHora = lista.filter(z => horaMedia(z) != null).length;
+    const porHora = comHora >= 2;
+    const ord = lista.slice().sort((a, b) => porHora && horaMedia(a) != null && horaMedia(b) != null ? horaMedia(a) - horaMedia(b) : ordem.indexOf(a.tipo) - ordem.indexOf(b.tipo));
+    const rota = ord.map(z => toLL(z));
     if (rota.length >= 2) L.polyline(rota.length >= 3 ? [...rota, rota[0]] : rota, { color: cor, weight: 3, dashArray: "8 6", opacity: 0.9 })
-      .bindTooltip(`Corredor do bando de ${esc(lista[0].especie_nome || "")}: ${lista.map(z => NOME_TIPO[z.tipo] || z.tipo).join(" → ")}`, { sticky: true })
+      .bindTooltip(`${porHora ? "Trilha pelos horários que você viu" : "Corredor provável"} · ${esc(lista[0].especie_nome || "")}: ${ord.map(z => (NOME_TIPO[z.tipo] || z.tipo) + (porHora && horaMedia(z) != null ? " " + Math.round(horaMedia(z)) + "h" : "")).join(" → ")}`, { sticky: true })
       .addTo(grupoManejo);
   }
   // zonas ainda não descobertas (alvo de reconhecimento): só com uma espécie escolhida, senão vira poluição
@@ -322,13 +327,16 @@ function desenharLicencas(d) {
   el.style.display = lista.length ? "" : "none";
 }
 // ---- aviso sonoro (contrato de carcaça novo)
-let somCtx = null, carcacaVista = undefined, avisoVisto = undefined, boletimVisto = undefined;
+let somCtx = null, carcacaVista = undefined, avisoVisto = undefined, boletimVisto = undefined, fotoVista = undefined, teclaVista = undefined;
+const rastreadoPorId = id => (window._rastreados || []).find(a => String(a.id) === String(id));
 document.addEventListener("pointerdown", () => { try { somCtx = somCtx || new (window.AudioContext || window.webkitAudioContext)(); somCtx.resume(); } catch (e) {} }, { passive: true });
-function tocarAviso() {
+const SONS = { carcaca: [[660, 0], [880, 0.18], [990, 0.36]], bom: [[784, 0], [988, 0.12], [1175, 0.24], [1568, 0.36]],
+  raro: [[523, 0], [784, 0.1], [1047, 0.2], [1568, 0.3], [2093, 0.4]], foto: [[1800, 0], [1200, 0.05]], tecla: [[880, 0]] };
+function tocarAviso(tipo) {
   try {
     somCtx = somCtx || new (window.AudioContext || window.webkitAudioContext)();
     const t0 = somCtx.currentTime;
-    [[660, 0], [880, 0.18], [990, 0.36]].forEach(([f, dt]) => {
+    (SONS[tipo] || SONS.carcaca).forEach(([f, dt]) => {
       const o = somCtx.createOscillator(), g = somCtx.createGain();
       o.type = "triangle"; o.frequency.value = f;
       g.gain.setValueAtTime(0.0001, t0 + dt);
@@ -359,8 +367,14 @@ function vigiarAvisos(d) {
   if ("novidade_vista" in d) mostrarNovidades(d.novidade_vista);
   const c = d.carcaca_nova;
   const ts = c ? c.ts : null;
-  if (carcacaVista !== undefined && ts && ts !== carcacaVista) tocarAviso();
+  if (carcacaVista !== undefined && ts && ts !== carcacaVista) tocarAviso("carcaca");
   carcacaVista = ts;
+  const fn = d.foto_nova;
+  if (fotoVista !== undefined && fn && fn.ts !== fotoVista) { tocarAviso("foto"); moAviso("📷 Foto do troféu salva (F9).", "ok"); }
+  fotoVista = fn ? fn.ts : null;
+  const at = d.aviso_tecla;
+  if (teclaVista !== undefined && at && at.ts !== teclaVista) { tocarAviso("tecla"); moAviso(at.texto, "ok"); }
+  teclaVista = at ? at.ts : null;
   const bn = d.boletim_novo;
   if (boletimVisto !== undefined && bn && bn.ts !== boletimVisto) moAviso(`Bom dia! O boletim do dia ${bn.dia} está na aba Manejo.`, "ok");
   boletimVisto = bn ? bn.ts : null;
@@ -524,6 +538,11 @@ function mostrarAvistado(u) {
   const m = marcAnimais[u.id];
   if (!m) return;                       // o ícone ainda não chegou: tenta no próximo segundo
   fichaAuto.chave = chave;
+  const bom = rastreadoPorId(u.id);
+  if (bom && ((bom.genetica || 0) >= 0.85 || bom.lendario)) {
+    tocarAviso(bom.lendario ? "raro" : "bom");
+    moAviso(`${bom.lendario ? "Pelagem rara" : "Animal bom"}: ${bom.especie_nome || bom.grupo_nome}, genética ${pct(bom.genetica)}`, "ok");
+  }
   if (fichaAuto.id && marcAnimais[fichaAuto.id]) marcAnimais[fichaAuto.id].closeTooltip();
   clearTimeout(fichaAuto.timer);
   fichaAuto.id = u.id;
@@ -551,8 +570,11 @@ function atualizarMarcadores(d) {
     if (!marcPino) marcPino = L.marker(toLL(pino), { icon: L.divIcon({ className: "", html: '<div class="mk-pino">📍</div>', iconSize: [30, 30], iconAnchor: [15, 30] }), zIndexOffset: 900 }).addTo(mapa);
     marcPino.setLatLng(toLL(pino)).bindTooltip(`${esc(rot)} · ${metros(distancia(st.pos, pino))}`);
   } else if (marcPino) { mapa.removeLayer(marcPino); marcPino = null; }
+  window._rastreados = d.rastreados || [];
   desenharBarracas(d);
   desenharCao(d);
+  desenharMarcas(d);
+  desenharVento(d);
   desenharLicencas(d);
   vigiarAvisos(d);
   grupoMissoes.clearLayers();
@@ -744,7 +766,7 @@ async function atualizar() {
   $("btn-voltar").style.display = d.tem_local_salvo ? "" : "none";
   $("aviso-teleporte").textContent = d.aviso_teleporte || "";
   const ag = d.agentes || [];
-  agentesDados = ag; earlDados = d.earl || null;
+  agentesDados = ag; earlDados = d.earl || null; agendaDados = d.agenda || [];
   renderReputacao();
   const total = ag.reduce((t, a) => t + a.valor, 0);
   $("p-rep").textContent = ag.length ? `${fmt(total)}` : "–";
@@ -791,6 +813,17 @@ async function atualizar() {
     $(id).innerHTML = lista.slice(0, 8).map(([n, v]) => `<div class="barra-lin"><span>${esc(n)}</span><i style="--p:${100 * v / max}%"></i><b>${v}</b></div>`).join("")
       || `<p class="vazio">Nenhum abate ainda.</p>`;
   };
+  const se = d.sessao || {};
+  const linhaSessao = (r, titulo) => `<div class="sess"><b>${titulo}</b><span>${r.minutos} min de jogo</span><span>${r.abates} abate${r.abates === 1 ? "" : "s"}</span>
+      <span>${r.avistados || 0} marcado${r.avistados === 1 ? "" : "s"} no binóculo</span><span>${r.contratos} contrato${r.contratos === 1 ? "" : "s"} pago${r.contratos === 1 ? "" : "s"}</span>
+      ${r.creditos != null ? `<span class="${r.creditos >= 0 ? "pos" : "neg"}">${r.creditos >= 0 ? "+" : "−"}$${fmt(Math.abs(r.creditos))}</span>` : ""}</div>`;
+  if ($("cac-sessao")) $("cac-sessao").innerHTML = se.ativa ? linhaSessao(se, "Agora")
+    : se.ultima ? linhaSessao(se.ultima, "Última sessão") : `<p class="vazio">O resumo aparece quando você entra numa reserva.</p>`;
+  if ($("cac-recordes")) $("cac-recordes").innerHTML = (s.recordes || []).length ? `<div class="recordes">${s.recordes.map(r => `<div class="rec">
+      <b>${esc(r.especie)}</b>${r.lendario ? ` <span title="Pelagem rara / lendário">★</span>` : ""}
+      <em>${r.pontos ? fmt(Math.round(r.pontos * 10) / 10) + " pts" : pct(r.genetica) + " genética"}</em>
+      <small>${[r.sexo, r.peso_kg ? Math.round(r.peso_kg) + " kg" : "", r.distancia_m ? metros(r.distancia_m) : "", quando(r.ts), r.reserva ? nomeMapa(r.reserva) : ""].filter(Boolean).map(esc).join(" · ")}</small></div>`).join("")}</div>`
+    : `<p class="vazio">Seus melhores troféus por espécie aparecem aqui.</p>`;
   barras(s.por_grupo || [], "cac-especies");
   barras((s.por_arma || []).map(([n, v]) => [n.replace(/^ID_/, "").replace(/_/g, " "), v]), "cac-armas");
   $("ultimos").innerHTML = d.abates.length ? `<table class="tabela"><thead><tr><th>Animal</th><th>Peso</th><th>Troféu</th><th>Genética</th><th>Distância</th><th>Morte</th><th>Órgãos</th><th>Arma</th><th>Reserva</th></tr></thead><tbody>` +
@@ -881,6 +914,13 @@ function renderReputacao() {
     + `<p class="sub" style="margin-top:10px">Cada nível dos agentes pede 200 pontos (até 1000). O Earl ganha pontos com os contratos dele e perde quando você aborta. No fim, a patente soma tudo.</p>`;
   if (el.innerHTML !== html) el.innerHTML = html;
 }
+function alternarNoite(forcar) {
+  const v = forcar !== undefined ? forcar : !document.body.classList.contains("noite");
+  document.body.classList.toggle("noite", v);
+  try { localStorage.setItem("hs3_noite", v ? "1" : "0"); } catch {}
+  const b = $("btn-noite"); if (b) b.textContent = v ? "☀ Dia" : "☾ Noite";
+}
+try { if (localStorage.getItem("hs3_noite") === "1") setTimeout(() => alternarNoite(true), 0); } catch {}
 function alternarVertical(forcar) {
   const v = forcar !== undefined ? forcar : !document.body.classList.contains("vertical");
   document.body.classList.toggle("vertical", v && window.innerWidth > 820);
@@ -1442,7 +1482,14 @@ function atualizarAba() {
 setInterval(() => { if (abaAtual === "armario" || abaAtual === "loja" || abaAtual === "manejo") atualizarAba(); }, 8000);
 
 // ---------------------------------------------------------------- Manejo da reserva (só no app: nada aqui mexe no jogo)
-let manejoAssin = "";
+let manejoAssin = "", agendaDados = [];
+function agendaHtml() {
+  if (!agendaDados.length) return `<h3>Agenda de agora</h3><p class="item-sub">Marque animais nas zonas com o binóculo: o app aprende os horários de cada bando e mostra aqui onde eles costumam estar nesta hora do jogo.</p>`;
+  const NT = { Eating: "comendo", Drinking: "bebendo", Sleeping: "descansando", Roaming: "circulando" };
+  return `<h3>Agenda de agora</h3><p class="item-sub">Pelos horários que você já viu: onde os bandos costumam estar nesta hora do jogo.</p>
+    <div class="agenda">${agendaDados.map(a => `<button class="ag-i" onclick='verNoMapa(${JSON.stringify({ x: a.x, y: a.y, z: 0 })})'>
+      ${silhueta(a.grupo || "outro", a.especie)}<span><b>${esc(a.especie_nome || "")}</b><small>${NT[a.tipo] || ""}${a.dist ? " · " + metros(a.dist) : ""}</small></span></button>`).join("")}</div>`;
+}
 const NOME_RESERVA = r => /Colorado/i.test(r || "") ? "Colorado" : /Texas/i.test(r || "") ? "Texas" : /Poland|Polonia/i.test(r || "") ? "Polônia" : /Alaska/i.test(r || "") ? "Alasca" : (r || "–");
 let salaAssin = "";
 async function renderSalaTrofeus() {
@@ -1468,6 +1515,34 @@ function desenharCao(d) {
   if (!marcCao) marcCao = L.marker(toLL(c), { icon: L.divIcon({ className: "", html: '<div class="mk-cao">🐕</div>', iconSize: [26, 26], iconAnchor: [13, 13] }), zIndexOffset: 950 }).addTo(mapa);
   marcCao.setLatLng(toLL(c)).bindTooltip(txt);
 }
+// ---- marcas do F7 no mapa
+const grupoMarcas = L.layerGroup().addTo(mapa);
+let marcasTexto = "";
+function desenharMarcas(d) {
+  const l = d.em_reserva ? (d.marcas || []) : [];
+  const t = JSON.stringify(l.map(m => m.id));
+  if (t === marcasTexto) return;
+  marcasTexto = t;
+  grupoMarcas.clearLayers();
+  l.forEach((m, i) => L.marker(toLL(m), { icon: L.divIcon({ className: "", html: `<div class="mk-marca">${i + 1}</div>`, iconSize: [22, 22], iconAnchor: [11, 11] }), zIndexOffset: 800 })
+    .bindPopup(`<b>Marca ${i + 1} (F7)</b><br>${quando(m.ts)}${m.dia != null ? ` · dia ${m.dia}` : ""}${m.hora != null ? ` · ${horaTexto(m.hora)}` : ""}
+      <div style="margin-top:8px;display:flex;gap:6px"><button class="btn-papel" onclick="apagarMarca('${m.id}')">Apagar</button></div>`).addTo(grupoMarcas));
+}
+async function apagarMarca(id) { mapa.closePopup(); await post("/api/marca", { id }); marcasTexto = ""; }
+// ---- vento: de onde vem e para onde vai o seu cheiro
+let ventoCtl = null;
+function desenharVento(d) {
+  const v = (d.estado || {}).vento;
+  if (!v || v.angulo == null || !d.em_reserva) { if (ventoCtl) ventoCtl.style.display = "none"; return; }
+  if (!ventoCtl) {
+    ventoCtl = document.createElement("div"); ventoCtl.className = "vento"; ventoCtl.title = "Vento no jogo: a seta aponta para onde o vento (e o seu cheiro) vai";
+    document.querySelector(".mapa-papel").appendChild(ventoCtl);
+  }
+  ventoCtl.style.display = "";
+  const forca = v.forca != null ? Math.round(v.forca * 100) : null;
+  const ang = ((v.angulo % 360) + 360) % 360;
+  ventoCtl.innerHTML = `<div class="vento-rosa"><span>N</span><i style="transform:rotate(${ang}deg)">➤</i></div><div><b>Vento</b><small>${forca != null ? forca + "% de força" : ""}</small><small>seu cheiro vai para a seta</small></div>`;
+}
 function verNoMapa(pos) {
   document.querySelector('#abas button[data-aba="mapa"]').click();
   setTimeout(() => { marcarSeguindo(false); mapa.setView(toLL(pos), Math.max(mapa.getZoom(), 2)); L.popup().setLatLng(toLL(pos)).setContent("Último lugar onde você viu o animal").openOn(mapa); }, 120);
@@ -1488,7 +1563,7 @@ async function renderManejo() {
       ${ind.selo ? `<div class="mj-selo">🏅 Reserva Modelo</div>` : `<div class="mj-selo apagado">Reserva Modelo a partir de 80</div>`}</div>
     <p class="item-sub">Calculado com os últimos ${ind.base} abates desta reserva.</p>`;
   const bol = b => `<div class="mj-bol"><div class="mj-bol-cab"><b>Dia ${b.dia}</b>${b.ts ? "<small>boletim da manhã</small>" : "<small>até agora</small>"}</div>
-    <p>${b.abates} abate${b.abates === 1 ? "" : "s"}${b.abates ? ` (${b.limpos} limpo${b.limpos === 1 ? "" : "s"})` : ""} · ${b.avistados} animal${b.avistados === 1 ? "" : "is"} avistado${b.avistados === 1 ? "" : "s"}
+    <p>${b.abates} abate${b.abates === 1 ? "" : "s"}${b.abates ? ` (${b.limpos} limpo${b.limpos === 1 ? "" : "s"})` : ""} · ${b.avistados} ${b.avistados === 1 ? "animal avistado" : "animais avistados"}
       ${b.especies_abatidas.length ? `<br>Abatidos: ${esc(b.especies_abatidas.join(", "))}` : ""}
       ${b.melhor ? `<br>Melhor troféu: <b>${esc(b.melhor.especie)}</b>, ${fmt(Math.round(b.melhor.pontos))} pts${b.melhor.peso_kg ? `, ${Math.round(b.melhor.peso_kg)} kg` : ""}` : ""}</p>
     ${b.alertas.length ? `<ul class="mj-alertas">${b.alertas.map(a => `<li>${esc(a)}</li>`).join("")}</ul>` : ""}
@@ -1514,6 +1589,7 @@ async function renderManejo() {
   }).join("");
   p.innerHTML = `<header class="pag-topo"><h2>Manejo · ${esc(NOME_RESERVA(d.reserva))}</h2>
       <p>Censo, equilíbrio e pressão de caça calculados com o que você avistou no binóculo e abateu. Dia ${d.dia} do jogo pelo contador do app. Nada aqui mexe no jogo.</p></header>
+    ${agendaHtml()}
     <h3>Índice de sustentabilidade</h3>${indice}
     <h3>Boletins</h3><div class="mj-bols">${bol(d.hoje)}${(d.boletins || []).filter(b => b.dia !== d.hoje.dia).map(bol).join("")}</div>
     ${(d.monitorados || []).length ? `<h3>Monitorados sumidos</h3><p class="item-sub">Animais bons que você marcou e não vê há 2 dias ou mais. O jogo não avisa quando um animal sai do mapa; vale procurar por onde ele andava.</p>

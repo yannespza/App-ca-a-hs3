@@ -1,5 +1,20 @@
 [
  {
+  "id": "2026-11-28l",
+  "titulo": "Pacote de ideias novas",
+  "itens": [
+   "Alerta de animal bom: som e aviso quando o binóculo marca genética de 85% ou mais (som especial para pelagem rara).",
+   "Som de câmera quando a foto do F9 é salva.",
+   "Teclas no jogo: F8 traz o carro para perto de você; F7 marca o lugar onde você está no mapa do app (dá para apagar a marca).",
+   "Vento no mapa: rosa dos ventos com a direção para onde vai o seu cheiro e a força do vento.",
+   "Manejo: Agenda de agora, com onde os bandos costumam estar nesta hora (pelos horários que você viu). As trilhas dos bandos seguem esses horários quando há dados.",
+   "Caçadas: resumo da sessão de jogo (tempo, abates, créditos, contratos) e recordes pessoais por espécie.",
+   "Desafio da semana do Earl: abates de espécies diferentes em 7 dias do jogo, paga bem.",
+   "Botão Noite no topo: o mesmo rancho em versão escura (vale em cada aparelho).",
+   "Precisa reiniciar o jogo uma vez (teclas e vento são do mod)."
+  ]
+ },
+ {
   "id": "2026-11-28k",
   "titulo": "Correção de fechamento do jogo",
   "itens": [
