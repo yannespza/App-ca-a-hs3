@@ -955,6 +955,12 @@ class Companion:
                 ab["natural"] = True
                 return avaliar_missoes(d, {"tipo": "carcaca_recolhida", "id": id_, "ts": time.time()}, self.reserva())
             return avaliar_missoes(d, dict(ab, tipo="abate_confirmado"), self.reserva())
+        elif tipo == "empalhado":
+            # Sala de troféus: animal novo num estande. O print sai 2 s depois (a câmera do estande mostra o animal)
+            reg = {"ts": time.time(), "total": ev.get("total"), "por_nivel": ev.get("por_nivel"), "dia": d.get("dia_jogo")}
+            d.setdefault("trofeus", []).append(reg)
+            threading.Timer(2.0, self.print_trofeu, args=(reg,)).start()
+            return []
         elif tipo == "compra":
             d["compras"] = (d["compras"] + [ev])[-50:]
             for lista in list((d.get("barracas") or {}).values()):
@@ -1588,6 +1594,22 @@ class Companion:
             avaliar_missoes(self.dados, {"tipo": "zona_descoberta", "id": h, "grupo": z.get("grupo"),
                                          "especie": z.get("especie"), "ts": time.time()}, self.reserva())
         self.salvar_pendente = True
+
+    PASTA_TROFEUS = os.path.join(BASE_DIR, "trofeus")
+
+    def print_trofeu(self, reg):
+        """Print da tela do PC (só no Windows com Pillow). No celular não dá: fica só o registro."""
+        try:
+            from PIL import ImageGrab
+            os.makedirs(self.PASTA_TROFEUS, exist_ok=True)
+            nome = time.strftime("trofeu_%Y%m%d_%H%M%S.jpg")
+            img = ImageGrab.grab(all_screens=False).convert("RGB")
+            img.save(os.path.join(self.PASTA_TROFEUS, nome), quality=88)
+            with self.lock:
+                reg["arquivo"] = nome
+                self.salvar_pendente = True
+        except Exception as e:
+            print("print do troféu falhou:", e)
 
     def vigiar_licencas(self):
         """Espécies da reserva atual com 1 ou 0 animal restante na licença (aviso no mapa)."""
@@ -2378,6 +2400,16 @@ class Handler(BaseHTTPRequestHandler):
             return self.responder(200, APP.dados_kit(tag) if re.fullmatch(r"[\w.]+", tag or "") else {"pronto": False})
         if caminho == "/api/enciclopedia":
             return self.responder(200, APP.dados_enciclopedia())
+        if caminho.startswith("/api/trofeu/"):
+            nome = caminho.rsplit("/", 1)[1]
+            path = os.path.join(Companion.PASTA_TROFEUS, nome)
+            if not re.fullmatch(r"trofeu_[\d_]+\.jpg", nome) or not os.path.isfile(path):
+                return self.responder(404, {"erro": "sem imagem"})
+            with open(path, "rb") as f:
+                return self.responder(200, f.read(), "image/jpeg", cache=True)
+        if caminho == "/api/trofeus":
+            with APP.lock:
+                return self.responder(200, list(reversed(APP.dados.get("trofeus") or []))[:60])
         if caminho.startswith("/api/img/"):
             nome = caminho.rsplit("/", 1)[1]
             path = APP.caminho(os.path.join("img", nome))

@@ -552,6 +552,7 @@ function atualizarMarcadores(d) {
     marcPino.setLatLng(toLL(pino)).bindTooltip(`${esc(rot)} · ${metros(distancia(st.pos, pino))}`);
   } else if (marcPino) { mapa.removeLayer(marcPino); marcPino = null; }
   desenharBarracas(d);
+  desenharCao(d);
   desenharLicencas(d);
   vigiarAvisos(d);
   grupoMissoes.clearLayers();
@@ -799,6 +800,7 @@ async function atualizar() {
       <td title="Tempo entre o tiro e a morte">${a.segundos_ate_morte != null ? `${a.segundos_ate_morte < 10 ? a.segundos_ate_morte.toFixed(1).replace(".", ",") : Math.round(a.segundos_ate_morte)} s` : "–"}</td>
       <td class="${a.vital ? "orgao-vital" : ""}" title="${a.vital ? "Acertou órgão vital" : ""}">${a.orgaos_nome && a.orgaos_nome.length ? esc(a.orgaos_nome.join(", ")) : "–"}</td><td>${esc((a.arma || "").replace(/^ID_/, "").replace(/_/g, " "))}</td><td>${esc(a.reserva ? nomeMapa(a.reserva) : "–")}</td></tr>`).join("") + `</tbody></table>`
     : `<p class="vazio">Nenhum abate ainda. Cada animal recolhido no jogo aparece aqui.</p>`;
+  renderSalaTrofeus();
 }
 
 atualizar();
@@ -1416,6 +1418,30 @@ setInterval(() => { if (abaAtual === "armario" || abaAtual === "loja" || abaAtua
 // ---------------------------------------------------------------- Manejo da reserva (só no app: nada aqui mexe no jogo)
 let manejoAssin = "";
 const NOME_RESERVA = r => /Colorado/i.test(r || "") ? "Colorado" : /Texas/i.test(r || "") ? "Texas" : /Poland|Polonia/i.test(r || "") ? "Polônia" : /Alaska/i.test(r || "") ? "Alasca" : (r || "–");
+let salaAssin = "";
+async function renderSalaTrofeus() {
+  let l;
+  try { l = await (await fetch("/api/trofeus")).json(); } catch { return; }
+  const a = JSON.stringify(l);
+  if (a === salaAssin) return;
+  salaAssin = a;
+  $("sala-trofeus").innerHTML = l.length ? `<div class="sala">${l.map(t => `<figure class="sala-i">
+      ${t.arquivo ? `<a href="/api/trofeu/${esc(t.arquivo)}" target="_blank"><img src="/api/trofeu/${esc(t.arquivo)}" loading="lazy" alt="Troféu"></a>` : `<div class="sala-sem">sem print</div>`}
+      <figcaption>${quando(t.ts)}${t.dia != null ? ` · dia ${t.dia}` : ""} · ${t.total} no total</figcaption></figure>`).join("")}</div>
+      <p class="item-sub">Cada vez que você empalha um animal no jogo, o app do PC tira um print da tela 2 segundos depois e guarda aqui.</p>`
+    : `<p class="vazio">Quando você empalhar um animal no jogo, o app do PC tira um print e ele aparece aqui.</p>`;
+}
+// ---- cão no mapa (posição, estado e energia lidos do jogo)
+const ESTADO_CAO = { 1: "vindo", 2: "ganhando petisco", 3: "seguindo", 4: "junto", 5: "buscando a caça", 6: "indo ao ponto", 7: "seguindo", 8: "parado (fica)",
+  9: "subindo no carro", 10: "no carro", 11: "descendo do carro", 12: "voltando", 13: "farejando", 14: "na trilha", 15: "perseguindo" };
+let marcCao = null;
+function desenharCao(d) {
+  const c = (d.estado || {}).cao;
+  if (!c || !d.em_reserva || c.estado === 10) { if (marcCao) { mapa.removeLayer(marcCao); marcCao = null; } return; }
+  const txt = `<b>${esc(c.nome || "Seu cão")}</b><br>${esc(ESTADO_CAO[c.estado] || "em campo")}${c.energia != null ? ` · energia ${Math.round(c.energia * 100)}%` : ""}${d.estado.pos ? ` · ${metros(distancia(d.estado.pos, c))}` : ""}`;
+  if (!marcCao) marcCao = L.marker(toLL(c), { icon: L.divIcon({ className: "", html: '<div class="mk-cao">🐕</div>', iconSize: [26, 26], iconAnchor: [13, 13] }), zIndexOffset: 950 }).addTo(mapa);
+  marcCao.setLatLng(toLL(c)).bindTooltip(txt);
+}
 function verNoMapa(pos) {
   document.querySelector('#abas button[data-aba="mapa"]').click();
   setTimeout(() => { marcarSeguindo(false); mapa.setView(toLL(pos), Math.max(mapa.getZoom(), 2)); L.popup().setLatLng(toLL(pos)).setContent("Último lugar onde você viu o animal").openOn(mapa); }, 120);

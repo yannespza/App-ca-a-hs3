@@ -939,3 +939,9 @@ body.apk .so-apk { display: inline-flex !important; }
 .mj-mon-i span { opacity: .8; flex-basis: 100%; }
 .orgao-vital { color: #9fe07a; font-weight: 600; }
 .novidades h4 { margin: 10px 0 4px; } .novidades ul { margin: 0 0 6px; padding-left: 20px; line-height: 1.5; }
+.mk-cao { width: 26px; height: 26px; border-radius: 50%; background: rgba(30,24,16,.9); border: 2px solid #c9a23a; display: grid; place-items: center; font-size: 15px; }
+.sala { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.sala-i { margin: 0; border: 1px solid var(--linha); border-radius: 8px; overflow: hidden; }
+.sala-i img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; }
+.sala-i figcaption { font-size: 12.5px; padding: 6px 10px; opacity: .85; }
+.sala-sem { aspect-ratio: 16/9; display: grid; place-items: center; opacity: .5; }

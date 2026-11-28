@@ -1,17 +1,46 @@
 [
-  {"id": "2026-11-28d", "titulo": "Órgãos atingidos e abate limpo",
-   "itens": ["Caçadas: nova coluna com os órgãos que o tiro atingiu (verde quando pegou órgão vital). Precisa reiniciar o jogo uma vez para o mod novo valer.",
-             "Contrato novo do Atirador esportivo: Abate limpo, um tiro só em coração, pulmão, cérebro ou coluna.",
-             "Esta janela de novidades aparece a cada atualização."]},
-  {"id": "2026-11-28c", "titulo": "Contratos de manejo e animais sumidos",
-   "itens": ["Contratos novos do Guarda-florestal: Reconhecimento (descobrir zonas novas), Limpeza de corredor (predadores perto dos bandos) e Campanha de manejo em 3 etapas.",
-             "Aba Manejo: lista de animais bons que você marcou e não vê há 2 dias ou mais, com 'Ver no mapa'."]},
-  {"id": "2026-11-28b", "titulo": "Camada Manejo no mapa",
-   "itens": ["Caixa 'Manejo' no mapa: calor dos avistamentos (azul macho, rosa fêmea), abates da semana, territórios e corredores dos bandos.",
-             "Escolhendo uma espécie no filtro, aparecem as zonas dela que você ainda não descobriu."]},
-  {"id": "2026-11-28a", "titulo": "Loja completa e aba Manejo",
-   "itens": ["A aba Roupas virou Loja: armas, munição, acessórios e equipamentos também.",
-             "Mochila: acessórios à venda aparecem com 'comprar e montar'.",
-             "Aba Manejo: índice de sustentabilidade, selo Reserva Modelo, boletim da manhã, censo por espécie, pressão de caça e defeso.",
-             "Bolsa de carne: espécies em falta pagam mais nos contratos do Açougueiro."]}
+ {
+  "id": "2026-11-28e",
+  "titulo": "Seu cão no mapa e Sala de troféus",
+  "itens": [
+   "O cão aparece no mapa com o nome, o que está fazendo e a energia.",
+   "Caçadas: nova Sala de troféus. Quando você empalha um animal, o app do PC tira um print da tela e guarda aqui.",
+   "As duas coisas (e a coluna de órgãos) precisam reiniciar o jogo uma vez para o mod novo valer."
+  ]
+ },
+ {
+  "id": "2026-11-28d",
+  "titulo": "Órgãos atingidos e abate limpo",
+  "itens": [
+   "Caçadas: nova coluna com os órgãos que o tiro atingiu (verde quando pegou órgão vital). Precisa reiniciar o jogo uma vez para o mod novo valer.",
+   "Contrato novo do Atirador esportivo: Abate limpo, um tiro só em coração, pulmão, cérebro ou coluna.",
+   "Esta janela de novidades aparece a cada atualização."
+  ]
+ },
+ {
+  "id": "2026-11-28c",
+  "titulo": "Contratos de manejo e animais sumidos",
+  "itens": [
+   "Contratos novos do Guarda-florestal: Reconhecimento (descobrir zonas novas), Limpeza de corredor (predadores perto dos bandos) e Campanha de manejo em 3 etapas.",
+   "Aba Manejo: lista de animais bons que você marcou e não vê há 2 dias ou mais, com 'Ver no mapa'."
+  ]
+ },
+ {
+  "id": "2026-11-28b",
+  "titulo": "Camada Manejo no mapa",
+  "itens": [
+   "Caixa 'Manejo' no mapa: calor dos avistamentos (azul macho, rosa fêmea), abates da semana, territórios e corredores dos bandos.",
+   "Escolhendo uma espécie no filtro, aparecem as zonas dela que você ainda não descobriu."
+  ]
+ },
+ {
+  "id": "2026-11-28a",
+  "titulo": "Loja completa e aba Manejo",
+  "itens": [
+   "A aba Roupas virou Loja: armas, munição, acessórios e equipamentos também.",
+   "Mochila: acessórios à venda aparecem com 'comprar e montar'.",
+   "Aba Manejo: índice de sustentabilidade, selo Reserva Modelo, boletim da manhã, censo por espécie, pressão de caça e defeso.",
+   "Bolsa de carne: espécies em falta pagam mais nos contratos do Açougueiro."
+  ]
+ }
 ]

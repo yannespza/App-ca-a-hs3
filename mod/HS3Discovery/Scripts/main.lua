@@ -161,6 +161,21 @@ local function readState()
         local e = FindFirstOf("EnvironmentManagerComponent")
         if e and e:IsValid() then s.hora = e.CurrentSolarTime end
     end)
+    -- cão em campo (só leitura; sonda 28/11): posição, estado, raça, energia e nome
+    pcall(function()
+        if os.time() <= calmoAte then return end
+        local c = caoCache.obj
+        if not (c and c:IsValid()) then
+            c = FindFirstOf("HS3CompanionPawn")
+            caoCache.obj, caoCache.nome = c, nil
+        end
+        if not (c and c:IsValid()) then return end
+        local t = c:K2_GetActorLocation()
+        s.cao = { x = t.X, y = t.Y, z = t.Z, estado = c.CompanionState, energia = c.CompanionEnergy }
+        pcall(function() s.cao.raca = c.CompanionBreed.TagName:ToString() end)
+        if not caoCache.nome then pcall(function() caoCache.nome = c:GetCompanionName():ToString() end) end
+        s.cao.nome = caoCache.nome
+    end)
     s.ok = s.moedas ~= nil
     return s
 end
@@ -295,6 +310,8 @@ end
 
 local ticks = 0
 local mortosAssinatura = nil
+local trofeusAntes = nil
+local caoCache = { obj = nil, nome = nil }
 
 ------------------------------------------------------------------ eventos: abates
 local function readKill(info)
@@ -877,6 +894,19 @@ local function periodic()
     if curto and os.time() > calmoAte and zonasFeitas ~= curto and ticks % 10 == 0 then
         zonasFeitas = curto
         pcall(exportPois)
+    end
+    -- sala de troféus: avisa quando aparece animal empalhado novo (o app tira print no PC)
+    if ticks % 45 == 20 and os.time() > calmoAte then
+        pcall(function()
+            local ch = loadfile(DIR .. "Scripts\\trofeus.lua")
+            if not ch then return end
+            local total, porNivel = ch().contar()
+            if not total then return end
+            if trofeusAntes and total > trofeusAntes then
+                emit("empalhado", { total = total, antes = trofeusAntes, por_nivel = porNivel })
+            end
+            trofeusAntes = total
+        end)
     end
     -- animais mortos no mapa (natural = sem tiro do jogador); só regrava quando a lista muda (v0.1.43)
     if curto and ticks % 30 == 5 and os.time() > calmoAte then
