@@ -38,7 +38,7 @@ const grupoPois = L.layerGroup().addTo(mapa);
 const grupoEstr = L.layerGroup();
 const grupoZonas = L.layerGroup().addTo(mapa);
 // zonas de necessidade descobertas (como no mapa do jogo): silhueta da espécie + cor do tipo
-const TIPO_ZONA = { Eating: ["Comer", "comer"], Drinking: ["Beber", "beber"], Sleeping: ["Descansar", "dormir"] };
+const TIPO_ZONA = { Eating: ["Comer", "comer"], Drinking: ["Beber", "beber"], Sleeping: ["Descansar", "dormir"], Roaming: ["Circulação", "circular"] };
 let zonasTexto = "";
 async function carregarZonas() {
   let texto = "", lista = [];
@@ -57,7 +57,7 @@ async function carregarZonas() {
       .addTo(grupoZonas);
   }
 }
-const NOME_TIPO = { Eating: "comer", Drinking: "beber", Sleeping: "descansar" };
+const NOME_TIPO = { Eating: "comer", Drinking: "beber", Sleeping: "descansar", Roaming: "circulação (aves)" };
 // ---- camada Manejo: calor de avistamentos por sexo, abates, territórios e corredores dos bandos, zonas não descobertas
 const grupoManejo = L.layerGroup();
 let manejoZonas = [], manejoPontos = null, manejoTexto = "";
@@ -101,7 +101,7 @@ function desenharManejo() {
     const cor = corEspecie(lista[0].especie);
     const pts = lista.map(z => toLL(z));
     if (pts.length >= 3) L.polygon(hull(pts), { color: cor, weight: 1, fillColor: cor, fillOpacity: 0.08, interactive: false }).addTo(grupoManejo);
-    const ordem = ["Eating", "Drinking", "Sleeping"];
+    const ordem = ["Eating", "Drinking", "Sleeping", "Roaming"];
     const rota = lista.slice().sort((a, b) => ordem.indexOf(a.tipo) - ordem.indexOf(b.tipo)).map(z => toLL(z));
     if (rota.length >= 2) L.polyline(rota.length >= 3 ? [...rota, rota[0]] : rota, { color: cor, weight: 3, dashArray: "8 6", opacity: 0.9 })
       .bindTooltip(`Corredor do bando de ${esc(lista[0].especie_nome || "")}: ${lista.map(z => NOME_TIPO[z.tipo] || z.tipo).join(" → ")}`, { sticky: true })

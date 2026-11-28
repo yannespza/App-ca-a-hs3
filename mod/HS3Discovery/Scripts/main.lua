@@ -527,7 +527,7 @@ local function exportPois()
                         elseif n:find("^Animals%.Types%.") then especie = n end
                     end)
                 end)
-                if tipo and especie and (tipo == "Eating" or tipo == "Drinking" or tipo == "Sleeping") then
+                if tipo and especie and (tipo == "Eating" or tipo == "Drinking" or tipo == "Sleeping" or tipo == "Roaming") then
                     local t = a.Transform.Translation
                     zonas[#zonas + 1] = { especie = especie, tipo = tipo, x = t.X, y = t.Y, grupo = bando, hash = a.Hash,
                         descoberta = estados[a.Hash] == "Map.UI.POI.Discovered" }

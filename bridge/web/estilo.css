@@ -945,3 +945,4 @@ body.apk .so-apk { display: inline-flex !important; }
 .sala-i img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; }
 .sala-i figcaption { font-size: 12.5px; padding: 6px 10px; opacity: .85; }
 .sala-sem { aspect-ratio: 16/9; display: grid; place-items: center; opacity: .5; }
+.mk-zona.circular { background: #8a7a3a; }

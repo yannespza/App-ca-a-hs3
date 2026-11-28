@@ -94,7 +94,7 @@ def carregar_pois(path):
     saida = []
     for p in lista:
         cat, nome = descrever_poi(p.get("tipo", ""))
-        if cat in ("pino",):
+        if cat in ("pino", "cao"):      # o cão vem ao vivo do mod (posição do ícone do jogo fica velha)
             continue
         p = dict(p)
         p["categoria"], p["nome"] = cat, nome

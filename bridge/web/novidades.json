@@ -1,5 +1,14 @@
 [
  {
+  "id": "2026-11-28g",
+  "titulo": "Zonas das aves e cão",
+  "itens": [
+   "Patos, gansos, marrecas e pombas agora têm zonas no mapa: no jogo elas são zonas de circulação (cor oliva).",
+   "O ícone antigo do cão (verde, parado) saiu; fica só o que segue o Bob ao vivo.",
+   "Precisa reiniciar o jogo uma vez para as zonas das aves aparecerem."
+  ]
+ },
+ {
   "id": "2026-11-28f",
   "titulo": "Zonas mais rápidas e foto com F9",
   "itens": [
