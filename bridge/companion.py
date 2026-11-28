@@ -926,6 +926,17 @@ class Companion:
     def processar(self, ev):
         d = self.dados
         tipo = ev.get("tipo")
+        if tipo == "peso_marcado":
+            # o peso chegou depois (o binóculo marcou durante o período calmo do mod)
+            m = d["marcados"].get(str(ev.get("id")))
+            real = ev.get("peso_kg")
+            if m and isinstance(real, (int, float)) and real > 0 and not m.get("peso_faixa"):
+                r = random.Random(f"peso{ev.get('id')}")
+                lo = real * (1 - r.uniform(0.02, 0.13))
+                casas = 1 if real < 5 else 0
+                m["peso_faixa"] = [round(lo, casas), round(lo * 1.15, casas)]
+                self.salvar_pendente = True
+            return []
         if tipo == "marcado":
             # peso: só uma faixa estimada (~15%), sempre a mesma para o mesmo animal; o peso exato não fica guardado
             real = ev.pop("peso_kg", None)
@@ -938,6 +949,9 @@ class Companion:
             chave, nome = grupo_de(ev.get("especie"))
             ev.update({"grupo": chave, "grupo_nome": nome, "especie_nome": nome_especie(ev.get("especie")),
                        "sexo_nome": SEXO.get(ev.get("sexo"), "?"), "visto_em": time.time(), "reserva": self.nivel()})
+            ant = d["marcados"].get(str(ev.get("id"))) or {}
+            if not ev.get("peso_faixa") and ant.get("peso_faixa"):      # remarcado sem peso: mantém a faixa que já tinha
+                ev["peso_faixa"] = ant["peso_faixa"]
             novo = str(ev.get("id")) not in d["marcados"]
             if novo and ev.get("especie"):
                 d["especies_vistas"][ev["especie"]] = d["especies_vistas"].get(ev["especie"], 0) + 1

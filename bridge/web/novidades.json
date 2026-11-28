@@ -1,5 +1,13 @@
 [
  {
+  "id": "2026-11-28o",
+  "titulo": "Peso estimado de volta",
+  "itens": [
+   "Animal marcado no binóculo logo depois de passar o tempo ou viajar ficava sem peso estimado: agora o peso chega uns segundos depois.",
+   "Marcar de novo o mesmo animal não apaga mais o peso estimado que ele já tinha."
+  ]
+ },
+ {
   "id": "2026-11-28n",
   "titulo": "Alvejados, estruturas e manejo novo",
   "itens": [

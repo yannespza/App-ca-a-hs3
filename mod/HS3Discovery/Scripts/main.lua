@@ -302,21 +302,36 @@ end
 local spottedHooked = false
 local especiePorId = {}   -- id do animal -> tag da espécie (vinda do binóculo)
 local marcadosPendentes = {}
+local semPeso = {}          -- marcados sem peso (período calmo ou animal ainda não carregado): tenta de novo depois
+local function pesoDe(id)
+    local kg
+    pcall(function()
+        for _, c in ipairs(FindAllOf("AnimalCosmeticsComponent") or {}) do
+            if c:IsValid() then
+                local ok, cid = pcall(function() return c:GetOwner().EcoSimCreatureId end)
+                if ok and cid == id then kg = c.ReplicatedCosmeticInfo.WeightG / 1000; break end
+            end
+        end
+    end)
+    return kg
+end
 local function soltarMarcados()
+    -- peso que faltou: tenta por até 3 min, fora do período calmo, uma busca a cada 3 s
+    if #semPeso > 0 and os.time() > calmoAte and os.time() % 3 == 0 then
+        local resto = {}
+        for _, x in ipairs(semPeso) do
+            local kg = pesoDe(x.id)
+            if kg then emit("peso_marcado", { id = x.id, peso_kg = kg })
+            elseif os.time() - x.desde < 180 then resto[#resto + 1] = x end
+        end
+        semPeso = resto
+    end
     if #marcadosPendentes == 0 then return end
     local lista = marcadosPendentes
     marcadosPendentes = {}
     for _, m in ipairs(lista) do
-        if os.time() > calmoAte then
-            pcall(function()
-                for _, c in ipairs(FindAllOf("AnimalCosmeticsComponent") or {}) do
-                    if c:IsValid() then
-                        local ok, id = pcall(function() return c:GetOwner().EcoSimCreatureId end)
-                        if ok and id == m.id then m.peso_kg = c.ReplicatedCosmeticInfo.WeightG / 1000; break end
-                    end
-                end
-            end)
-        end
+        if os.time() > calmoAte then m.peso_kg = pesoDe(m.id) end
+        if not m.peso_kg and #semPeso < 30 then semPeso[#semPeso + 1] = { id = m.id, desde = os.time() } end
         emit("marcado", m)
     end
 end
