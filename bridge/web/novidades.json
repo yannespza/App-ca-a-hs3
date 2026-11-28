@@ -1,5 +1,14 @@
 [
  {
+  "id": "2026-11-28p",
+  "titulo": "Mapa do celular corrigido",
+  "itens": [
+   "Celular: tocar em \"Estruturas a descobrir\" (ou outro botão da barra) empurrava o mapa para o canto e ele não voltava. Corrigido.",
+   "Celular: botões Noite (☾) e Trocar de PC ficam pequenos ao lado dos créditos.",
+   "Aviso de munição baixa mais legível no celular."
+  ]
+ },
+ {
   "id": "2026-11-28o",
   "titulo": "Peso estimado de volta",
   "itens": [

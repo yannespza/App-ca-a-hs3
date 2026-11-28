@@ -955,7 +955,7 @@ function alternarNoite(forcar) {
   const v = forcar !== undefined ? forcar : !document.body.classList.contains("noite");
   document.body.classList.toggle("noite", v);
   try { localStorage.setItem("hs3_noite", v ? "1" : "0"); } catch {}
-  const b = $("btn-noite"); if (b) b.textContent = v ? "☀ Dia" : "☾ Noite";
+  const b = $("btn-noite"); if (b) b.innerHTML = v ? '☀<span class="rot-longo"> Dia</span>' : '☾<span class="rot-longo"> Noite</span>';
 }
 try { if (localStorage.getItem("hs3_noite") === "1") setTimeout(() => alternarNoite(true), 0); } catch {}
 function alternarVertical(forcar) {
@@ -1726,4 +1726,11 @@ async function cardSemana() {
     <a class="btn-papel" href="${png}" download="${nome}.png">Baixar imagem</a></div>`;
   div.onclick = e => { if (e.target === div) div.remove(); };
   document.body.appendChild(div);
+}
+
+// No celular (WebView), tocar num botão de uma fileira que rola de lado faz o navegador "rolar" a caixa do mapa,
+// que tem overflow escondido: o mapa ia para o canto e não voltava. Essas caixas nunca devem rolar.
+for (const sel of ["#mapa", ".mapa-papel", ".palco", ".barra-mapa"]) {
+  const el = document.querySelector(sel);
+  if (el) el.addEventListener("scroll", () => { if (el.scrollLeft || el.scrollTop) { el.scrollLeft = 0; el.scrollTop = 0; } }, { passive: true });
 }
