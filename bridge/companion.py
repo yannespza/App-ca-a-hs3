@@ -1852,7 +1852,9 @@ class Companion:
 
     def dados_loja(self):
         with self.lock:
-            r = extras.loja(self.catalogo(), self.equipamento())
+            lida = self._lida_mochila() or {}
+            na_mochila = {i.get("item") for i in lida.get("itens") or [] if i.get("item")}
+            r = extras.loja(self.catalogo(), self.equipamento(), na_mochila)
             r["creditos"] = (self.estado.get("moedas") or {}).get("Currency.Credits")
             r["compras"] = self.dados["compras"][-5:]
             return r

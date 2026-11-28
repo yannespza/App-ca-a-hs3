@@ -882,3 +882,11 @@ body.apk .so-apk { display: inline-flex !important; }
 @media (max-width: 700px) { .lic-item { font-size: 12px; padding: 6px 10px; } }
 .ag-earl { border-top: 1px dashed var(--linha); padding-top: 10px; margin-top: 6px; }
 .ag-earl .ag-barra i { background: linear-gradient(90deg, #8a6a2a, #e0b04a); }
+
+/* loja: seções e equipamentos */
+.loja-secoes { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }
+.loja-secoes button { font: inherit; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--linha); background: transparent; color: inherit; cursor: pointer; }
+.loja-secoes button.ativo { background: var(--verde, #4f7d2a); border-color: transparent; color: #fff; }
+.loja-eq-img { width: 100%; height: 90px; object-fit: contain; margin-bottom: 6px; }
+.loja-eq.seu { opacity: .75; }
+.mo-selo.venda { background: #8a6a2a; color: #fff; }

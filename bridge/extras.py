@@ -99,7 +99,7 @@ def especies_por_calibre(calibres):
     return mapa
 
 
-def loja(catalogo, equip):
+def loja(catalogo, equip, na_mochila=None):
     comprados = {b["id"] for b in equip.get("comprados", [])}
     vestidos = {r.get("item") for r in equip.get("roupa", [])}
     itens = []
@@ -115,7 +115,47 @@ def loja(catalogo, equip):
                       "vestido": c.get("item") in vestidos})
     itens.sort(key=lambda x: (x["parte"], -x["camuflagem"], x["preco"]))
     vestidos_info = [i for i in itens if i["vestido"]]
-    return {"itens": itens, "vestidos": vestidos_info, "deteccao": equip.get("deteccao")}
+    return {"itens": itens, "vestidos": vestidos_info, "deteccao": equip.get("deteccao"),
+            "equipamentos": loja_equipamentos(catalogo, comprados, na_mochila or set())}
+
+
+CATEGORIAS_LOJA = [("Armas", ("Inventory.Weapon.Type.",)), ("Munição", ("Cosmetics.Weapons.Attachments.Ammo",)),
+                   ("Acessórios", ("Cosmetics.Weapons.Attachments.Scope", "Cosmetics.Weapons.Attachments.FrontBarrel",
+                                   "Cosmetics.Weapons.Attachments.UnderBarrel")),
+                   ("Equipamentos", ("Inventory.Objects.", "Inventory.GPS"))]
+
+
+def _sub_loja(tipo):
+    t = tipo or ""
+    for chave, nome in (("Rifle.Bolt", "Rifle de ferrolho"), ("Rifle.SemiAuto", "Rifle semiautomático"), ("Rifle.Lever", "Rifle de alavanca"),
+                        ("Shotgun.DoubleBarrel", "Espingarda de dois canos"), ("Shotgun.SemiAuto", "Espingarda semiautomática"),
+                        ("Shotgun.PumpAction", "Espingarda de bomba"), ("CrossBow", "Besta"), ("Bow.Recurved", "Arco recurvo"),
+                        ("Bow.Compound", "Arco composto"), ("Scope", "Mira"), ("Suppressor", "Silenciador"), ("MuzzleBrake", "Freio de boca"),
+                        ("Bipod", "Bipé"), ("Ammo", "Munição"), ("Caller.Duck", "Chamador de pato"), ("Caller", "Chamador"), ("Decoy", "Chamariz"),
+                        ("Spray", "Spray de cheiro"), ("Binoculars", "Binóculo"), ("RangeFinder", "Telêmetro"), ("Blind", "Esconderijo"),
+                        ("GPS", "GPS"), ("Misc", "Diversos")):
+        if chave in t:
+            return nome
+    return "Outros"
+
+
+def loja_equipamentos(catalogo, comprados, na_mochila):
+    """Tudo o que se compra com créditos fora as roupas: armas, munição, acessórios e equipamentos."""
+    saida = []
+    for c in catalogo:
+        tipo = c.get("tipo") or ""
+        cat = next((n for n, pref in CATEGORIAS_LOJA if tipo.startswith(pref)), None)
+        if not cat or c.get("desativado") or "Credits" not in (c.get("moeda") or "Currency.Credits"):
+            continue
+        tem = c["id"] in comprados or bool(c.get("padrao")) or c.get("item") in na_mochila
+        saida.append({"id": c["id"], "nome": c.get("nome") or c["id"], "categoria": cat, "sub": _sub_loja(tipo),
+                      "preco": c.get("preco") or 0, "descricao": c.get("descricao") or "",
+                      "marca": (c.get("marca") or "").split(".")[-1].replace("None", ""),
+                      "imagem": f"/api/img/{c['icone']}" if c.get("icone") else None,
+                      "cargas": c.get("cargas") if (c.get("cargas") or -1) > 0 else None,
+                      "comprado": tem, "dlc": DLC.get(c["id"])})
+    saida.sort(key=lambda x: (x["comprado"], x["sub"], x["preco"], x["nome"]))
+    return saida
 
 
 def pontos_abate(a):
@@ -663,6 +703,10 @@ def mochila(dados, calibres, equip, lida, missoes, nome_especie, grupo_de, grupo
     # acessórios (miras, silenciadores, freios de boca, bipé) que você tem
     acessorios_seus = [c for c in itens if (c.get("tipo") or "").startswith(PREFIXO_ACESSORIO) and not c["tipo"].endswith(".Ammo")
                        and c.get("compat") and not c.get("desativado") and (c["id"] in comprados or c.get("padrao"))]
+    ids_seus_ac = {c["id"] for c in acessorios_seus}
+    acessorios_venda = [c for c in itens if (c.get("tipo") or "").startswith(PREFIXO_ACESSORIO) and not c["tipo"].endswith(".Ammo")
+                        and not c.get("desativado") and c["id"] not in ids_seus_ac and (c.get("preco") or 0) > 0
+                        and "Credits" in (c.get("moeda") or "Currency.Credits")]
     # munição de cada arma: a que você tem e que serve
     municoes = [p for p in possuidos if p["grupo"] == "Munição"]
     for a in possuidos:
@@ -677,7 +721,7 @@ def mochila(dados, calibres, equip, lida, missoes, nome_especie, grupo_de, grupo
                           "especies": especies_da_carga(m.get("calibre"), calibres, nome_especie)} for m in opcoes]
         # o que esta arma consegue cobrir com a munição que você tem
         a["cobre"] = sorted(set().union(*(set(m["cobre"]) for m in a["municoes"]))) if a["municoes"] else []
-        a["acessorios"] = acessorios_da_arma(por_id.get(a["id"]) or {}, municao_atual.get(a["id"]), acessorios_seus, req, por_id)
+        a["acessorios"] = acessorios_da_arma(por_id.get(a["id"]) or {}, municao_atual.get(a["id"]), acessorios_seus, req, por_id, acessorios_venda)
 
     # sugestão de mochila
     slots = dict((lida or {}).get("slots") or {})
@@ -800,7 +844,7 @@ def _zoom_max(nome):
     return int(m.group(2)) if m else 1
 
 
-def acessorios_da_arma(arma, montados, seus, req, por_id):
+def acessorios_da_arma(arma, montados, seus, req, por_id, a_venda=()):
     """Encaixes que a arma aceita, o que está montado em cada um e as opções que você tem."""
     compat = [t for t in (arma.get("compat") or []) if t.startswith(PREFIXO_ACESSORIO)]
     montados = montados if isinstance(montados, list) else []
@@ -825,9 +869,13 @@ def acessorios_da_arma(arma, montados, seus, req, por_id):
             if t.endswith("Bipod") and req["dist_min"] >= 200:
                 return "apoio firme para tiro longo"
             return None
+        ids_seus = {c["id"] for c in opcoes}
+        venda = [c for c in a_venda if cabe(c) and c["id"] not in ids_seus]
         lista = []
-        for c in sorted(opcoes, key=lambda c: (c["tipo"], _zoom_max(c.get("nome")), c.get("nome") or "")):
+        for c in sorted(opcoes, key=lambda c: (c["tipo"], _zoom_max(c.get("nome")), c.get("nome") or "")) + \
+                sorted(venda, key=lambda c: (c.get("preco") or 0, c.get("nome") or "")):
             lista.append({"id": c["id"], "nome": c.get("nome") or c["id"], "imagem": img(c.get("icone")),
+                          "comprar": c["id"] not in ids_seus, "preco": c.get("preco") or 0, "dlc": DLC.get(c["id"]),
                           "tipo": "Silenciador" if c["tipo"].endswith("Suppressor") else ("Freio de boca" if c["tipo"].endswith("MuzzleBrake")
                                                                                         else ("Bipé" if "Bipod" in c["tipo"] else "Mira")),
                           "atual": c["id"] == atual, "recomendado": recomendado(c)})

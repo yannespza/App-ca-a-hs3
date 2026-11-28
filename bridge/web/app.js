@@ -711,7 +711,7 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
 
 
 // ------------------------------------------------------------------ abas: armário, loja, enciclopédia
-let abaAtual = "mapa", filtroLoja = "Todas";
+let abaAtual = "mapa", filtroLoja = "Todas", secaoLoja = "Roupas", subLoja = "Todas";
 document.body.dataset.aba = "mapa";
 document.querySelectorAll(".segmentos button").forEach(b => b.onclick = () => {
   document.querySelectorAll(".segmentos button").forEach(x => x.classList.toggle("ativo", x === b));
@@ -1045,16 +1045,17 @@ function moAcessorios(item) {
         <span class="mo-opcao-sub">${!e.atual ? "assim está agora" : "tira o que está montado"}</span></button>`;
     return `<h4>${esc(e.nome)} <small>${e.atual ? "montado: " + esc(e.atual_nome || "") : "nada montado"}</small></h4>
       <div class="mo-opcoes">${sem}${e.opcoes.map(o => `<button class="mo-opcao ${o.atual ? "montado" : ""} ${o.recomendado ? "serve" : ""}"
-          ${o.atual ? "disabled" : `onclick="moAcessorio('${esc(a.id)}','${esc(o.id)}')"`} title="${esc(o.recomendado || "")}">
-        ${moFoto(o)}<span class="mo-opcao-nome">${esc(o.nome)}</span><span class="mo-opcao-sub">${esc(o.tipo)}</span>
-        ${o.atual ? `<span class="mo-selo sim">montado</span>` : o.recomendado ? `<span class="mo-selo rec">recomendado</span>` : ""}</button>`).join("")
+          ${o.atual ? "disabled" : `onclick="moAcessorio('${esc(a.id)}','${esc(o.id)}',false,${o.comprar ? o.preco : 0},'${esc(o.nome).replace(/'/g, "")}')"`} title="${esc(o.recomendado || "")}">
+        ${moFoto(o)}<span class="mo-opcao-nome">${esc(o.nome)}</span><span class="mo-opcao-sub">${esc(o.tipo)}${o.comprar ? ` · $${fmt(o.preco)}${o.dlc ? " · DLC" : ""}` : ""}</span>
+        ${o.atual ? `<span class="mo-selo sim">montado</span>` : o.comprar ? `<span class="mo-selo venda">comprar e montar</span>` : o.recomendado ? `<span class="mo-selo rec">recomendado</span>` : ""}</button>`).join("")
         || `<p class="mo-dica">Você não tem acessórios deste tipo. Compre na loja do jogo.</p>`}</div>`;
   };
   moModal(`<header class="mo-jan-topo"><div><h3>Acessórios da arma</h3><small>${esc(a.nome)} · clique para montar; a troca vale no jogo na hora</small></div>
       <button class="mo-x" onclick="moFecharModal()">✕</button></header>
     <div class="mo-jan-corpo">${a.acessorios.map(secao).join("")}</div>`);
 }
-function moAcessorio(arma, acessorio, tirar) {
+async function moAcessorio(arma, acessorio, tirar, preco, nome) {
+  if (preco && !await perguntar(`Comprar "${nome}" por $${fmt(preco)} na loja do jogo e montar na arma?`)) return;
   moFecharModal();
   moAcao({ acao: tirar ? "tirar_acessorio" : "acessorio", arma, acessorio });
 }
@@ -1097,10 +1098,13 @@ function moConfirmarMontar() {
 
 async function renderLoja() {
   const d = await (await fetch("/api/loja")).json();
+  const secoes = ["Roupas", "Armas", "Munição", "Acessórios", "Equipamentos"];
+  const abas = `<div class="loja-secoes">${secoes.map(x => `<button class="${x === secaoLoja ? "ativo" : ""}" onclick="secaoLoja='${x}';subLoja='Todas';renderLoja()">${x}</button>`).join("")}</div>`;
+  if (secaoLoja !== "Roupas") return renderLojaEquip(d, abas);
   const det = d.deteccao || {};
   const med = (nome, v, dica) => `<div class="medidor"><div class="item-sub">${nome}</div><div class="v">${v == null ? "–" : Math.round(v * 100) + "%"}</div>
       <div class="b"><i style="left:${Math.min(100, (v || 0) * 100)}%"></i></div><div class="item-sub">${dica}</div></div>`;
-  let html = `<header class="pag-topo"><h2>Roupas e camuflagem ${ajuda("loja")}</h2><p>Sua camuflagem agora e o que dá para comprar. Em tudo aqui, <b>quanto maior, melhor</b>: mais escondido, mais silencioso, menos cheiro, mais rápido.</p></header>
+  let html = `<header class="pag-topo"><h2>Loja · roupas e camuflagem ${ajuda("loja")}</h2><p>Sua camuflagem agora e o que dá para comprar. Em tudo aqui, <b>quanto maior, melhor</b>: mais escondido, mais silencioso, menos cheiro, mais rápido.</p></header>${abas}
     <h3>Sua camuflagem agora</h3><div class="medidores">
       ${med("Visual", det.visual, "quanto maior, menos os animais te veem")}${med("Silêncio", det.som, "quanto maior, menos te ouvem")}${med("Cheiro", det.cheiro, "quanto maior, menos te sentem pelo faro")}</div>
     <p class="item-sub">O jogo soma as 6 peças que você veste (blusa, calça, calçado, luvas, cabeça e mochila) e transforma em porcentagem.
@@ -1113,6 +1117,28 @@ async function renderLoja() {
   html += `<div class="grade-itens">${lista.map(itemLoja).join("")}</div>
     <p class="item-sub">Os números (0 a 100) vêm do próprio jogo: quanto maior, melhor (menos o animal te vê, ouve ou sente; “Corrida” = mais rápido). A compra é feita na loja do jogo com seus créditos.</p>`;
   $("painel-loja").innerHTML = html;
+}
+function renderLojaEquip(d, abas) {
+  const todos = (d.equipamentos || []).filter(i => i.categoria === secaoLoja);
+  const subs = ["Todas", ...new Set(todos.map(i => i.sub))];
+  if (!subs.includes(subLoja)) subLoja = "Todas";
+  const lista = todos.filter(i => subLoja === "Todas" || i.sub === subLoja);
+  const seus = todos.filter(i => i.comprado).length;
+  let html = `<header class="pag-topo"><h2>Loja · ${esc(secaoLoja.toLowerCase())}</h2><p>Compre aqui com os créditos do jogo; a compra é feita na loja do próprio jogo e o item vai para o seu armário.</p></header>${abas}
+    <h3>${todos.length} itens · ${seus} já são seus · saldo $${fmt(d.creditos)}</h3>
+    <div class="filtros">${subs.map(p => `<button class="${p === subLoja ? "ativo" : ""}" onclick="subLoja='${esc(p)}';renderLoja()">${esc(p)}</button>`).join("")}</div>
+    <div class="grade-itens">${lista.map(itemLojaEquip).join("") || `<p class="vazio">Nada aqui.</p>`}</div>
+    <p class="item-sub">Itens de DLC só são aceitos pelo jogo se você tiver o pacote.</p>`;
+  $("painel-loja").innerHTML = html;
+}
+function itemLojaEquip(i) {
+  const acao = i.comprado ? `<span class="item-tag cinza">Já é seu</span>`
+    : `<button class="btn-papel verde" onclick="comprarItem('${esc(i.id)}','${esc(i.nome).replace(/'/g, "")}',${i.preco})">Comprar $${fmt(i.preco)}</button>`;
+  return `<div class="item loja-eq ${i.comprado ? "seu" : ""}">${i.imagem ? `<img class="loja-eq-img" src="${esc(i.imagem)}" alt="" loading="lazy">` : ""}
+    <div class="item-nome">${esc(i.nome)}</div>
+    <div class="item-sub">${esc(i.sub)}${i.marca ? " · " + esc(i.marca) : ""}${i.cargas ? ` · ${i.cargas} usos` : ""}${i.dlc ? " · DLC" : ""}</div>
+    ${i.descricao ? `<div class="item-sub">${esc(i.descricao)}</div>` : ""}
+    <div style="margin-top:6px">${acao}</div></div>`;
 }
 function itemLoja(i) {
   const acao = i.vestido ? `<span class="item-tag">Vestindo</span>` : i.comprado ? `<span class="item-tag cinza">Já é seu · vista no guarda-roupa</span>`
