@@ -1,5 +1,14 @@
 [
  {
+  "id": "2026-11-28k",
+  "titulo": "Correção de fechamento do jogo",
+  "itens": [
+   "O mod não procura mais o peso do animal no exato momento do binóculo (isso podia fechar o jogo logo depois de passar o tempo). O peso chega 1 segundo depois.",
+   "Depois de passar o tempo, o mod espera 45 s antes de ler coisas extras do jogo.",
+   "Precisa reiniciar o jogo uma vez."
+  ]
+ },
+ {
   "id": "2026-11-28j",
   "titulo": "Mapa mais legível",
   "itens": [

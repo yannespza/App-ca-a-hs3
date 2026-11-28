@@ -274,6 +274,26 @@ end
 ------------------------------------------------------------------ eventos: binóculo
 local spottedHooked = false
 local especiePorId = {}   -- id do animal -> tag da espécie (vinda do binóculo)
+local marcadosPendentes = {}
+local function soltarMarcados()
+    if #marcadosPendentes == 0 then return end
+    local lista = marcadosPendentes
+    marcadosPendentes = {}
+    for _, m in ipairs(lista) do
+        if os.time() > calmoAte then
+            pcall(function()
+                for _, c in ipairs(FindAllOf("AnimalCosmeticsComponent") or {}) do
+                    if c:IsValid() then
+                        local ok, id = pcall(function() return c:GetOwner().EcoSimCreatureId end)
+                        if ok and id == m.id then m.peso_kg = c.ReplicatedCosmeticInfo.WeightG / 1000; break end
+                    end
+                end
+            end)
+        end
+        emit("marcado", m)
+    end
+end
+
 local function tryHookSpotted()
     if spottedHooked then return true end
     local w = FindFirstOf("B_AnimalSpottedNotification_C")
@@ -286,20 +306,13 @@ local function tryHookSpotted()
                 local p = payload:get()
                 local l = p.AnimalLocation
                 especiePorId[p.CreatureId] = { TagName = p.AnimalTag.TagName }
-                -- peso real do animal (o app mostra só uma faixa estimada)
-                local peso
-                pcall(function()
-                    for _, c in ipairs(FindAllOf("AnimalCosmeticsComponent") or {}) do
-                        local ok, id = pcall(function() return c:GetOwner().EcoSimCreatureId end)
-                        if ok and id == p.CreatureId then peso = c.ReplicatedCosmeticInfo.WeightG / 1000; break end
-                    end
-                end)
-                emit("marcado", {
-                    peso_kg = peso,
+                -- dentro do gancho só copiamos os números; o peso é procurado depois, fora do gancho
+                -- (procurar componentes aqui fechou o jogo em 28/11 logo após passar o tempo)
+                marcadosPendentes[#marcadosPendentes + 1] = {
                     id = p.CreatureId, especie = tagName(p.AnimalTag), sexo = p.AnimalSex,
                     lendario = p.LegendaryStatus, genetica = p.GeneticScore,
                     potencial = p.GeneticPotentialScore, idade_dias = p.AnimalAgeDays,
-                    pos = { x = l.X, y = l.Y, z = l.Z } })
+                    pos = { x = l.X, y = l.Y, z = l.Z } }
             end)
         end)
     end)
@@ -647,6 +660,7 @@ local function passarTempo(horas)
     if not valid(e) then log("passar tempo: relógio não encontrado"); return end
     horas = math.max(0.25, math.min(23.5, horas))
     e:SkipSolarTime(horas)
+    calmoAte = os.time() + 45      -- o jogo recria os animais depois de passar o tempo: 45 s sem leituras extras
     log(string.format("passar tempo: %.2f h (era %.2f h)", horas, e.CurrentSolarTime))
 end
 
@@ -878,6 +892,7 @@ local ultimoNivel = nil
 local nivelBruto = false
 local function periodic()
     ticks = ticks + 1
+    pcall(soltarMarcados)
     local _, _, curto = currentLevel()
     -- qualquer troca de mapa (menu, rancho, reserva): 60 s sem leituras extras enquanto o jogo carrega
     if curto ~= nivelBruto then
