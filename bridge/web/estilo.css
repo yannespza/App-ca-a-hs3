@@ -778,3 +778,7 @@ body.apk .so-apk { display: inline-flex !important; }
 .mk-zona.comer { background: #5f8a35; }
 .mk-zona.beber { background: #2f6f9a; }
 .mk-zona.dormir { background: #7a5a9a; }
+
+.pop-zona { min-width: 230px; }
+.pz-cab { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+.pz-cab small { display: block; opacity: .8; }

@@ -48,9 +48,26 @@ async function carregarZonas() {
     const [nome, cls] = TIPO_ZONA[z.tipo] || [z.tipo, "comer"];
     L.marker(toLL(z), { icon: L.divIcon({ className: "", html: `<div class="mk-zona ${cls}">${silhueta(z.grupo || "outro")}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }) })
       .bindTooltip(`<b>${esc(z.especie_nome || "")}</b><br>Zona de ${nome.toLowerCase()}`)
-      .on("click", () => { marcarSeguindo(false); abrirZona(z); })
+      .bindPopup(() => popupZona(z, nome), { maxWidth: 300, autoPanPadding: [20, 60] })
+      .on("click", () => marcarSeguindo(false))
       .addTo(grupoZonas);
   }
+}
+const NOME_TIPO = { Eating: "comer", Drinking: "beber", Sleeping: "descansar" };
+function popupZona(z, nome) {
+  const horas = (z.horas || []);
+  const faixas = horas.length ? horas.map(h => `${String(h).padStart(2, "0")}h`).join(", ") : "ainda sem registro (marque animais aqui com o binóculo)";
+  const bando = (z.bando_tipos || []).map(t => NOME_TIPO[t] || t);
+  return `<div class="pop-zona">
+    <div class="pz-cab"><span class="mk-zona ${(TIPO_ZONA[z.tipo] || [])[1] || "comer"}">${silhueta(z.grupo || "outro")}</span>
+      <div><b>${esc(z.especie_nome || "")}</b><small>Zona de ${esc(nome.toLowerCase())} · raio ~${Math.round((z.raio || 0) / 100)} m</small></div></div>
+    <div class="ficha-lin"><span>Bando nº</span><b>${z.bando ?? "–"}</b></div>
+    <div class="ficha-lin"><span>Zonas do bando que você achou</span><b>${bando.length ? esc(bando.join(", ")) : "–"}</b></div>
+    <div class="ficha-lin"><span>Animais vistos aqui</span><b>${z.vistos || 0}${z.vistos ? ` (${z.machos || 0} ♂ · ${z.femeas || 0} ♀)` : ""}</b></div>
+    <div class="ficha-lin"><span>Horários em que você viu</span><b>${esc(faixas)}</b></div>
+    ${z.ultimo_dia != null && z.vistos ? `<div class="ficha-lin"><span>Última visita</span><b>dia ${z.ultimo_dia} do jogo</b></div>` : ""}
+    <button class="btn-papel" style="margin-top:8px;width:100%" onclick="abrirZona(${esc(JSON.stringify({ especie: z.especie }))})">Ver espécie no Diário</button>
+  </div>`;
 }
 let diarioPedido = null;
 function abrirZona(z) {

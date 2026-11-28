@@ -727,9 +727,34 @@ class Companion:
         lista = carregar_json(self.caminho(f"zonas_{nivel}.json"), []) or []
         if not isinstance(lista, list):
             return []
+        # o que você já viu em cada zona descoberta (avistamentos da mesma espécie dentro da zona)
+        avs = {}
+        for a in self.dados.get("avistamentos") or []:
+            if a.get("reserva") == nivel and a.get("pos") and a.get("especie"):
+                avs.setdefault(a["especie"], []).append(a)
+        tipos_do_bando = {}
+        for z in lista:
+            if z.get("descoberta"):
+                tipos_do_bando.setdefault((z.get("especie"), z.get("grupo")), set()).add(z.get("tipo"))
         for z in lista:
             z["especie_nome"] = nome_especie(z.get("especie")) or z.get("especie")
+            bando = z.get("grupo")
             z["grupo"] = grupo_de(z.get("especie"))[0]
+            if not z.get("descoberta"):
+                continue
+            z["bando"] = bando
+            z["bando_tipos"] = sorted(tipos_do_bando.get((z.get("especie"), bando), set()))
+            raio = (z.get("raio") or 3000) + 3000          # cm: a zona + 30 m de folga
+            vistos = [a for a in avs.get(z.get("especie"), [])
+                      if (a["pos"]["x"] - z["x"]) ** 2 + (a["pos"]["y"] - z["y"]) ** 2 <= raio * raio]
+            ids = {}
+            for a in vistos:
+                ids[a.get("id")] = a
+            z["vistos"] = len(ids)
+            z["machos"] = sum(1 for a in ids.values() if a.get("sexo") == 0)
+            z["femeas"] = sum(1 for a in ids.values() if a.get("sexo") == 1)
+            z["horas"] = sorted({int(a["hora"]) for a in vistos if isinstance(a.get("hora"), (int, float))})
+            z["ultimo_dia"] = max((a.get("dia") or 0 for a in vistos), default=None)
         return lista
 
     def pois(self):
@@ -1313,7 +1338,7 @@ class Companion:
             lida = dict(lida, municao=mun if mun or "municao" not in lida else lida["municao"])
             nas = {"DA_" + i["item"].split("ID_", 1)[-1] + "_StoreItem" for i in lida.get("itens") or []
                    if i.get("tipo") == "Inventory.Weapon" and "ID_" in (i.get("item") or "")}
-            faltam = nas - set(mun)
+            faltam = {x for x in nas if x not in mun and x.replace("_StoreItem", "_StoreAsset") not in mun}
             velho = agora - (armas.get("ts") or 0) > 300
             if self.em_reserva() and (faltam or velho) and agora - getattr(self, "_armas_pedidas", 0) > 30:
                 self._armas_pedidas = agora

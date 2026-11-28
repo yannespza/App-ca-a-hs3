@@ -78,7 +78,8 @@ function M.armas(ctx)
     for _, i in ipairs(itensAtuais(im, ctx.tagName)) do
         if i.tipo == "Inventory.Weapon" and i.item then
             local nome = i.item:match("ID_(.+)$")
-            if nome then alvos["DA_" .. nome .. "_StoreItem"] = true; n = n + 1 end
+            -- a maioria é DA_X_StoreItem; algumas (ex.: besta Saga 405) são DA_X_StoreAsset
+            if nome then alvos["DA_" .. nome .. "_StoreItem"] = true; alvos["DA_" .. nome .. "_StoreAsset"] = true; n = n + 1 end
         end
     end
     local r = { ts = os.time(), municao = {} }
