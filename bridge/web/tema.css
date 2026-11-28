@@ -329,3 +329,5 @@ body.noite .lic-item b { color: #ffd27a; }
 body:not([data-aba="mapa"]) .lic-alerta { display: none !important; }
 body.noite button.aces { color: #ff9a66 !important; border-color: #ff9a66 !important; }
 .ficha-peso-ant { font-size: 11.5px; opacity: .8; text-align: right; margin: -2px 0 4px; }
+.ficha .ficha-nome { white-space: normal; overflow-wrap: anywhere; font-size: 20px; line-height: 1.05; max-width: 240px; }
+@media (max-width: 700px) { .ficha .ficha-nome { font-size: 15px; } }
