@@ -132,7 +132,7 @@ async function carregarPois() {
   for (const p of lista) {
     const m = L.marker(toLL(p), { icon: iconePoi(p), riseOnHover: true })
       .bindTooltip(`<b>${esc(p.descoberto ? p.nome : "Local não descoberto")}</b>${p.descoberto ? "" : "<br><i>Explore para revelar</i>"}`, { direction: "top", offset: [0, -12] });
-    m.on("click", () => perguntarPino(L.latLng(toLL(p)), p.descoberto ? p.nome : "Local não descoberto", p.descoberto && PODE_IR.has(p.categoria) ? { x: p.x, y: p.y, z: p.z || 0 } : null));
+    m.on("click", () => perguntarPino(L.latLng(toLL(p)), p.descoberto ? p.nome : "Local não descoberto", p.descoberto && PODE_IR.has(p.categoria) ? { x: p.x, y: p.y, z: p.z || 0, cat: p.categoria } : null));
     // estruturas de caça descobertas aparecem com os pontos; as que faltam descobrir ficam na camada "Estruturas"
     (p.categoria === "estrutura" && !p.descoberto ? grupoEstr : grupoPois).addLayer(m);
   }
@@ -177,6 +177,13 @@ function centrarAnimal(ll) {
 let destinoIr = null;
 // viagem rápida só para pontos com função: agentes, acampamentos e torres (e as barracas do app)
 const PODE_IR = new Set(["npc", "acampamento", "torre"]);
+async function trazerCarro(ev) {
+  ev?.stopPropagation();
+  if (!destinoIr) return;
+  const r = await post("/api/carro", destinoIr).catch(() => ({ ok: false, erro: "Sem resposta do app." }));
+  mapa.closePopup();
+  if (!r.ok) perguntar(r.erro || "Não deu para trazer o carro.", "Ok");
+}
 async function irAte(ev) {
   ev?.stopPropagation();
   if (!destinoIr) return;
@@ -192,7 +199,8 @@ function perguntarPino(ll, rotulo, destino) {
   destinoIr = destino || null;
   const html = `<div class="pp-caixa" style="text-align:center"><b>${esc(rotulo || "Novo pino")}</b><br>
     <button class="btn-papel verde" id="pp-ok" style="margin-top:6px;padding:10px 14px" onclick="confirmarPino(event)">📍 Colocar pino aqui</button>
-    ${destino ? `<button class="btn-papel" style="margin-top:6px;padding:10px 14px" onclick="irAte(event)" title="Viagem rápida até este ponto (como no mapa do jogo)">🚶 Ir até aqui</button>` : ""}</div>`;
+    ${destino ? `<button class="btn-papel" style="margin-top:6px;padding:10px 14px" onclick="irAte(event)" title="Viagem rápida até este ponto (como no mapa do jogo)">🚶 Ir até aqui</button>` : ""}
+    ${destino && destino.cat === "acampamento" ? `<br><button class="btn-papel" style="margin-top:6px" onclick="trazerCarro(event)" title="Traz o último carro que você usou, com o setup dele, para perto do acampamento">🚙 Trazer o carro para cá</button>` : ""}</div>`;
   // no celular a telemetria fica no alto: o mapa se ajeita para o balão não ficar escondido atrás dela
   const celular = window.matchMedia("(max-width: 820px)").matches;
   L.popup({ autoPanPaddingTopLeft: celular ? [12, 180] : [12, 12], autoPanPaddingBottomRight: celular ? [12, 150] : [12, 12] })

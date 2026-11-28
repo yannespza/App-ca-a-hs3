@@ -1423,6 +1423,23 @@ class Companion:
             atual = None      # leitura de outra reserva: não vale para comprar aqui
         return atual, self._licencas_todas
 
+    def trazer_carro(self, corpo):
+        """Traz o último carro usado para ~12 m de um ponto (acampamento), do lado de onde você vem."""
+        if not self.em_reserva():
+            return {"ok": False, "erro": "Entre numa reserva no jogo primeiro."}
+        try:
+            x, y = float(corpo["x"]), float(corpo["y"])
+            z = float(corpo["z"]) if corpo.get("z") not in (None, "") else None
+        except (KeyError, TypeError, ValueError):
+            return {"ok": False, "erro": "Ponto inválido."}
+        p = (self.estado or {}).get("pos") or {}
+        dx, dy = (p.get("x", x + 1) - x), (p.get("y", y) - y)
+        n = math.hypot(dx, dy) or 1.0
+        x, y = x + dx / n * 1200, y + dy / n * 1200
+        if not self.enviar_comando([f"carro {x:.0f} {y:.0f}" + (f" {z:.0f}" if z is not None else "")]):
+            return {"ok": False, "erro": "O jogo não está respondendo."}
+        return {"ok": True}
+
     def ir_ate(self, corpo):
         """Viagem rápida até um ponto descoberto do mapa (acampamento, torre, agente, cabana...)."""
         if not self.em_reserva():
@@ -2253,6 +2270,8 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/barraca":
             with APP.lock:
                 return self.responder(200, APP.acao_barraca(corpo))
+        if p == "/api/carro":
+            return self.responder(200, APP.trazer_carro(corpo))
         if p == "/api/ir":
             return self.responder(200, APP.ir_ate(corpo))
         if p == "/api/municao":
