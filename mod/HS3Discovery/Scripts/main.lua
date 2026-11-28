@@ -371,6 +371,29 @@ local function readKill(info)
         local o = shot.ProjectileOrigin
         t.origem = { x = o.X, y = o.Y, z = o.Z }
     end)
+    -- órgãos atingidos (o mesmo que o jogo mostra na ficha ao recolher): seções que cada projétil atravessou
+    pcall(function()
+        local vistos, lista = {}, {}
+        local nTiros = math.min(info.InfoList:GetArrayNum(), 6)
+        for i = 1, nTiros do
+            pcall(function()
+                local hits = info.InfoList[i].SingleHits
+                for j = 1, math.min(hits:GetArrayNum(), 4) do
+                    pcall(function()
+                        local secs = hits[j].PenetrationResolution.ExitPropertiesPerSection
+                        for k = 1, math.min(secs:GetArrayNum(), 24) do
+                            local nome = tagName(secs[k].OrganType)
+                            if nome and nome ~= "" and nome ~= "None" and not vistos[nome] then
+                                vistos[nome] = true
+                                lista[#lista + 1] = nome
+                            end
+                        end
+                    end)
+                end
+            end)
+        end
+        t.orgaos = lista
+    end)
     if t.morte_ticks and t.tiro_ticks and t.morte_ticks >= t.tiro_ticks then
         t.segundos_ate_morte = (t.morte_ticks - t.tiro_ticks) / 1e7
     end

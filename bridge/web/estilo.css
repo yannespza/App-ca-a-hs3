@@ -937,3 +937,5 @@ body.apk .so-apk { display: inline-flex !important; }
 .mj-mon { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
 .mj-mon-i { border: 1px solid var(--linha); border-radius: 8px; padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 13.5px; }
 .mj-mon-i span { opacity: .8; flex-basis: 100%; }
+.orgao-vital { color: #9fe07a; font-weight: 600; }
+.novidades h4 { margin: 10px 0 4px; } .novidades ul { margin: 0 0 6px; padding-left: 20px; line-height: 1.5; }

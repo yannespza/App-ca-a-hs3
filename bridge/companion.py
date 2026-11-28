@@ -943,6 +943,9 @@ class Companion:
                     ab["perto_presa_m"] = round(dz) if dz is not None and dz < 1e8 else None
                 except Exception:
                     pass
+            if isinstance(ab.get("orgaos"), list):
+                ab["orgaos_nome"] = list(dict.fromkeys(missoes.nome_orgao(o) for o in ab["orgaos"]))
+                ab["vital"] = missoes.acertou_vital(ab["orgaos"])
             self.registrar_grupo(chave)
             d["abates"].append(ab)
             d["marcados"].pop(id_, None)
@@ -1106,6 +1109,7 @@ class Companion:
                     falt[z.get("grupo")] = falt.get(z.get("grupo"), 0) + 1
             cap["zonas_faltando"] = falt
             cap["corredor"] = any(g in missoes.PREDADORES for g in grupos) and any(z.get("descoberta") for z in zs)
+            cap["orgaos"] = any(isinstance(a.get("orgaos"), list) for a in (self.dados.get("abates") or [])[-30:])
         except Exception:
             pass
         return grupos, cap
@@ -2162,6 +2166,7 @@ class Companion:
                 "barracas": self.barracas(), "preco_barraca": self.PRECO_BARRACA, "max_barracas": self.MAX_BARRACAS,
                 "licencas_alerta": getattr(self, "licencas_alerta", []), "aviso_app": getattr(self, "aviso_app", None),
                 "carcaca_nova": getattr(self, "carcaca_nova", None), "boletim_novo": getattr(self, "boletim_novo", None),
+                "novidade_vista": self.dados.get("novidade_vista"),
                 "ofertas": [m for m in lista if m["status"] == "oferta"],
                 "ativas": [m for m in lista if m["status"] == "ativa"],
                 "contratos_jogo": self.contratos_jogo(),
@@ -2507,6 +2512,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.responder(200, APP.voltar_agora())
         if p == "/api/config":
             return self.responder(200, APP.configurar(corpo.get("chave"), corpo.get("valor")))
+        if p == "/api/novidade_vista":
+            with APP.lock:
+                APP.dados["novidade_vista"] = str(corpo.get("id") or "")[:40]
+                APP.salvar_pendente = True
+            return self.responder(200, {"ok": True})
         if p == "/api/chat":
             return self.responder(200, APP.conversar(corpo.get("texto")))
         if p == "/api/exportar_dados":

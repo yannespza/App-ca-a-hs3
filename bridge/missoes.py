@@ -190,7 +190,9 @@ def gerar(dados, pois, nome_grupo, grupos_reserva, cap, quantos=1):
             m = corredor(nome_grupo, nv)
         elif grupos and sorteio < 0.24:    # campanha em 3 etapas
             m = campanha(random.choice([g for g in grupos if g not in PREDADORES] or grupos), nome_grupo, nv)
-        elif grupos and sorteio < 0.24 + 0.10 + 0.04 * nv:   # especiais: mais comuns com o nível
+        elif grupos and sorteio < 0.28 and cap.get("orgaos"):    # abate limpo (só com o mod que lê os órgãos)
+            m = abate_limpo(random.choice(grupos), nome_grupo, nv)
+        elif grupos and sorteio < 0.28 + 0.10 + 0.04 * nv:   # especiais: mais comuns com o nível
             abatidos = {str(a.get("id")) for a in dados.get("abates", [])}
             av = cap.get("avistamentos") or []
             m = especial(grupos, nome_grupo, cap, av, abatidos) or m
@@ -439,6 +441,8 @@ def conta(m, evento, dentro, arma_tipo_de):
         return False
     if c.get("sem_luneta") and evento.get("tem_luneta") is not False:
         return False
+    if c.get("vital") and not acertou_vital(evento.get("orgaos")):
+        return False
     if "perto_presa_m" in c:
         if evento.get("grupo") not in PREDADORES:
             return False
@@ -601,6 +605,34 @@ def agente_de(m):
 
 
 PREDADORES = ("coiote", "lobo", "raposa", "felino", "urso")
+
+ORGAOS = [("heart", "Coração"), ("lung", "Pulmão"), ("brain", "Cérebro"), ("spin", "Coluna"), ("neck", "Pescoço"),
+          ("liver", "Fígado"), ("kidney", "Rim"), ("stomach", "Estômago"), ("intestin", "Intestino"), ("bowel", "Intestino"),
+          ("artery", "Artéria"), ("aorta", "Artéria"), ("bone", "Osso"), ("muscle", "Músculo"), ("leg", "Perna"),
+          ("head", "Cabeça"), ("jaw", "Mandíbula")]
+VITAIS = ("heart", "lung", "brain", "spin", "artery", "aorta")
+
+
+def nome_orgao(tag):
+    t = (tag or "").lower()
+    return next((n for k, n in ORGAOS if k in t), (tag or "").split(".")[-1])
+
+
+def acertou_vital(orgaos):
+    return any(any(v in (o or "").lower() for v in VITAIS) for o in orgaos or [])
+
+
+def abate_limpo(grupo, nome_grupo, nivel=0):
+    """Abate limpo: um tiro só, em órgão vital (coração, pulmão, cérebro ou coluna), o que o jogo mostra ao recolher."""
+    nome = _g(nome_grupo(grupo)) if grupo else "animais"
+    meta = 1 if nivel < 2 else 2
+    m = _base(f"Abate limpo: {nome}"[:60],
+              "Bicho sofrendo eu não aceito. Quero um tiro só, no lugar certo: coração, pulmão ou cabeça. "
+              "Na ficha do animal, quando você recolher, o jogo mostra o que a bala pegou.",
+              f"Abata {meta} {plural(nome, meta)} com um único tiro que acerte órgão vital (coração, pulmão, cérebro ou coluna).",
+              meta, 700 + 250 * meta + 100 * nivel)
+    m.update({"tipo": "combo", "grupo": grupo, "cond": {"um_tiro": True, "vital": True}})
+    return m
 
 
 def reconhecimento(grupo, nome_grupo, faltam, nivel=0):

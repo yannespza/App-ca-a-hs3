@@ -339,7 +339,24 @@ function tocarAviso() {
   } catch (e) {}
   try { navigator.vibrate && navigator.vibrate([120, 60, 120]); } catch (e) {}
 }
+// ---- novidades da versão: aparece uma vez a cada atualização (vale no PC e no celular)
+let novidadesChecadas = false;
+async function mostrarNovidades(vista) {
+  if (novidadesChecadas) return;
+  novidadesChecadas = true;
+  let lista = [];
+  try { lista = await (await fetch("/novidades.json", { cache: "no-store" })).json(); } catch { return; }
+  if (!lista.length || lista[0].id === vista) return;
+  const i = lista.findIndex(n => n.id === vista);
+  const novas = vista && i > 0 ? lista.slice(0, Math.min(i, 6)) : lista.slice(0, 1);
+  moModal(`<header class="mo-jan-topo"><div><h3>O que mudou</h3><small>Novidades desta atualização do app</small></div>
+      <button class="mo-x" onclick="fecharNovidades('${esc(lista[0].id)}')">✕</button></header>
+    <div class="mo-jan-corpo novidades">${novas.map(n => `<h4>${esc(n.titulo)}</h4><ul>${n.itens.map(t => `<li>${esc(t)}</li>`).join("")}</ul>`).join("")}
+      <div style="text-align:right;margin-top:12px"><button class="btn-papel verde" onclick="fecharNovidades('${esc(lista[0].id)}')">Entendi</button></div></div>`);
+}
+function fecharNovidades(id) { moFecharModal(); post("/api/novidade_vista", { id }); }
 function vigiarAvisos(d) {
+  if ("novidade_vista" in d) mostrarNovidades(d.novidade_vista);
   const c = d.carcaca_nova;
   const ts = c ? c.ts : null;
   if (carcacaVista !== undefined && ts && ts !== carcacaVista) tocarAviso();
@@ -774,12 +791,13 @@ async function atualizar() {
   };
   barras(s.por_grupo || [], "cac-especies");
   barras((s.por_arma || []).map(([n, v]) => [n.replace(/^ID_/, "").replace(/_/g, " "), v]), "cac-armas");
-  $("ultimos").innerHTML = d.abates.length ? `<table class="tabela"><thead><tr><th>Animal</th><th>Peso</th><th>Troféu</th><th>Genética</th><th>Distância</th><th>Morte</th><th>Arma</th><th>Reserva</th></tr></thead><tbody>` +
+  $("ultimos").innerHTML = d.abates.length ? `<table class="tabela"><thead><tr><th>Animal</th><th>Peso</th><th>Troféu</th><th>Genética</th><th>Distância</th><th>Morte</th><th>Órgãos</th><th>Arma</th><th>Reserva</th></tr></thead><tbody>` +
     d.abates.slice(0, 15).map(a => `<tr><td><b>${esc(a.especie_nome || a.grupo_nome)}</b>${a.sexo_nome && a.sexo_nome !== "?" ? ` <small>${esc(a.sexo_nome)}</small>` : ""}</td>
       <td>${a.peso_kg ? `${a.peso_kg.toFixed(1).replace(".", ",")} kg` : "–"}</td>
       <td>${a.pontos_trofeu ? `${a.pontos_trofeu.toFixed(1).replace(".", ",")}${a.lendario ? " ★" : ""}` : "–"}</td>
       <td>${pct(a.genetica)}</td><td>${metros(a.distancia_m)}</td>
-      <td title="Tempo entre o tiro e a morte">${a.segundos_ate_morte != null ? `${a.segundos_ate_morte < 10 ? a.segundos_ate_morte.toFixed(1).replace(".", ",") : Math.round(a.segundos_ate_morte)} s` : "–"}</td><td>${esc((a.arma || "").replace(/^ID_/, "").replace(/_/g, " "))}</td><td>${esc(a.reserva ? nomeMapa(a.reserva) : "–")}</td></tr>`).join("") + `</tbody></table>`
+      <td title="Tempo entre o tiro e a morte">${a.segundos_ate_morte != null ? `${a.segundos_ate_morte < 10 ? a.segundos_ate_morte.toFixed(1).replace(".", ",") : Math.round(a.segundos_ate_morte)} s` : "–"}</td>
+      <td class="${a.vital ? "orgao-vital" : ""}" title="${a.vital ? "Acertou órgão vital" : ""}">${a.orgaos_nome && a.orgaos_nome.length ? esc(a.orgaos_nome.join(", ")) : "–"}</td><td>${esc((a.arma || "").replace(/^ID_/, "").replace(/_/g, " "))}</td><td>${esc(a.reserva ? nomeMapa(a.reserva) : "–")}</td></tr>`).join("") + `</tbody></table>`
     : `<p class="vazio">Nenhum abate ainda. Cada animal recolhido no jogo aparece aqui.</p>`;
 }
 
