@@ -927,9 +927,10 @@ local function periodic()
         end
     end
     pcall(passoMochila)
-    if ticks % 10 == 3 and #filaMochila == 0 then lerContratosJogo() end
-    if ticks % 15 == 0 then pcall(writeEquipamento) end
-    if ticks % 2 == 0 then pcall(writeAnimals) end      -- posição dos animais a cada 2 s (antes 5 s)
+    local calmo = os.time() <= calmoAte          -- jogo carregando / logo após viagem ou passar o tempo
+    if not calmo and ticks % 10 == 3 and #filaMochila == 0 then lerContratosJogo() end
+    if not calmo and ticks % 15 == 0 then pcall(writeEquipamento) end
+    if not calmo and ticks % 2 == 0 then pcall(writeAnimals) end      -- posição dos animais a cada 2 s (antes 5 s)
     -- pontos descobertos a cada 5 min (o app marca na hora as estruturas por onde você passa)
     -- v0.1.34 tinha um gancho na descoberta: fechou o jogo ao descobrir uma estrutura. Não usar.
     if curto and ticks % 120 == 0 and os.time() > calmoAte then pcall(exportPois) end
@@ -1055,7 +1056,7 @@ LoopAsync(1000, function()
                 elseif cmd == "mochila" then
                     -- mochila ler | mochila por <item> <tipo> <idx> | mochila tirar <item> | mochila municao <arma> <municao>
                     -- leitura na hora; trocas vão para a fila (uma por segundo, depois salva e relê)
-                    if arg == "ler" then rodarMochila(function(mo, ctx) mo.ler(ctx) end)
+                    if arg == "ler" then if os.time() > calmoAte then rodarMochila(function(mo, ctx) mo.ler(ctx) end) end
                     elseif arg == "armas" then rodarMochila(function(mo, ctx) if mo.armas then mo.armas(ctx) end end)
                     else filaMochila[#filaMochila + 1] = line end
                 elseif cmd == "licencas" or cmd == "licenca" then
@@ -1063,7 +1064,7 @@ LoopAsync(1000, function()
                     local ch, e = loadfile(DIR .. "Scripts\\licencas.lua")
                     if not ch then log("licencas.lua: " .. tostring(e)); return end
                     local li = ch()
-                    if cmd == "licencas" then li.ler(ctxScripts())
+                    if cmd == "licencas" then if os.time() > calmoAte then li.ler(ctxScripts()) end
                     else
                         local tag, preco, r = line:match("^licenca%s+(%S+)%s+(%d+)%s*(%S*)")
                         if tag and not jaPago("licenca", r) then li.comprar(ctxScripts(), tag, tonumber(preco), r) end

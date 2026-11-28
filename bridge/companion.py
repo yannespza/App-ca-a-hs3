@@ -1523,10 +1523,10 @@ class Companion:
                           "tipo": tipo, "grupo": grupo, "dist_min": int(dist.group(1)) if tipo == "distancia" else 0})
         return saida
 
-    def _lida_mochila(self):
+    def _lida_mochila(self, pedir=True):
         """mochila.json + munição/acessórios das armas (armas.json); pede ao jogo uma leitura nova de vez em quando."""
         agora = time.time()
-        if self.em_reserva() and agora - getattr(self, "_mochila_pedida", 0) > 12:
+        if pedir and self.em_reserva() and agora - getattr(self, "_mochila_pedida", 0) > 12:
             self._mochila_pedida = agora
             self.enviar_comando(["mochila ler"])
         lida = self.cache.json(self.caminho("mochila.json"), None)
@@ -2003,7 +2003,7 @@ class Companion:
 
     def dados_loja(self):
         with self.lock:
-            lida = self._lida_mochila() or {}
+            lida = self._lida_mochila(pedir=False) or {}      # a Loja só usa a última leitura (não pede leitura ao jogo)
             na_mochila = {i.get("item") for i in lida.get("itens") or [] if i.get("item")}
             jd = self.cache.json(self.caminho("jogo_dados.json"), None) or {}
             icones = {i.get("id"): i.get("icone") for i in jd.get("itens", []) if i.get("id") and i.get("icone")}
