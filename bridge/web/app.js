@@ -206,7 +206,48 @@ async function confirmarPino(ev) {
   await post("/api/pino", { x: w.x, y: w.y, rotulo });
   atualizar();
 }
-mapa.on("click", (e) => perguntarPino(e.latlng, "Meu pino"));
+mapa.on("click", (e) => montandoBarraca ? montarBarraca(e.latlng) : perguntarPino(e.latlng, "Meu pino"));
+
+// ---- barracas (Loja do Earl): até 10 por reserva, pagas com o dinheiro do jogo, viram ponto de viagem
+const grupoBarracas = L.layerGroup().addTo(mapa);
+let montandoBarraca = false, barracasTexto = "", barracasInfo = { preco: 300, max: 10, n: 0 };
+function modoBarraca() {
+  montandoBarraca = !montandoBarraca;
+  $("btn-barraca")?.classList.toggle("ativo", montandoBarraca);
+  $("mapa").classList.toggle("mira", montandoBarraca);
+  if (montandoBarraca) marcarSeguindo(false);
+}
+async function montarBarraca(ll) {
+  modoBarraca();
+  const n = barracasInfo.n;
+  if (n >= barracasInfo.max) return perguntar(`Você já tem ${barracasInfo.max} barracas nesta reserva. Desmonte uma primeiro.`, "Ok");
+  if (!await perguntar(`Montar uma barraca aqui por $${fmt(barracasInfo.preco)}?\n(${n} de ${barracasInfo.max} nesta reserva)\n\nDepois é só clicar nela e escolher "Ir até a barraca".`, "Montar")) return;
+  const w = fromLL(ll);
+  const r = await post("/api/barraca", { acao: "comprar", x: w.x, y: w.y }).catch(() => ({ ok: false, erro: "Sem resposta do app." }));
+  if (!r.ok) perguntar(r.erro || "Não deu para montar.", "Ok");
+}
+async function barraca(acao, id) {
+  if (acao === "desmontar" && !await perguntar("Desmontar esta barraca? O dinheiro não volta.", "Desmontar")) return;
+  mapa.closePopup();
+  const r = await post("/api/barraca", { acao, id }).catch(() => ({ ok: false, erro: "Sem resposta do app." }));
+  if (!r.ok) perguntar(r.erro || "Não deu certo.", "Ok");
+  else if (acao === "ir") marcarSeguindo(true);
+}
+function desenharBarracas(d) {
+  barracasInfo = { preco: d.preco_barraca || 300, max: d.max_barracas || 10, n: (d.barracas || []).length };
+  const t = JSON.stringify(d.barracas || []);
+  if (t === barracasTexto) return;
+  barracasTexto = t;
+  grupoBarracas.clearLayers();
+  for (const b of d.barracas || []) {
+    L.marker(toLL(b), { icon: L.divIcon({ className: "", html: `<div class="mk-barraca ${b.pendente ? "pendente" : ""}">⛺</div>`, iconSize: [28, 28], iconAnchor: [14, 14] }), zIndexOffset: 800 })
+      .bindTooltip(esc(b.nome) + (b.pendente ? " (pagando…)" : ""))
+      .bindPopup(`<div class="pp-caixa" style="text-align:center"><b>${esc(b.nome)}</b><br>
+        <button class="btn-papel verde" style="margin-top:6px;padding:10px 14px" onclick="barraca('ir','${esc(b.id)}')">🚶 Ir até a barraca</button><br>
+        <button class="btn-papel" style="margin-top:6px" onclick="barraca('desmontar','${esc(b.id)}')">Desmontar</button></div>`)
+      .addTo(grupoBarracas);
+  }
+}
 
 async function tirarPino() {
   $("btn-tirar-pino").style.display = "none";
@@ -334,6 +375,7 @@ function atualizarMarcadores(d) {
     if (!marcPino) marcPino = L.marker(toLL(pino), { icon: L.divIcon({ className: "", html: '<div class="mk-pino">📍</div>', iconSize: [30, 30], iconAnchor: [15, 30] }), zIndexOffset: 900 }).addTo(mapa);
     marcPino.setLatLng(toLL(pino)).bindTooltip(`${esc(rot)} · ${metros(distancia(st.pos, pino))}`);
   } else if (marcPino) { mapa.removeLayer(marcPino); marcPino = null; }
+  desenharBarracas(d);
   grupoMissoes.clearLayers();
   for (const m of d.ativas) if (m.local && m.local.raio_m) {
     // área de busca (carcaça): círculo no tamanho real

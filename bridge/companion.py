@@ -928,6 +928,12 @@ class Companion:
             return avaliar_missoes(d, dict(ab, tipo="abate_confirmado"), self.reserva())
         elif tipo == "compra":
             d["compras"] = (d["compras"] + [ev])[-50:]
+            for lista in (d.get("barracas") or {}).values():
+                for b in lista:
+                    if b.get("pendente") and b["pendente"] == ev.get("ref"):
+                        b.pop("pendente")
+                        if not ev.get("ok"):
+                            b["falhou"] = True
         elif tipo == "recompensa":
             d["recompensas"] = (d["recompensas"] + [ev])[-100:]
             for m in d["missoes"]:
@@ -1367,7 +1373,7 @@ class Companion:
         if not self.em_reserva():
             return {"ok": False, "erro": "Entre numa reserva no jogo primeiro."}
         try:
-            x, y, z = float(corpo["x"]), float(corpo["y"]), float(corpo.get("z") or 0)
+            x, y = float(corpo["x"]), float(corpo["y"])
         except (KeyError, TypeError, ValueError):
             return {"ok": False, "erro": "Ponto inválido."}
         # chega a 10 m do ponto, do lado de onde você vem (no centro da estrutura o jogo prende o caçador)
@@ -1376,9 +1382,51 @@ class Companion:
         n = math.hypot(dx, dy) or 1.0
         x, y = x + dx / n * 1000, y + dy / n * 1000
         self.pausa_pos_ate = time.time() + 15        # não grava "último local" no meio da viagem
-        if not self.enviar_comando([f"teleport {x:.0f} {y:.0f} {z:.0f}"]):
+        if not self.enviar_comando([f"teleport {x:.0f} {y:.0f}"]):      # sem z: o mod usa a altura do chão
             return {"ok": False, "erro": "O jogo não está respondendo."}
         return {"ok": True}
+
+    # ------------------------------------------------------------ barracas (Loja do Earl)
+    PRECO_BARRACA, MAX_BARRACAS = 300, 10
+
+    def barracas(self):
+        return [b for b in (self.dados.get("barracas") or {}).get(self.reserva() or "", []) if not b.get("falhou")]
+
+    def acao_barraca(self, corpo):
+        if not self.em_reserva():
+            return {"ok": False, "erro": "Entre numa reserva no jogo primeiro."}
+        reserva = self.reserva()
+        lista = self.dados.setdefault("barracas", {}).setdefault(reserva, [])
+        lista[:] = [b for b in lista if not b.get("falhou")]
+        acao = corpo.get("acao")
+        if acao == "comprar":
+            if len(lista) >= self.MAX_BARRACAS:
+                return {"ok": False, "erro": f"Você já tem {self.MAX_BARRACAS} barracas nesta reserva. Desmonte uma primeiro."}
+            cred = (self.estado.get("moedas") or {}).get("Currency.Credits") or 0
+            if cred < self.PRECO_BARRACA:
+                return {"ok": False, "erro": "Créditos insuficientes."}
+            try:
+                x, y = float(corpo["x"]), float(corpo["y"])
+            except (KeyError, TypeError, ValueError):
+                return {"ok": False, "erro": "Lugar inválido."}
+            ref = uuid.uuid4().hex[:6]
+            if not self.enviar_comando([f"cobrar {self.PRECO_BARRACA} {ref}"]):
+                return {"ok": False, "erro": "O jogo não está respondendo."}
+            lista.append({"id": ref, "x": x, "y": y, "nome": f"Barraca {len(lista) + 1}", "ts": time.time(), "pendente": ref})
+        elif acao == "desmontar":
+            lista[:] = [b for b in lista if b["id"] != corpo.get("id")]
+        elif acao == "ir":
+            b = next((b for b in lista if b["id"] == corpo.get("id")), None)
+            if not b:
+                return {"ok": False, "erro": "Barraca não encontrada."}
+            self.pausa_pos_ate = time.time() + 15
+            # do lado da barraca, a 3 m (a barraca é só do app: não há estrutura no lugar)
+            if not self.enviar_comando([f"teleport {b['x'] + 300:.0f} {b['y']:.0f}"]):
+                return {"ok": False, "erro": "O jogo não está respondendo."}
+        else:
+            return {"ok": False, "erro": "Ação inválida."}
+        salvar_json(DADOS_PATH, self.dados)
+        return {"ok": True, "barracas": self.barracas()}
 
     def recarregar_municao(self):
         """Enche a reserva de munição das armas da mochila (no jogo a munição não custa nada)."""
@@ -1796,6 +1844,7 @@ class Companion:
                 "mapa": self.info_mapa(),
                 "pino_app": self.dados.get("pino_app"),
                 "rastreados": rastreados,
+                "barracas": self.barracas(), "preco_barraca": self.PRECO_BARRACA, "max_barracas": self.MAX_BARRACAS,
                 "ofertas": [m for m in lista if m["status"] == "oferta"],
                 "ativas": [m for m in lista if m["status"] == "ativa"],
                 "contratos_jogo": self.contratos_jogo(),
@@ -2120,6 +2169,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.responder(200, {"ok": True})
         if p == "/api/setups":
             return self.responder(200, APP.setups(corpo))
+        if p == "/api/barraca":
+            with APP.lock:
+                return self.responder(200, APP.acao_barraca(corpo))
         if p == "/api/ir":
             return self.responder(200, APP.ir_ate(corpo))
         if p == "/api/municao":

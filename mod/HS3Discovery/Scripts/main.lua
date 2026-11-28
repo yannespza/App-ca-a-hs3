@@ -688,7 +688,23 @@ local function comprar(nomeItem, ref)
     pcall(writeEquipamento)
 end
 
+-- altura do chão num ponto (traço vertical; testado 27/11: bate com a altura que o jogo dá ao pino)
+local function alturaChao(x, y)
+    local z
+    pcall(function()
+        local pc = FindFirstOf("HS3PlayerController")
+        local KSL = StaticFindObject("/Script/Engine.Default__KismetSystemLibrary")
+        local hit = {}
+        local ok = KSL:LineTraceSingle(pc.Pawn, { X = x, Y = y, Z = 200000 }, { X = x, Y = y, Z = -200000 }, 0, false, {}, 0, hit, true,
+            { R = 0, G = 0, B = 0, A = 0 }, { R = 0, G = 0, B = 0, A = 0 }, 0)
+        if ok and hit.Location then z = hit.Location.Z end
+    end)
+    return z
+end
+
 local function teleportar(x, y, z)
+    -- sem altura (barracas, pontos com afastamento): usa a do chão para não cair do céu
+    if not z then z = alturaChao(x, y) or 0 end
     local nav = FindFirstOf("NavigationPlayerStateComponent")
     nav:Server_SafeFastTravel({ { Rotation = { X = 0, Y = 0, Z = 0, W = 1 }, Translation = { X = x, Y = y, Z = z + 60 }, Scale3D = { X = 1, Y = 1, Z = 1 } } })
     log(string.format("teleporte para %.0f, %.0f", x, y))
@@ -846,7 +862,24 @@ LoopAsync(1000, function()
                     else exportarDados(true) end
                 elseif cmd == "teleport" then
                     local x, y, z = line:match("^teleport%s+(%S+)%s+(%S+)%s*(%S*)")
-                    teleportar(tonumber(x), tonumber(y), tonumber(z) or 0)
+                    teleportar(tonumber(x), tonumber(y), tonumber(z))
+                elseif cmd == "cobrar" then
+                    -- cobrar <créditos> <ref>: itens do app (barracas, câmeras...) pagos com o dinheiro do jogo
+                    local valor, r = line:match("^cobrar%s+(%d+)%s*(%S*)")
+                    valor = tonumber(valor)
+                    if valor and not jaPago("cobrar", r) then
+                        local alvo
+                        pcall(function()
+                            FindFirstOf("HS3StoreSaveGame").CurrencyTypeList:ForEach(function(_, e)
+                                local it = e:get()
+                                if tagName(it.CurrencyType) == "Currency.Credits" then alvo = it end
+                            end)
+                        end)
+                        local ok = alvo ~= nil and alvo.CurrencyAmount >= valor
+                        if ok then alvo.CurrencyAmount = alvo.CurrencyAmount - valor end
+                        log(string.format("cobrança $%d: %s", valor, ok and "OK" or "FALHOU"))
+                        emit("compra", { item = "app", ok = ok, ref = r, erro = (not ok) and "créditos insuficientes" or nil, depois = alvo and alvo.CurrencyAmount })
+                    end
                 elseif cmd == "nitido" then
                     local ch, e = loadfile(DIR .. "Scripts\\nitido.lua")
                     if ch then ch().iniciar({ DIR = DIR, log = log }) else log("nitido.lua: " .. tostring(e)) end
