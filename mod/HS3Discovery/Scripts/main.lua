@@ -421,6 +421,13 @@ local function readKill(info)
     return t
 end
 
+-- F9: foto para a Sala de troféus (o app do PC tira o print e prefere esta à automática). Só grava um evento.
+pcall(function()
+    RegisterKeyBind(Key.F9, function()
+        emit("foto_trofeu", {})
+    end)
+end)
+
 pcall(function()
     RegisterHook("/Script/HS3AnimalsRuntime.AnimalBaggingHandlerComponent:Client_ShowBagPopupWithInfo", function(_, info)
         local ok, t = pcall(readKill, info:get())
@@ -529,6 +536,20 @@ local function exportPois()
         end)
         writeFile(DIR .. "zonas_" .. curto .. ".json", jsonEncode(zonas))
     end)
+end
+
+-- quantas coisas já estão descobertas neste mapa (só o tamanho da lista: barato). Mudou = exporta zonas na hora.
+local descobertasAntes = nil
+local function contarDescobertas()
+    local _, nome = currentLevel()
+    local save = FindFirstOf("NavigationSaveData")
+    if not nome or not valid(save) then return nil end
+    local n
+    save.DiscoverStatusLists:ForEach(function(_, e)
+        local d = e:get()
+        if d.LevelName:ToString() == nome then n = d.DiscoveryStatesList:GetArrayNum() end
+    end)
+    return n
 end
 
 local function exportFog()
@@ -889,7 +910,15 @@ local function periodic()
     if ticks % 2 == 0 then pcall(writeAnimals) end      -- posição dos animais a cada 2 s (antes 5 s)
     -- pontos descobertos a cada 5 min (o app marca na hora as estruturas por onde você passa)
     -- v0.1.34 tinha um gancho na descoberta: fechou o jogo ao descobrir uma estrutura. Não usar.
-    if curto and ticks % 300 == 0 and os.time() > calmoAte then pcall(exportPois) end
+    if curto and ticks % 120 == 0 and os.time() > calmoAte then pcall(exportPois) end
+    -- zona descoberta agora: a lista de descobertas cresce; exporta em seguida (antes só a cada 5 min)
+    if curto and ticks % 5 == 2 and os.time() > calmoAte then
+        pcall(function()
+            local n = contarDescobertas()
+            if n and descobertasAntes and n ~= descobertasAntes then pcall(exportPois) end
+            descobertasAntes = n
+        end)
+    end
     -- logo que o mapa termina de carregar (fim do período calmo), exporta pontos e zonas uma vez
     if curto and os.time() > calmoAte and zonasFeitas ~= curto and ticks % 10 == 0 then
         zonasFeitas = curto

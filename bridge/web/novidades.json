@@ -1,5 +1,15 @@
 [
  {
+  "id": "2026-11-28f",
+  "titulo": "Zonas mais rápidas e foto com F9",
+  "itens": [
+   "Zona que você descobre aparece no mapa do app em poucos segundos (antes podia levar até 5 minutos).",
+   "Sala de troféus: aperte F9 no jogo para tirar a sua foto. Ela substitui a automática do último troféu (até 15 min depois de empalhar).",
+   "Órgãos: costelas agora aparecem traduzidas.",
+   "Precisa reiniciar o jogo uma vez (mod novo)."
+  ]
+ },
+ {
   "id": "2026-11-28e",
   "titulo": "Seu cão no mapa e Sala de troféus",
   "itens": [

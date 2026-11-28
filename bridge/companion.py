@@ -961,6 +961,16 @@ class Companion:
             d.setdefault("trofeus", []).append(reg)
             threading.Timer(2.0, self.print_trofeu, args=(reg,)).start()
             return []
+        elif tipo == "foto_trofeu":
+            # F9 no jogo: foto escolhida por você. Vai para o troféu empalhado nos últimos 15 min (no lugar da automática);
+            # sem troféu recente, vira uma foto nova na sala
+            lista = d.setdefault("trofeus", [])
+            alvo = lista[-1] if lista and time.time() - lista[-1].get("ts", 0) < 900 else None
+            if not alvo:
+                alvo = {"ts": time.time(), "total": None, "dia": d.get("dia_jogo"), "so_manual": True}
+                lista.append(alvo)
+            threading.Thread(target=self.print_trofeu, args=(alvo, True), daemon=True).start()
+            return []
         elif tipo == "compra":
             d["compras"] = (d["compras"] + [ev])[-50:]
             for lista in list((d.get("barracas") or {}).values()):
@@ -1597,8 +1607,8 @@ class Companion:
 
     PASTA_TROFEUS = os.path.join(BASE_DIR, "trofeus")
 
-    def print_trofeu(self, reg):
-        """Print da tela do PC (só no Windows com Pillow). No celular não dá: fica só o registro."""
+    def print_trofeu(self, reg, manual=False):
+        """Print da tela do PC (só no Windows com Pillow). A foto da tecla F9 sempre vence a automática."""
         try:
             from PIL import ImageGrab
             os.makedirs(self.PASTA_TROFEUS, exist_ok=True)
@@ -1606,7 +1616,14 @@ class Companion:
             img = ImageGrab.grab(all_screens=False).convert("RGB")
             img.save(os.path.join(self.PASTA_TROFEUS, nome), quality=88)
             with self.lock:
-                reg["arquivo"] = nome
+                if manual:
+                    if reg.get("arquivo") and not reg.get("manual"):
+                        reg["arquivo_auto"] = reg["arquivo"]
+                    reg["arquivo"], reg["manual"] = nome, True
+                elif not reg.get("manual"):
+                    reg["arquivo"] = nome
+                else:
+                    reg["arquivo_auto"] = nome
                 self.salvar_pendente = True
         except Exception as e:
             print("print do troféu falhou:", e)
