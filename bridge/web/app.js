@@ -63,7 +63,7 @@ function popupZona(z, nome) {
   const bando = (z.bando_tipos || []).map(t => NOME_TIPO[t] || t);
   return `<div class="pop-zona">
     <div class="pz-cab"><span class="mk-zona ${(TIPO_ZONA[z.tipo] || [])[1] || "comer"}">${silhueta(z.grupo || "outro", z.especie)}</span>
-      <div><b>${esc(z.especie_nome || "")}</b><small>Zona de ${esc(nome.toLowerCase())} · raio ~${Math.round((z.raio || 0) / 100)} m</small></div></div>
+      <div><b>${esc(z.especie_nome || "")}</b><small>Zona de ${esc(nome.toLowerCase())}${z.raio ? ` · raio ~${Math.round(z.raio / 100)} m` : ""}</small></div></div>
     <div class="ficha-lin"><span>Bando nº</span><b>${z.bando ?? "–"}</b></div>
     <div class="ficha-lin"><span>Zonas do bando que você achou</span><b>${bando.length ? esc(bando.join(", ")) : "–"}</b></div>
     <div class="ficha-lin"><span>Animais vistos aqui</span><b>${z.vistos || 0}${z.vistos ? ` (${z.machos || 0} ♂ · ${z.femeas || 0} ♀)` : ""}</b></div>

@@ -448,20 +448,29 @@ local function exportPois()
         end)
     end
     writeFile(DIR .. "pois_" .. curto .. ".json", jsonEncode(lista))
-    -- zonas de necessidade (comer, beber, dormir) com o estado de descoberta (v0.1.41)
+    -- zonas de necessidade do MAPA TODO (v0.1.62): ficam como "filhas" dos ícones de bando no mapa do jogo
+    -- (NavigationActorDataChildsMap: pai = bando; ExtraTags = espécie + tipo). Antes vinham só dos atores carregados perto.
     pcall(function()
         local zonas = {}
-        for _, z in ipairs(FindAllOf("AnimalZoneBase") or {}) do
-            pcall(function()
-                local zt = tagName(z.ZoneTag)
-                if not zt or zt:find("Burrow") or not (zt:find("Eating") or zt:find("Drinking") or zt:find("Sleeping")) then return end
-                local l = z:K2_GetActorLocation()
-                if math.abs(l.X) < 1 and math.abs(l.Y) < 1 then return end
-                local h = z.NavigationActorComponent.NavigationActorData.Hash
-                zonas[#zonas + 1] = { especie = tagName(z.CreatureTag), tipo = zt:match("([^%.]+)$"), x = l.X, y = l.Y,
-                    raio = z.ZoneRadius, grupo = z.GroupID, hash = h, descoberta = estados[h] == "Map.UI.POI.Discovered" }
+        content.NavigationActorDataChildsMap:ForEach(function(k, v)
+            local bando = k:get()
+            v:get().ActorDataArray:ForEach(function(_, e)
+                local a = e:get()
+                local especie, tipo
+                pcall(function()
+                    a.ExtraTags.GameplayTags:ForEach(function(_, tg)
+                        local n = tg:get().TagName:ToString()
+                        if n:find("^Animals%.Zone%.Type%.") then tipo = n:sub(20)
+                        elseif n:find("^Animals%.Types%.") then especie = n end
+                    end)
+                end)
+                if tipo and especie and (tipo == "Eating" or tipo == "Drinking" or tipo == "Sleeping") then
+                    local t = a.Transform.Translation
+                    zonas[#zonas + 1] = { especie = especie, tipo = tipo, x = t.X, y = t.Y, grupo = bando, hash = a.Hash,
+                        descoberta = estados[a.Hash] == "Map.UI.POI.Discovered" }
+                end
             end)
-        end
+        end)
         writeFile(DIR .. "zonas_" .. curto .. ".json", jsonEncode(zonas))
     end)
 end
