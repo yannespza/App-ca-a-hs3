@@ -728,7 +728,15 @@ class Companion:
             return []
         lista = carregar_json(self.caminho(f"zonas_{nivel}.json"), []) or []
         if not isinstance(lista, list):
-            return []
+            lista = []
+        # guarda a última lista boa: uma exportação vazia (mapa carregando) não apaga as zonas do app
+        copia = os.path.join(os.path.dirname(DADOS_PATH), f"zonas_{nivel}.json")
+        if lista:
+            if not hasattr(self, "_zonas_salvas") or self._zonas_salvas.get(nivel) != len(lista):
+                salvar_json(copia, lista)
+                self._zonas_salvas = dict(getattr(self, "_zonas_salvas", {}), **{nivel: len(lista)})
+        else:
+            lista = carregar_json(copia, []) or []
         # o que você já viu em cada zona descoberta (avistamentos da mesma espécie dentro da zona)
         avs = {}
         for a in self.dados.get("avistamentos") or []:

@@ -130,6 +130,8 @@ async function carregarPois() {
   poisTexto = texto;
   grupoPois.clearLayers(); grupoEstr.clearLayers();
   for (const p of lista) {
+    // lugar não descoberto: sem ícone "?" (só as estruturas de caça, na camada "Estruturas a descobrir")
+    if (!p.descoberto && p.categoria !== "estrutura") continue;
     const m = L.marker(toLL(p), { icon: iconePoi(p), riseOnHover: true })
       .bindTooltip(`<b>${esc(p.descoberto ? p.nome : "Local não descoberto")}</b>${p.descoberto ? "" : "<br><i>Explore para revelar</i>"}`, { direction: "top", offset: [0, -12] });
     m.on("click", () => perguntarPino(L.latLng(toLL(p)), p.descoberto ? p.nome : "Local não descoberto", p.descoberto && PODE_IR.has(p.categoria) ? { x: p.x, y: p.y, z: p.z || 0, cat: p.categoria } : null));
@@ -359,6 +361,8 @@ function atualizarAnimais(lista) {
     }
     m._cls = cls;
     m._rotulo = a.especie_nome || a.grupo_nome;
+    if (m._morto !== !!a.morto && m.isTooltipOpen && m.isTooltipOpen()) m.closeTooltip();
+    m._morto = !!a.morto;
     m.setTooltipContent(a.morto ? `<div class="ficha"><div class="ficha-nome">${esc(a.especie_nome || a.grupo_nome || "Animal")}</div>
       <div>✕ Abatido — falta recolher</div><div class="ficha-lin"><span>Distância</span><b>${metros(a.distancia_m)}</b></div></div>` : fichaAnimal(a));
   }

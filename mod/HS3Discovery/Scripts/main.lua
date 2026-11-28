@@ -56,6 +56,7 @@ local function tagName(tag)
 end
 
 local function valid(o) return o ~= nil and o:IsValid() end
+local zonasFeitas = nil
 local calmoAte = 0     -- os.time(): até quando evitar leituras extras (mapa carregando / logo depois de viagem)
 
 local seq = 0
@@ -464,7 +465,7 @@ local function exportPois()
                 pcall(function()
                     a.ExtraTags.GameplayTags:ForEach(function(_, tg)
                         local n = tg:get().TagName:ToString()
-                        if n:find("^Animals%.Zone%.Type%.") then tipo = n:sub(20)
+                        if n:find("^Animals%.Zone%.Type%.") then tipo = n:match("([^%.]+)$")
                         elseif n:find("^Animals%.Types%.") then especie = n end
                     end)
                 end)
@@ -808,6 +809,7 @@ local function periodic()
     if curto and (curto:find("Hub") or curto:find("Menu")) then curto = nil end
     if curto and curto ~= ultimoNivel and FindFirstOf("HS3PlayerController") then
         ultimoNivel = curto
+        zonasFeitas = nil
         calmoAte = os.time() + 90
         local f = io.open(DIR .. "mapa_" .. curto .. ".png", "rb")
         if f then f:close() else pcall(exportMap) end
@@ -835,6 +837,11 @@ local function periodic()
     -- pontos descobertos a cada 5 min (o app marca na hora as estruturas por onde você passa)
     -- v0.1.34 tinha um gancho na descoberta: fechou o jogo ao descobrir uma estrutura. Não usar.
     if curto and ticks % 300 == 0 and os.time() > calmoAte then pcall(exportPois) end
+    -- logo que o mapa termina de carregar (fim do período calmo), exporta pontos e zonas uma vez
+    if curto and os.time() > calmoAte and zonasFeitas ~= curto and ticks % 10 == 0 then
+        zonasFeitas = curto
+        pcall(exportPois)
+    end
     -- animais mortos no mapa (natural = sem tiro do jogador); só regrava quando a lista muda (v0.1.43)
     if curto and ticks % 30 == 5 and os.time() > calmoAte then
         pcall(function()
