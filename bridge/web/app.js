@@ -745,6 +745,7 @@ async function atualizar() {
   $("aviso-teleporte").textContent = d.aviso_teleporte || "";
   const ag = d.agentes || [];
   agentesDados = ag; earlDados = d.earl || null;
+  renderReputacao();
   const total = ag.reduce((t, a) => t + a.valor, 0);
   $("p-rep").textContent = ag.length ? `${fmt(total)}` : "–";
   $("p-rep").title = ag.map(a => `${a.nome}: nível ${a.nivel} (${a.valor})`).join("\n");
@@ -863,7 +864,32 @@ async function moRecarregar() {
   setTimeout(() => renderArmario(true), 2500);
 }
 let agentesDados = [], earlDados = null;
+// ---- Reputação dentro do escritório do Earl (aba) e layout vertical do PC
 function abrirAgentes() {
+  document.querySelector('.segmentos button[data-seg="reputacao"]')?.click();
+  if (window.innerWidth <= 820) document.querySelector('#abas button[data-aba="contratos"]')?.click();
+}
+function renderReputacao() {
+  const el = $("reputacao-lista");
+  if (!el) return;
+  const ag = (a, extra) => `<div class="rep-ag"><div class="c">${esc(a.nome)}<em>Nível ${a.nivel}${a.nivel >= (a.max || 5) ? " (máximo)" : ""} · ${fmt(a.valor)} pts</em></div>
+    <div class="b"><i style="width:${Math.round(a.progresso * 100)}%"></i></div>
+    <small>${extra ? extra + " · " : ""}${a.proximo ? `faltam ${fmt(a.proximo - a.valor)} para o nível ${a.nivel + 1}` : "nível máximo"}</small></div>`;
+  const e = earlDados;
+  const html = (agentesDados.length ? `<div class="rep-sec">Agentes desta reserva</div>${agentesDados.map(a => ag(a)).join("")}` : `<p class="vazio">Entre numa reserva para ver os agentes.</p>`)
+    + (e ? `<div class="rep-sec" style="margin-top:12px">Earl · todas as reservas</div>${ag(Object.assign({}, e, { nome: "Earl Whitaker" }), `${e.contratos} contrato${e.contratos === 1 ? "" : "s"} pago${e.contratos === 1 ? "" : "s"}`)}` : "")
+    + `<p class="sub" style="margin-top:10px">Cada nível dos agentes pede 200 pontos (até 1000). O Earl ganha pontos com os contratos dele e perde quando você aborta. No fim, a patente soma tudo.</p>`;
+  if (el.innerHTML !== html) el.innerHTML = html;
+}
+function alternarVertical(forcar) {
+  const v = forcar !== undefined ? forcar : !document.body.classList.contains("vertical");
+  document.body.classList.toggle("vertical", v && window.innerWidth > 820);
+  try { localStorage.setItem("hs3_vertical", v ? "1" : "0"); } catch {}
+  const b = $("btn-vertical"); if (b) b.textContent = v ? "⇆ Horizontal" : "⇅ Vertical";
+  setTimeout(() => mapa.invalidateSize(), 80);
+}
+try { if (localStorage.getItem("hs3_vertical") === "1") setTimeout(() => alternarVertical(true), 0); } catch {}
+function abrirAgentesAntigo() {
   const e = earlDados;
   const linhaEarl = e ? `<div class="ag-lin ag-earl"><div class="ag-cab"><b>Earl</b><span>Nível ${e.nivel}${e.nivel >= e.max ? " (máximo)" : ""}</span></div>
     <div class="ag-barra"><i style="width:${Math.round(e.progresso * 100)}%"></i></div>

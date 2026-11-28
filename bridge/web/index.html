@@ -6,27 +6,25 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="apple-touch-icon" href="/icon-192.png">
-<title>HS3 Rancho &amp; Expedições</title>
+<title>Painel do Caçador HS3</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon-192.png">
 <link rel="stylesheet" href="/lib/leaflet.css">
 <link rel="stylesheet" href="/estilo.css">
-<meta name="theme-color" content="#121c19">
+<link rel="stylesheet" href="/tema.css">
+<meta name="theme-color" content="#3a2316">
 </head>
 <body>
 <div class="app">
 
   <!-- trilho de navegação -->
   <nav class="trilho" id="abas" aria-label="Seções">
-    <div class="marca" title="HS3 Rancho &amp; Expedições">
-      <svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="15" fill="none" stroke="currentColor" stroke-width="2.4"/>
-        <path d="M20 2v10M20 28v10M2 20h10M28 20h10" stroke="currentColor" stroke-width="2.4"/><circle cx="20" cy="20" r="2.6" fill="currentColor"/></svg>
-    </div>
+    <div class="marca" title="Painel do Caçador HS3"><div class="marca-selo">HS3</div></div>
     <button data-aba="mapa" class="ativo"><svg viewBox="0 0 24 24"><path d="M9 4 3 6.5v13.5l6-2.5 6 2.5 6-2.5V4l-6 2.5L9 4Zm0 0v13.5m6-11v13.5"/></svg><span>Mapa</span></button>
     <button data-aba="armario"><svg viewBox="0 0 24 24"><path d="M8 7V5a4 4 0 0 1 8 0v2M5 9a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V9Zm4 4h6v4H9z"/></svg><span>Mochila</span></button>
     <button data-aba="loja"><svg viewBox="0 0 24 24"><path d="M9 3 4 6l-1 6 3 1v8h12v-8l3-1-1-6-5-3c0 2-1.3 3-3 3S9 5 9 3Z"/></svg><span>Loja</span></button>
     <button data-aba="enciclopedia"><svg viewBox="0 0 24 24"><path d="M5 4h9a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4Zm0 13a3 3 0 0 1 3-3h9M9 8h5"/></svg><span>Diário</span></button>
-    <button data-aba="contratos" class="so-celular"><svg viewBox="0 0 24 24"><path d="M7 3h10v18H7zM10 7h4M10 11h4M10 15h2"/></svg><span>Contratos</span></button>
+    <button data-aba="contratos" class="so-celular"><svg viewBox="0 0 24 24"><path d="M7 3h10v18H7zM10 7h4M10 11h4M10 15h2"/></svg><span>Earl</span></button>
     <button data-aba="manejo"><svg viewBox="0 0 24 24"><path d="M12 21v-7M12 14c-4 0-7-3-7-7 4 0 7 3 7 7Zm0 0c0-5 3-9 8-9 0 5-3 9-8 9ZM5 21h14"/></svg><span>Manejo</span></button>
     <button data-aba="cacadas"><svg viewBox="0 0 24 24"><path d="M4 20V10m6 10V4m6 16v-7m4 7H2"/></svg><span>Caçadas</span></button>
     <button class="trilho-config" onclick="abrirInstalacao()" title="Pasta do jogo, instalação do mod e jogo novo">
@@ -38,7 +36,8 @@
 
   <!-- barra superior -->
   <header class="topo">
-    <div class="local">
+    <div class="local marca-app">
+      <h1>Painel do Caçador HS3</h1>
       <h1 id="nome-reserva">Procurando o jogo…</h1>
       <span class="conexao"><i id="led" class="led"></i><span id="conexao-txt">Procurando o jogo…</span></span>
     </div>
@@ -46,12 +45,13 @@
       <div class="num"><span class="num-rot" data-ajuda="creditos">Créditos</span><b id="p-saldo">–</b></div>
       <div class="num patente"><span class="num-rot" data-ajuda="patente">Patente</span><b id="p-patente">–</b>
         <span class="trilha"><i id="p-patente-barra"></i></span><em id="p-patente-sub" class="num-sub"></em></div>
-      <div class="num clicavel" onclick="abrirAgentes()" title="Ver a reputação de cada agente"><span class="num-rot" data-ajuda="reputacao">Reputação na reserva</span><b id="p-rep">–</b></div>
+      <div class="num clicavel" onclick="abrirAgentes()" title="Ver a reputação de cada agente"><span class="num-rot" data-ajuda="reputacao">Reputação</span><b id="p-rep">–</b></div>
       <div class="num"><span class="num-rot" data-ajuda="campo">Pontos de campo</span><b id="p-campo">–</b></div>
     </div>
     <div class="topo-acoes">
       <button class="btn sec so-pc" onclick="abrirCelular()" title="Abrir este app no celular">📱 Celular</button>
       <button class="btn sec so-apk" onclick="trocarPc()" title="Conectar a outro PC">Trocar de PC</button>
+      <button class="btn sec so-pc btn-vertical" id="btn-vertical" onclick="alternarVertical()" title="Mapa em cima e escritório do Earl embaixo (monitor em pé)">⇅ Vertical</button>
       <button id="btn-atualizar" class="btn sec" onclick="clicarAtualizar()">Procurar atualização</button>
       <button class="btn fantasma so-pc" onclick="sair()" title="Fecha o HS3 Companion">Fechar</button>
     </div>
@@ -119,6 +119,7 @@
       <div class="segmentos" role="tablist">
         <button class="ativo" data-seg="ofertas">Ofertas <span id="n-ofertas" class="cont"></span></button>
         <button data-seg="ativas">Em andamento <span id="p-contratos" class="cont"></span></button>
+        <button data-seg="reputacao">Reputação</button>
         <button data-seg="chat">Dicas</button>
       </div>
 
@@ -129,6 +130,7 @@
           <input type="checkbox" id="f-hud"><span>Mostrar os contratos do app dentro do jogo</span></label><span data-ajuda="hud"></span>
         <div id="ativas"></div>
       </div>
+      <div class="seg" id="seg-reputacao"><div id="reputacao-lista"></div></div>
       <div class="seg chat" id="seg-chat">
         <div class="seg-ajuda" data-ajuda="dicas">Como funcionam as dicas</div>
         <div id="chat-log" class="chat-log"></div>

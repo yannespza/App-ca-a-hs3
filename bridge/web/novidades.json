@@ -1,5 +1,15 @@
 [
  {
+  "id": "2026-11-28i",
+  "titulo": "Visual novo: Painel do Caçador HS3",
+  "itens": [
+   "Novo nome e visual de rancho: papel creme, tinta café, letras de faroeste e botões em relevo.",
+   "Contratos e reputação ficam no Escritório do Earl, em abas: Ofertas, Em andamento, Reputação e Dicas. No celular, o botão Earl na barra de baixo.",
+   "Aba Reputação: os quatro agentes da reserva e o Earl, com nível, pontos e quanto falta.",
+   "No PC: botão Vertical / Horizontal no topo (mapa em cima e escritório embaixo, para monitor em pé). Não muda o celular."
+  ]
+ },
+ {
   "id": "2026-11-28h",
   "titulo": "Fotos na Loja",
   "itens": [
