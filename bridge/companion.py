@@ -1232,6 +1232,31 @@ class Companion:
                 avaliar_missoes(d, {"tipo": "carcaca_recolhida", "id": id_, "ts": time.time()}, reserva)
                 self.salvar_pendente = True
 
+    def vigiar_niveis(self):
+        """Agente subiu de nível nesta reserva: o Earl oferece um contrato de linhagem (genética) para ele."""
+        if not self.em_reserva() or time.time() - getattr(self, "_niveis_visto", 0) < 10:
+            return
+        self._niveis_visto = time.time()
+        nivel_mapa = self.nivel()
+        reserva = self.reserva()
+        guardados = self.dados.setdefault("niveis_agentes", {}).setdefault(reserva, {})
+        grupos = None
+        for r in (self.estado or {}).get("reputacao") or []:
+            if not nivel_mapa or nivel_mapa not in (r.get("mapa") or "") or r.get("vendedor") not in missoes.AGENTE_NOME:
+                continue
+            nv = min(5, int(r.get("valor") or 0) // 200)
+            antes = guardados.get(r["vendedor"])
+            guardados[r["vendedor"]] = nv
+            if antes is None or nv <= antes:
+                continue                     # primeira leitura só registra; contrato só quando sobe
+            if grupos is None:
+                grupos, _cap = self.info_gerador()
+            grupo = random.choice(grupos) if grupos else None
+            m = missoes.genetica_nivel(r["vendedor"], nv, grupo, nome_grupo)
+            m["reserva"] = reserva
+            self.dados["missoes"].append(m)
+            self.salvar_pendente = True
+
     def recontar_marcacoes(self):
         """Uma vez ao abrir: marcações feitas depois de aceitar um contrato de censo e que não contaram (erro até a v0.1.58)."""
         if getattr(self, "_recontou", False) or not self.em_reserva():
@@ -1808,6 +1833,7 @@ class Companion:
             self.cuidar_posicao()
             self.contar_dias()
             self.recontar_marcacoes()
+            self.vigiar_niveis()
             self.vigiar_mortos()
             self.marcar_estruturas_perto()
             self.revisar_contratos()

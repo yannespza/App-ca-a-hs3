@@ -385,6 +385,8 @@ def conta(m, evento, dentro, arma_tipo_de):
         return False
     if c.get("arma") and arma_tipo_de(evento.get("arma")) != c["arma"]:
         return False
+    if "genetica_max" in c and (evento.get("potencial") or evento.get("genetica") or 1) > c["genetica_max"]:
+        return False
     if "genetica" in c and (evento.get("genetica") or 0) < c["genetica"]:
         return False
     if c.get("sem_torre") and evento.get("torre") is not False:
@@ -480,3 +482,19 @@ def agente_de(m):
     if any(k in c for k in tiro):
         return "NPC.Vendor.SportsShooter"          # tiro, distância, troféu, equipamento
     return "NPC.Vendor.Butcher"                    # abate simples, várias espécies, atrair: carne
+
+
+def genetica_nivel(agente, nivel, grupo, nome_grupo):
+    """Contrato liberado quando um agente sobe de nível: descarte de animais de genética fraca de um grupo
+    para "melhorar a linhagem" (no app; o jogo não deixa mexer na genética de verdade)."""
+    nome = _g(nome_grupo(grupo)) if grupo else "animais"
+    meta = 2 if nivel < 3 else 3
+    teto = 0.45 if nivel < 3 else 0.40
+    m = _base(f"Linhagem melhor: {nome}"[:60],
+              f"Parabéns pelo nível {nivel} com o {AGENTE_NOME.get(agente, 'agente')}. Agora dá para cuidar da linhagem: "
+              f"tire da reserva os {plural(nome, meta)} de genética fraca e deixe os bons crescerem.",
+              f"Abata {meta} {plural(nome, meta)} com potencial genético de {int(teto * 100)}% ou menos (confira no binóculo).",
+              meta, 600 + 250 * nivel)
+    m.update({"tipo": "combo", "grupo": grupo, "cond": {"genetica_max": teto}, "vendedor": agente, "genetica_nivel": nivel})
+    m["reputacao"] = 20 + 5 * nivel
+    return m
