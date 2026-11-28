@@ -156,6 +156,25 @@ def semana(dia, abates, avist):
              "avistados": len({a.get("id") for a in avist if _dia(a) == d})} for d in dias]
 
 
+def monitorados(avist, abates, dia, nome_especie):
+    """Animais bons (potencial ou genética ≥ 70%) que você marcou, não abateu e não vê há 2 dias ou mais."""
+    abatidos = {str(a.get("id")) for a in abates}
+    ult = {}
+    for a in avist:
+        if a.get("id") is not None:
+            ult[str(a["id"])] = a
+    saida = []
+    for id_, a in ult.items():
+        bom = max(a.get("potencial") or 0, a.get("genetica") or 0)
+        d = _dia(a)
+        if id_ in abatidos or bom < 0.7 or d is None or dia - d < 2:
+            continue
+        saida.append({"id": id_, "nome": nome_especie(a.get("especie")), "especie": a.get("especie"),
+                      "sexo": _sexo(a), "bom": round(bom, 2), "dias": dia - d, "pos": a.get("pos")})
+    saida.sort(key=lambda x: (-x["bom"], x["dias"]))
+    return saida[:10]
+
+
 def painel(dados, reserva, nome_especie, grupo_de):
     dia = dados.get("dia_jogo", 0)
     avist = [a for a in dados.get("avistamentos") or [] if reserva and a.get("reserva") and reserva in a["reserva"]]
@@ -164,4 +183,5 @@ def painel(dados, reserva, nome_especie, grupo_de):
     bol = [b for b in dados.get("boletins") or [] if b.get("reserva") and reserva and reserva in b["reserva"]]
     return {"dia": dia, "reserva": reserva, "especies": linhas, "indice": indice(abates, linhas),
             "hoje": boletim(dia, avist, abates, linhas), "boletins": bol[-7:][::-1], "semana": semana(dia, abates, avist),
+            "monitorados": monitorados(avist, abates, dia, nome_especie),
             "totais": {"avistados": len({a.get("id") for a in avist}), "abates": len(abates)}}

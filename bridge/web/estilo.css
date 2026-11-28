@@ -934,3 +934,6 @@ body.apk .so-apk { display: inline-flex !important; }
   .mj-parte { grid-template-columns: 1fr 70px auto; }
 }
 .mj-filtro { font: inherit; font-size: 12.5px; padding: 3px 6px; border-radius: 6px; background: rgba(20,24,20,.9); color: inherit; border: 1px solid var(--linha); max-width: 170px; }
+.mj-mon { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
+.mj-mon-i { border: 1px solid var(--linha); border-radius: 8px; padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 13.5px; }
+.mj-mon-i span { opacity: .8; flex-basis: 100%; }

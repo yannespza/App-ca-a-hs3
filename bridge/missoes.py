@@ -179,9 +179,18 @@ def gerar(dados, pois, nome_grupo, grupos_reserva, cap, quantos=1):
             break
         m = _um(grupos, pois, nome_grupo, cap)
         sorteio = random.random()
+        nv = int(cap.get("nivel") or 0)
+        faltam = {g: n for g, n in (cap.get("zonas_faltando") or {}).items() if n > 0 and g in grupos}
         if grupos and sorteio < 0.10:      # de vez em quando: descarte de genética fraca
-            m = descarte(random.choice(grupos), nome_grupo, int(cap.get("nivel") or 0))
-        elif grupos and sorteio < 0.10 + 0.10 + 0.04 * int(cap.get("nivel") or 0):   # especiais: mais comuns com o nível
+            m = descarte(random.choice(grupos), nome_grupo, nv)
+        elif faltam and sorteio < 0.16:    # reconhecimento de zonas não descobertas
+            g = random.choice(list(faltam))
+            m = reconhecimento(g, nome_grupo, faltam[g], nv)
+        elif cap.get("corredor") and sorteio < 0.20:     # predadores perto dos bandos
+            m = corredor(nome_grupo, nv)
+        elif grupos and sorteio < 0.24:    # campanha em 3 etapas
+            m = campanha(random.choice([g for g in grupos if g not in PREDADORES] or grupos), nome_grupo, nv)
+        elif grupos and sorteio < 0.24 + 0.10 + 0.04 * nv:   # especiais: mais comuns com o nível
             abatidos = {str(a.get("id")) for a in dados.get("abates", [])}
             av = cap.get("avistamentos") or []
             m = especial(grupos, nome_grupo, cap, av, abatidos) or m
@@ -366,6 +375,8 @@ def conta(m, evento, dentro, arma_tipo_de):
         return tipo in ("abate_confirmado", "carcaca_recolhida") and str(evento.get("id")) == str(c["carcaca"])
     if c.get("marcar"):
         return tipo == "marcado" and (not m.get("grupo") or evento.get("grupo") == m["grupo"])
+    if c.get("zonas"):
+        return tipo == "zona_descoberta" and (not m.get("grupo") or evento.get("grupo") == m["grupo"])
     if c.get("visitar"):
         if tipo != "posicao":
             return False
@@ -428,6 +439,12 @@ def conta(m, evento, dentro, arma_tipo_de):
         return False
     if c.get("sem_luneta") and evento.get("tem_luneta") is not False:
         return False
+    if "perto_presa_m" in c:
+        if evento.get("grupo") not in PREDADORES:
+            return False
+        dz = evento.get("perto_presa_m")
+        if dz is None or dz > c["perto_presa_m"]:
+            return False
     if c.get("mesmo_dia"):
         dia = evento.get("dia_jogo")
         if m.get("dia_ref") is None or dia != m["dia_ref"]:
@@ -581,6 +598,68 @@ def agente_de(m):
     if any(k in c for k in tiro):
         return "NPC.Vendor.SportsShooter"          # tiro, distância, troféu, equipamento
     return "NPC.Vendor.Butcher"                    # abate simples, várias espécies, atrair: carne
+
+
+PREDADORES = ("coiote", "lobo", "raposa", "felino", "urso")
+
+
+def reconhecimento(grupo, nome_grupo, faltam, nivel=0):
+    """Reconhecimento: achar zonas de necessidade ainda não descobertas de uma espécie (Guarda-florestal)."""
+    nome = _g(nome_grupo(grupo))
+    meta = max(1, min(faltam, 2 + (nivel >= 3)))
+    m = _base(f"Reconhecimento: zonas de {nome}"[:60],
+              f"Preciso saber por onde os {nome} andam. Tem área deles que ninguém mapeou ainda. Ande pela reserva, "
+              f"ache onde comem, bebem ou descansam e me traga a localização.",
+              f"Descubra {meta} {'zona' if meta == 1 else 'zonas'} de necessidade de {nome} que você ainda não tinha achado.",
+              meta, 450 + 200 * meta + 80 * nivel)
+    m.update({"tipo": "combo", "grupo": grupo, "cond": {"zonas": True}, "vendedor": "NPC.Vendor.Ranger"})
+    return m
+
+
+def corredor(nome_grupo, nivel=0):
+    """Limpeza de corredor: abater predadores perto das zonas dos bandos de presa (Guarda-florestal)."""
+    meta = 1 if nivel < 3 else 2
+    raio = 250
+    m = _base("Limpeza de corredor",
+              "Os predadores estão rondando os bandos perto das zonas onde eles comem e bebem. Tire alguns de lá "
+              "antes que espantem tudo.",
+              f"Abata {meta} {'predador' if meta == 1 else 'predadores'} (coiote, lobo, raposa, felino ou urso) a até "
+              f"{raio} m de uma zona descoberta de outra espécie.", meta, 900 + 300 * meta + 100 * nivel)
+    m.update({"tipo": "combo", "cond": {"perto_presa_m": raio}, "vendedor": "NPC.Vendor.Ranger"})
+    return m
+
+
+def campanha(grupo, nome_grupo, nivel=0):
+    """Campanha de manejo em 3 etapas: censo → descarte → colheita. Paga tudo no fim."""
+    nome = _g(nome_grupo(grupo))
+    censo = 3 + (nivel >= 3)
+    etapas = [
+        {"cond": {"marcar": True}, "meta": censo,
+         "descricao": f"Etapa 1 de 3 · censo: marque {censo} {plural(nome, censo)} diferentes no binóculo."},
+        {"cond": {"genetica_max": 0.45}, "meta": 1,
+         "descricao": f"Etapa 2 de 3 · descarte: abata 1 {nome} com potencial genético de 45% ou menos."},
+        {"cond": {"sexo": "macho", "genetica": 0.6}, "meta": 1,
+         "descricao": f"Etapa 3 de 3 · colheita: abata 1 {nome} macho com genética de 60% ou mais."},
+    ]
+    m = _base(f"Campanha de manejo: {nome}"[:60],
+              f"Vamos fazer direito com os {nome}: primeiro contar, depois tirar o fraco, por fim colher o melhor. "
+              f"Três etapas, pago tudo no final.", etapas[0]["descricao"], etapas[0]["meta"], 2600 + 400 * nivel)
+    m.update({"tipo": "combo", "grupo": grupo, "cond": etapas[0]["cond"], "etapas": etapas, "etapa": 0,
+              "vendedor": "NPC.Vendor.Ranger"})
+    m["reputacao"] = 60 + 10 * nivel
+    return m
+
+
+def proxima_etapa(m):
+    """Contrato em etapas: passa para a próxima (True) ou diz que acabou (False)."""
+    et = m.get("etapas")
+    if not et or m.get("etapa", 0) >= len(et) - 1:
+        return False
+    m["etapa"] = m.get("etapa", 0) + 1
+    e = et[m["etapa"]]
+    m.update({"cond": e["cond"], "meta": e["meta"], "descricao": e["descricao"], "progresso": 0,
+              "contados": [], "etapa_desde": time.time()})
+    return True
 
 
 def descarte(grupo, nome_grupo, nivel=0):

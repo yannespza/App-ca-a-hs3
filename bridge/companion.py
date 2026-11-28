@@ -305,7 +305,7 @@ def avaliar_missoes(dados, evento, reserva=None):
     Cada contrato vale só na reserva onde foi oferecido."""
     concluidas = []
     for m in dados["missoes"]:
-        if m["status"] != "ativa" or evento.get("ts", 0) < m.get("aceita_em", m["criada"]) - 2:
+        if m["status"] != "ativa" or evento.get("ts", 0) < max(m.get("aceita_em", m["criada"]), m.get("etapa_desde", 0)) - 2:
             continue
         if m.get("reserva") and reserva and m["reserva"] != reserva:
             continue
@@ -320,6 +320,8 @@ def avaliar_missoes(dados, evento, reserva=None):
             m["contados"].append(chave)
             m["progresso"] = len(m["contados"])
             if m["progresso"] >= m["meta"]:
+                if missoes.proxima_etapa(m):       # campanha: começa a etapa seguinte
+                    continue
                 m["status"] = "concluida"
                 m["concluida_em"] = time.time()
                 concluidas.append(m)
@@ -934,6 +936,13 @@ class Companion:
                        "especie_nome": nome_especie(especie) or nome, "sexo_nome": (marc or {}).get("sexo_nome") or SEXO.get(ab.get("sexo")),
                        "dia_jogo": d.get("dia_jogo", 0), "hora_jogo": (self.estado or {}).get("hora"),
                        "acao_nome": ACOES.get(ab.get("acao"), "Recolhido"), "ts": time.time(), "reserva": self.nivel()})
+            if chave in missoes.PREDADORES and isinstance(ab.get("pos"), dict):
+                try:
+                    zs = [z for z in self.zonas() if z.get("descoberta") and z.get("grupo") not in missoes.PREDADORES]
+                    dz = min((distancia_m(ab["pos"], {"x": z["x"], "y": z["y"], "z": 0}) or 1e9 for z in zs), default=None)
+                    ab["perto_presa_m"] = round(dz) if dz is not None and dz < 1e8 else None
+                except Exception:
+                    pass
             self.registrar_grupo(chave)
             d["abates"].append(ab)
             d["marcados"].pop(id_, None)
@@ -1088,6 +1097,17 @@ class Companion:
         cap["avistamentos"] = [dict(a, especie_nome=nome_especie(a.get("especie")))
                                for a in (self.dados.get("avistamentos") or [])[-600:]
                                if a.get("pos") and a.get("reserva") == self.nivel()]
+        # zonas ainda não descobertas por grupo (contrato de reconhecimento) e se há predador para "limpeza de corredor"
+        try:
+            zs = self.zonas()
+            falt = {}
+            for z in zs:
+                if not z.get("descoberta"):
+                    falt[z.get("grupo")] = falt.get(z.get("grupo"), 0) + 1
+            cap["zonas_faltando"] = falt
+            cap["corredor"] = any(g in missoes.PREDADORES for g in grupos) and any(z.get("descoberta") for z in zs)
+        except Exception:
+            pass
         return grupos, cap
 
     def _gerar_ofertas(self, n, reserva):
@@ -1538,6 +1558,32 @@ class Companion:
                 "proximo": None if topo else (nv + 1) * self.NIVEL_EARL,
                 "progresso": 1.0 if topo else (v - nv * self.NIVEL_EARL) / self.NIVEL_EARL,
                 "contratos": sum(1 for m in self.dados.get("missoes") or [] if m.get("status") == "paga")}
+
+    def vigiar_zonas_novas(self):
+        """Zona de necessidade que passou a descoberta vira evento (contrato de reconhecimento)."""
+        if not self.em_reserva() or time.time() - getattr(self, "_zn_vista", 0) < 20:
+            return
+        self._zn_vista = time.time()
+        nv = self.nivel()
+        zs = self.zonas()
+        if not zs:
+            return
+        achadas = {str(z.get("hash")): z for z in zs if z.get("descoberta") and z.get("hash") is not None}
+        salvas = self.dados.setdefault("zonas_descobertas", {})
+        if nv not in salvas:                # primeira vez nesta reserva: só guarda a base
+            salvas[nv] = sorted(achadas)
+            self.salvar_pendente = True
+            return
+        antes = set(salvas[nv])
+        novas = [h for h in achadas if h not in antes]
+        if not novas:
+            return
+        salvas[nv] = sorted(antes | set(novas))
+        for h in novas:
+            z = achadas[h]
+            avaliar_missoes(self.dados, {"tipo": "zona_descoberta", "id": h, "grupo": z.get("grupo"),
+                                         "especie": z.get("especie"), "ts": time.time()}, self.reserva())
+        self.salvar_pendente = True
 
     def vigiar_licencas(self):
         """Espécies da reserva atual com 1 ou 0 animal restante na licença (aviso no mapa)."""
@@ -2000,6 +2046,7 @@ class Companion:
             self.recontar_marcacoes()
             self.reembolsar_cameras()
             self.vigiar_licencas()
+            self.vigiar_zonas_novas()
             self.vigiar_mortos()
             self.marcar_estruturas_perto()
             self.revisar_contratos()

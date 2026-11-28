@@ -1398,6 +1398,10 @@ setInterval(() => { if (abaAtual === "armario" || abaAtual === "loja" || abaAtua
 // ---------------------------------------------------------------- Manejo da reserva (só no app: nada aqui mexe no jogo)
 let manejoAssin = "";
 const NOME_RESERVA = r => /Colorado/i.test(r || "") ? "Colorado" : /Texas/i.test(r || "") ? "Texas" : /Poland|Polonia/i.test(r || "") ? "Polônia" : /Alaska/i.test(r || "") ? "Alasca" : (r || "–");
+function verNoMapa(pos) {
+  document.querySelector('#abas button[data-aba="mapa"]').click();
+  setTimeout(() => { marcarSeguindo(false); mapa.setView(toLL(pos), Math.max(mapa.getZoom(), 2)); L.popup().setLatLng(toLL(pos)).setContent("Último lugar onde você viu o animal").openOn(mapa); }, 120);
+}
 async function renderManejo() {
   let d;
   try { d = await (await fetch("/api/manejo")).json(); } catch { return; }
@@ -1442,6 +1446,10 @@ async function renderManejo() {
       <p>Censo, equilíbrio e pressão de caça calculados com o que você avistou no binóculo e abateu. Dia ${d.dia} do jogo pelo contador do app. Nada aqui mexe no jogo.</p></header>
     <h3>Índice de sustentabilidade</h3>${indice}
     <h3>Boletins</h3><div class="mj-bols">${bol(d.hoje)}${(d.boletins || []).filter(b => b.dia !== d.hoje.dia).map(bol).join("")}</div>
+    ${(d.monitorados || []).length ? `<h3>Monitorados sumidos</h3><p class="item-sub">Animais bons que você marcou e não vê há 2 dias ou mais. O jogo não avisa quando um animal sai do mapa; vale procurar por onde ele andava.</p>
+      <div class="mj-mon">${d.monitorados.map(m => `<div class="mj-mon-i"><b>${esc(m.nome)}</b> ${m.sexo === 0 ? "♂" : m.sexo === 1 ? "♀" : ""}
+        <span>${Math.round(m.bom * 100)}% · não visto há ${m.dias} dias</span>
+        ${m.pos ? `<button class="btn-papel" onclick='verNoMapa(${JSON.stringify(m.pos)})'>Ver no mapa</button>` : ""}</div>`).join("")}</div>` : ""}
     <h3>Últimos 7 dias</h3>${semana}
     <h3>Espécies (${d.especies.length})</h3>
     <p class="item-sub">${d.totais.avistados} animais diferentes avistados e ${d.totais.abates} abates nesta reserva. A procura do açougue sobe com os dias sem abater a espécie e muda o valor dos contratos do Açougueiro.</p>
