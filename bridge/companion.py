@@ -1066,6 +1066,10 @@ class Companion:
         # só o que dá para caçar com as armas e a munição que você tem (jogo novo = poucas opções)
         cap = extras.capacidade(dados, self.tabela_calibres(), self.equipamento(), self.nivel(), grupo_de, missoes._arma_tipo)
         grupos = [g for g in grupos if g in cap["grupos"]]
+        # nível de progresso = maior nível entre os agentes desta reserva (200 pontos por nível)
+        reps = [int(r.get("valor") or 0) for r in (self.estado or {}).get("reputacao") or []
+                if self.nivel() and self.nivel() in (r.get("mapa") or "")]
+        cap["nivel"] = min(5, max(reps, default=0) // 200)
         return grupos, cap
 
     def _gerar_ofertas(self, n, reserva):
@@ -1075,6 +1079,9 @@ class Companion:
                 if self.reserva() != reserva:
                     return  # trocou de reserva no meio: gera de novo na próxima volta
                 novas = missoes.gerar(self.dados, self.pois(), nome_grupo, grupos, cap, n)
+                espera = self.dados.get("espera_agente") or {}
+                dia = self.dados.get("dia_jogo", 0)
+                novas = [m for m in novas if espera.get(missoes.agente_de(m), -1) <= dia]
                 for m in novas:
                     m["reserva"] = reserva
                 self.dados["missoes"].extend(novas[:n])
@@ -1100,7 +1107,19 @@ class Companion:
             elif acao == "recusar" and m["status"] == "oferta":
                 m["status"] = "recusada"
             elif acao == "abandonar" and m["status"] == "ativa":
+                # rescisão: perde metade da reputação do contrato no agente, multa de 10% do valor
+                # e o Earl não oferece contratos desse agente até o próximo dia do jogo
+                agente = missoes.agente_de(m)
+                perda = max(3, int(m.get("reputacao") or 0) // 2)
+                multa = max(20, int(round((m.get("creditos") or 0) * 0.10)))
+                cred = (self.estado.get("moedas") or {}).get("Currency.Credits") or 0
+                linhas = [f"add_rep -{perda} ab{m['id']} {agente}"]
+                if cred >= multa:
+                    linhas.append(f"cobrar {multa} mu{m['id']}")
+                self.enviar_comando(linhas)
                 m["status"] = "abandonada"
+                m["penalidade"] = {"reputacao": perda, "multa": multa if cred >= multa else 0, "agente": agente}
+                self.dados.setdefault("espera_agente", {})[agente] = self.dados.get("dia_jogo", 0) + 1
                 if (self.dados.get("pino_app") or {}).get("missao") == id_:
                     self.remover_pino()
             elif acao == "focar" and m["status"] == "ativa":

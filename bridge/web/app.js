@@ -423,7 +423,7 @@ function renderAtivas(d) {
       <div class="barra"><div style="width:${Math.min(100, 100 * m.progresso / m.meta)}%"></div></div>
       <div class="at-acoes"><span class="sub" style="margin-right:auto">${m.progresso}/${m.meta}</span>
         ${m.local ? `<button class="btn-papel" onclick="acao('focar','${m.id}')">📍 Pino</button>` : ""}
-        <button class="btn-papel cinza" onclick="abandonar('${m.id}')">Abandonar</button></div>
+        <button class="btn-papel cinza" onclick="abandonar('${m.id}')" title="Abortar tem penalidade de reputação e multa">Abortar</button></div>
     </div>`);
   const fim = d.finalizadas.slice(0, 3).map(m => `<div class="ativa concl"><div class="at-titulo"><span>${esc(m.titulo)}</span>
       <span class="estado-pg ${m.status === "paga" ? "ok" : ""}">${m.status === "paga" ? "Pago" : (m.enviado ? "Pagando…" : "Concluído")}</span></div></div>`);
@@ -499,7 +499,9 @@ async function clicarAtualizar() {
   }
 }
 async function abandonar(id) {
-  if (await perguntar("Abandonar este contrato?", "Abandonar")) acao("abandonar", id);
+  const m = (ultimoEstado?.ativas || []).find(x => x.id === id) || {};
+  const perda = Math.max(3, Math.floor((m.reputacao || 0) / 2)), multa = Math.max(20, Math.round((m.creditos || 0) * 0.1));
+  if (await perguntar(`Abortar "${m.titulo || "este contrato"}"?\n\nPenalidades:\n• −${perda} de reputação com ${m.agente_nome || "o agente"}\n• multa de $${fmt(multa)}\n• o Earl não oferece contratos de ${m.agente_nome || "desse agente"} até o próximo dia do jogo`, "Abortar contrato")) acao("abandonar", id);
 }
 // confirmação dentro do app (o confirm() do navegador não aparece no app do celular)
 function perguntar(texto, sim = "Confirmar") {

@@ -178,6 +178,8 @@ def gerar(dados, pois, nome_grupo, grupos_reserva, cap, quantos=1):
         if len(saida) >= quantos:
             break
         m = _um(grupos, pois, nome_grupo, cap)
+        if m and cap.get("nivel"):
+            m["creditos"] = int(round(m["creditos"] * (1 + 0.1 * min(5, cap["nivel"])) / 10) * 10)   # mais difícil, paga mais
         if m and m["titulo"] not in usados:
             usados.add(m["titulo"])
             saida.append(m)
@@ -187,8 +189,12 @@ def gerar(dados, pois, nome_grupo, grupos_reserva, cap, quantos=1):
 def _um(grupos, pois, nome_grupo, cap):
     # sem arma+munição para nada da reserva (jogo novo): só censo no binóculo e reconhecimento
     caca = 1 if grupos else 0
+    # progresso: com mais reputação, observar/visitar fica raro e os contratos ficam mais difíceis
+    nv = max(0, min(5, int(cap.get("nivel") or 0)))
+    leve = max(0.15, 1 - nv * 0.17)
     forma = random.choices(["grupo", "qualquer", "variedade", "marcar", "marcar_grupo", "visitar"],
-                           weights=[50 * caca, 16 * caca, 7 * caca if len(grupos) > 1 else 0, 10, 7, 7 if pois else 0])[0]
+                           weights=[50 * caca, 16 * caca, (7 + 3 * nv) * caca if len(grupos) > 1 else 0,
+                                    10 * leve if caca else 10, 7 * leve if caca else 7, (7 * leve if caca else 7) if pois else 0])[0]
     if forma in ("marcar", "marcar_grupo"):
         return _marcar(grupos if forma == "marcar_grupo" and grupos else None, nome_grupo)
     if forma == "visitar":
@@ -208,7 +214,9 @@ def _um(grupos, pois, nome_grupo, cap):
 
     # condições: 0 a 3, sem combinações impossíveis
     cond, chaves = {}, []
-    n = random.choices([0, 1, 2, 3], weights=[18, 45, 28, 9])[0]
+    n = random.choices([0, 1, 2, 3], weights=[max(2, 18 - 4 * nv), max(15, 45 - 4 * nv), 28 + 4 * nv, 9 + 4 * nv])[0]
+    if nv >= 3 and random.random() < 0.4:
+        meta += 1
     opcoes = ["dist", "um_tiro", "arma", "genetica", "sem_torre", "atrair", "nao_detectado", "calibre", "sexo"]
     random.shuffle(opcoes)
     for o in opcoes:

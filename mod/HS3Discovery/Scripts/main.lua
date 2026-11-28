@@ -236,7 +236,7 @@ local function giveReputation(amount, ref, vendedor)
     local ok, err = pcall(function() rm:Client_AddReputationForVendor(tag, amount) end)
     pcall(function() after = rm:GetReputationForVendor(tag) end)
     local metodo = "oficial"
-    if not (before and after and after > before) then
+    if not (before and after and after ~= before) then     -- (negativo = penalidade de contrato abortado)
         -- plano B: escreve direto na reputação salva do mapa atual (o jogo grava no save normalmente)
         local okB, errB = pcall(function()
             local mapa = FindFirstOf("HS3PlayerController").Pawn:GetFullName():match("/([^/%.]+)%.")
@@ -247,7 +247,7 @@ local function giveReputation(amount, ref, vendedor)
         metodo = "direto"
         if not okB then err = errB end
     end
-    local success = before ~= nil and after ~= nil and after > before
+    local success = before ~= nil and after ~= nil and after ~= before
     log(string.format("add_rep %d (%s): %s (%s -> %s)", amount, metodo, success and "OK" or "FALHOU", tostring(before), tostring(after)))
     emit("recompensa", { recurso = "reputacao", valor = amount, ok = success, antes = before, depois = after, ref = ref, erro = (not success) and tostring(err) or nil })
 end
