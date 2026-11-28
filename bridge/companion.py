@@ -905,6 +905,7 @@ class Companion:
             if novo and ev.get("especie"):
                 d["especies_vistas"][ev["especie"]] = d["especies_vistas"].get(ev["especie"], 0) + 1
             d["marcados"][str(ev.get("id"))] = ev
+            self.ultimo_marcado = {"id": str(ev.get("id")), "ts": time.time()}
             # histórico de avistamentos (base do censo e do manejo); o mesmo animal só entra de novo após 10 min
             av = d["avistamentos"]
             ult = next((x for x in reversed(av[-200:]) if x.get("id") == ev.get("id")), None)
@@ -1902,7 +1903,7 @@ class Companion:
                 self.ciclo()
             except Exception as e:  # nunca derruba a ponte
                 print("erro no ciclo:", e)
-            time.sleep(1)
+            time.sleep(0.5)
 
     def estatisticas(self):
         ab = self.dados["abates"]
@@ -1987,7 +1988,7 @@ class Companion:
                 "reputacao_mapa_atual": rep, "agentes": agentes,
                 "mapa": self.info_mapa(),
                 "pino_app": self.dados.get("pino_app"),
-                "rastreados": rastreados,
+                "rastreados": rastreados, "ultimo_marcado": getattr(self, "ultimo_marcado", None),
                 "barracas": self.barracas(), "preco_barraca": self.PRECO_BARRACA, "max_barracas": self.MAX_BARRACAS,
                 "ofertas": [m for m in lista if m["status"] == "oferta"],
                 "ativas": [m for m in lista if m["status"] == "ativa"],

@@ -833,7 +833,7 @@ local function periodic()
     pcall(passoMochila)
     if ticks % 10 == 3 and #filaMochila == 0 then lerContratosJogo() end
     if ticks % 15 == 0 then pcall(writeEquipamento) end
-    if ticks % 5 == 0 then pcall(writeAnimals) end
+    if ticks % 2 == 0 then pcall(writeAnimals) end      -- posição dos animais a cada 2 s (antes 5 s)
     -- pontos descobertos a cada 5 min (o app marca na hora as estruturas por onde você passa)
     -- v0.1.34 tinha um gancho na descoberta: fechou o jogo ao descobrir uma estrutura. Não usar.
     if curto and ticks % 300 == 0 and os.time() > calmoAte then pcall(exportPois) end

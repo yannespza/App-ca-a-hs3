@@ -850,3 +850,13 @@ body.apk .so-apk { display: inline-flex !important; }
 .mk-animal.dourado { background: radial-gradient(circle at 35% 30%, #ffe9a3, #d9a520 55%, #8a6410); box-shadow: 0 0 12px #f5c542cc; }
 .mk-animal.dourado .sil-img { color: #3a2a05; }
 .mk-animal.dourado svg { fill: #3a2a05; }
+
+/* posição em tempo real: o ícone desliza até o ponto novo (sem deslizar durante o zoom) */
+.leaflet-marker-icon.mov { transition: transform .95s linear; }
+#mapa.zoom .leaflet-marker-icon.mov { transition: none; }
+.ficha-morto { background: #5a1f1a; color: #ffd6cf; font-weight: 700; padding: 4px 8px; border-radius: 6px; margin-bottom: 6px; }
+/* zonas: quadradas e em cores que não se confundem com macho (azul) e fêmea (rosa) */
+.mk-zona { border-radius: 6px; }
+.mk-zona.comer { background: #4f7d2a; }
+.mk-zona.beber { background: #b8741a; }
+.mk-zona.dormir { background: #6b4a2b; }

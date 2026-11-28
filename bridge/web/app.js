@@ -164,7 +164,7 @@ function atualizarMapaBase(info) {
 }
 
 function setaJogador(yaw) {
-  return L.divIcon({ className: "", iconSize: [30, 30], iconAnchor: [15, 15],
+  return L.divIcon({ className: "mov", iconSize: [30, 30], iconAnchor: [15, 15],
     html: `<div class="mk-jogador" style="transform:rotate(${yaw || 0}deg)"><svg viewBox="0 0 30 30"><path d="M28 15 L4 4 L10 15 L4 26 Z" fill="#d0661f" stroke="#2b1e12" stroke-width="1.5"/></svg></div>` });
 }
 
@@ -323,7 +323,7 @@ function direcaoTexto(g) {
 
 function fichaAnimal(a) {
   const pot = a.potencial ?? a.genetica;
-  return `<div class="ficha">
+  return `<div class="ficha">${a.morto ? `<div class="ficha-morto">✕ Abatido — falta recolher</div>` : ""}
     <div class="ficha-cab"><div class="ficha-sil">${silhueta(a.grupo, a.especie)}</div>
       <div><div class="ficha-grupo">${esc(a.grupo_nome)}${a.lendario ? " · 👑 Lendário" : ""}</div>
       <div class="ficha-nome">${esc(a.especie_nome || a.grupo_nome)}</div>
@@ -347,12 +347,15 @@ function atualizarAnimais(lista) {
     vistos.add(String(a.id));
     const sexo = a.sexo === 0 ? " macho" : a.sexo === 1 ? " femea" : "";
     const cls = a.morto ? "mk-animal morto" : `mk-animal${sexo}${a.lendario ? " lendario" : ""}${(a.genetica || 0) >= 0.9 ? " dourado" : ""}${a.ao_vivo ? "" : " velho"}`;
-    const icone = L.divIcon({ className: "", html: `<div class="${cls}">${silhueta(a.grupo, a.especie)}${a.morto ? '<b class="mk-x">✕</b>' : ""}</div>`, iconSize: [27, 27], iconAnchor: [14, 14] });
+    const icone = L.divIcon({ className: "mov", html: `<div class="${cls}">${silhueta(a.grupo, a.especie)}${a.morto ? '<b class="mk-x">✕</b>' : ""}</div>`, iconSize: [27, 27], iconAnchor: [14, 14] });
     let m = marcAnimais[a.id];
     if (!m) {
       m = L.marker(toLL(a.pos), { icon: icone, riseOnHover: true });
       m.bindTooltip("", { className: "cartao-animal", direction: "right", offset: [16, 0], opacity: 1 });
-      m.on("click", () => { centrarAnimal(m.getLatLng()); m.openTooltip(); });
+      m.on("click", () => {
+        if (fichaAuto.id === String(a.id) && m.isTooltipOpen()) { clearTimeout(fichaAuto.timer); fichaAuto.id = null; m.closeTooltip(); return; }
+        centrarAnimal(m.getLatLng()); m.openTooltip();
+      });
       grupoAnimais.addLayer(m);
       marcAnimais[a.id] = m;
     } else {
@@ -363,13 +366,29 @@ function atualizarAnimais(lista) {
     m._rotulo = a.especie_nome || a.grupo_nome;
     if (m._morto !== !!a.morto && m.isTooltipOpen && m.isTooltipOpen()) m.closeTooltip();
     m._morto = !!a.morto;
-    m.setTooltipContent(a.morto ? `<div class="ficha"><div class="ficha-nome">${esc(a.especie_nome || a.grupo_nome || "Animal")}</div>
-      <div>✕ Abatido — falta recolher</div><div class="ficha-lin"><span>Distância</span><b>${metros(a.distancia_m)}</b></div></div>` : fichaAnimal(a));
+    m.setTooltipContent(fichaAnimal(a));
   }
   for (const id of Object.keys(marcAnimais)) {
     if (!vistos.has(id)) { grupoAnimais.removeLayer(marcAnimais[id]); delete marcAnimais[id]; }
   }
 }
+// animal avistado agora: a ficha aparece sozinha por 10 s (clicar no ícone fecha); outro avistamento troca
+let fichaAuto = { chave: null, timer: null, id: null };
+function mostrarAvistado(u) {
+  if (!u) return;
+  const chave = u.id + ":" + u.ts;
+  if (chave === fichaAuto.chave || Date.now() / 1000 - u.ts > 15) return;
+  const m = marcAnimais[u.id];
+  if (!m) return;                       // o ícone ainda não chegou: tenta no próximo segundo
+  fichaAuto.chave = chave;
+  if (fichaAuto.id && marcAnimais[fichaAuto.id]) marcAnimais[fichaAuto.id].closeTooltip();
+  clearTimeout(fichaAuto.timer);
+  fichaAuto.id = u.id;
+  m.openTooltip();
+  fichaAuto.timer = setTimeout(() => { if (marcAnimais[u.id]) marcAnimais[u.id].closeTooltip(); }, 10000);
+}
+mapa.on("zoomstart", () => $("mapa").classList.add("zoom"));
+mapa.on("zoomend", () => setTimeout(() => $("mapa").classList.remove("zoom"), 60));
 
 function atualizarMarcadores(d) {
   const st = d.estado || {};
@@ -401,6 +420,7 @@ function atualizarMarcadores(d) {
       .bindTooltip(`<b>${esc(m.titulo)}</b><br>${esc(m.local.nome)}`).addTo(grupoMissoes);
   }
   atualizarAnimais(d.rastreados || []);
+  mostrarAvistado(d.ultimo_marcado);
 }
 
 function distancia(a, b) { if (!a || !b) return null; return Math.hypot(a.x - b.x, a.y - b.y, (a.z || 0) - (b.z || 0)) / 100; }
@@ -635,7 +655,7 @@ async function atualizar() {
 }
 
 atualizar();
-setInterval(atualizar, 2000);
+setInterval(atualizar, 1000);
 setInterval(() => { if (nivelAtual) carregarPois(); }, 15000);
 setInterval(() => { if (nivelAtual) carregarZonas(); }, 20000);
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
