@@ -1274,6 +1274,10 @@ class Companion:
             self.dados["dia_jogo"] = self.dados.get("dia_jogo", 0) + 1
             salvar_json(DADOS_PATH, self.dados)
 
+    def vigiar_queda(self, x, y, z):
+        if z is not None:
+            self._vigia = {"x": x, "y": y, "z": z, "ate": time.time() + 40, "n": 0, "ultimo": time.time()}
+
     def cuidar_posicao(self):
         nivel = self.nivel() if self.em_reserva() else None
         agora = time.time()
@@ -1283,17 +1287,32 @@ class Companion:
                 destino = None   # posição gravada antes da v0.1.39 (podia ser no meio de uma queda)
             self.anterior = destino if destino and (distancia_m(self.estado["pos"], destino) or 0) > 150 else None
             if self.cfg.get("voltar_ao_ultimo_local") and destino and (distancia_m(self.estado["pos"], destino) or 0) > 150:
-                self.teleporte = (destino, agora + 6)
+                self.teleporte = (destino, agora + 12)     # espera o mapa carregar um pouco
                 self.aviso_teleporte = "Voltando ao último local em instantes…"
         self.estava_em = nivel
         if self.teleporte:
             destino, hora = self.teleporte
             if agora >= hora:
                 self.enviar_comando([f"teleport {destino['x']:.0f} {destino['y']:.0f} {destino['z']:.0f}"])
+                self.vigiar_queda(destino["x"], destino["y"], destino["z"])
                 self.teleporte = None
                 self.aviso_teleporte = None
-                self.pausa_pos_ate = agora + 8
+                self.pausa_pos_ate = agora + 45
             return
+        # depois de uma viagem: se o chão ainda não tinha carregado e o caçador está caindo, manda de novo para o ponto
+        v = getattr(self, "_vigia", None)
+        if v and nivel:
+            p = self.estado.get("pos") or {}
+            if agora > v["ate"]:
+                self._vigia = None
+            elif p.get("z") is not None and p["z"] < v["z"] - 1500 and agora - v["ultimo"] > 4:
+                if v["n"] >= 4:
+                    self._vigia = None
+                else:
+                    v["n"] += 1
+                    v["ultimo"] = agora
+                    self.enviar_comando([f"teleport {v['x']:.0f} {v['y']:.0f} {v['z']:.0f}"])
+                    print("viagem: caindo abaixo do chão, repetindo o teleporte", v["n"])
         if nivel and "Hub" not in nivel and agora >= getattr(self, "pausa_pos_ate", 0):
             p = self.estado["pos"]
             # só guarda com o caçador no chão: altura quase igual nas últimas leituras (nada de queda ou pulo)
@@ -1456,6 +1475,7 @@ class Companion:
         x, y = x + dx / n * 1000, y + dy / n * 1000
         self.pausa_pos_ate = time.time() + 45        # não grava "último local" no meio da viagem (o mapa ainda carrega)
         # com a altura do ponto (o traço do chão falha quando o destino está longe e o terreno ainda não carregou)
+        self.vigiar_queda(x, y, z)
         if not self.enviar_comando([f"teleport {x:.0f} {y:.0f}" + (f" {z:.0f}" if z is not None else "")]):
             return {"ok": False, "erro": "O jogo não está respondendo."}
         return {"ok": True}
@@ -1506,6 +1526,7 @@ class Companion:
             # exatamente onde você estava ao montar (altura conhecida; barracas antigas sem altura: o mod mede o chão)
             alvo = f"teleport {b['x']:.0f} {b['y']:.0f}" + (f" {b['z']:.0f}" if b.get("z") is not None else "")
             self.pausa_pos_ate = time.time() + 45
+            self.vigiar_queda(b["x"], b["y"], b.get("z"))
             if not self.enviar_comando([alvo]):
                 return {"ok": False, "erro": "O jogo não está respondendo."}
         else:

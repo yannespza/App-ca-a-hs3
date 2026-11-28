@@ -828,3 +828,8 @@ body.apk .so-apk { display: inline-flex !important; }
 .ag-lin small { color: var(--liquen); }
 
 .mk-barraca { width: 42px; height: 42px; font-size: 24px; border-radius: 10px; }
+
+/* genética 90% ou mais: ícone dourado */
+.mk-animal.dourado { background: radial-gradient(circle at 35% 30%, #ffe9a3, #d9a520 55%, #8a6410); border-color: #ffe08a; box-shadow: 0 0 14px #f5c542cc; }
+.mk-animal.dourado svg { fill: #3a2a05; }
+.mk-animal.dourado .sil-img { color: #3a2a05; }

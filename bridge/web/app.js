@@ -343,7 +343,7 @@ function atualizarAnimais(lista) {
   for (const a of lista) {
     if (!a.pos) continue;
     vistos.add(String(a.id));
-    const cls = `mk-animal${a.lendario ? " lendario" : ""}${a.ao_vivo ? "" : " velho"}`;
+    const cls = `mk-animal${a.lendario ? " lendario" : ""}${(a.genetica || 0) >= 0.9 ? " dourado" : ""}${a.ao_vivo ? "" : " velho"}`;
     const icone = L.divIcon({ className: "", html: `<div class="${cls}">${silhueta(a.grupo, a.especie)}</div>`, iconSize: [34, 34], iconAnchor: [17, 17] });
     let m = marcAnimais[a.id];
     if (!m) {
