@@ -149,6 +149,11 @@ local function readState()
         end
     end)
     pcall(function()
+        -- 1 = andando no chão (MOVE_Walking); 3 = caindo. O app só guarda "último local" com o caçador no chão
+        local mm = FindFirstOf("HS3PlayerController").Pawn.CharacterMovement.MovementMode
+        s.chao = (mm == 1 or mm == 2)
+    end)
+    pcall(function()
         local e = FindFirstOf("EnvironmentManagerComponent")
         if e and e:IsValid() then s.hora = e.CurrentSolarTime end
     end)
@@ -704,7 +709,10 @@ end
 
 local function teleportar(x, y, z)
     -- sem altura (barracas, pontos com afastamento): usa a do chão para não cair do céu
-    if not z then z = alturaChao(x, y) or 0 end
+    if not z then
+        z = alturaChao(x, y)
+        if not z then log("viagem cancelada: sem altura do chão no destino"); return end
+    end
     local nav = FindFirstOf("NavigationPlayerStateComponent")
     nav:Server_SafeFastTravel({ { Rotation = { X = 0, Y = 0, Z = 0, W = 1 }, Translation = { X = x, Y = y, Z = z + 60 }, Scale3D = { X = 1, Y = 1, Z = 1 } } })
     log(string.format("teleporte para %.0f, %.0f", x, y))

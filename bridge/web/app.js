@@ -209,24 +209,17 @@ async function confirmarPino(ev) {
   await post("/api/pino", { x: w.x, y: w.y, rotulo });
   atualizar();
 }
-mapa.on("click", (e) => montandoBarraca ? montarBarraca(e.latlng) : perguntarPino(e.latlng, "Meu pino"));
+mapa.on("click", (e) => perguntarPino(e.latlng, "Meu pino"));
 
 // ---- barracas (Loja do Earl): até 10 por reserva, pagas com o dinheiro do jogo, viram ponto de viagem
 const grupoBarracas = L.layerGroup().addTo(mapa);
-let montandoBarraca = false, barracasTexto = "", barracasInfo = { preco: 300, max: 10, n: 0 };
-function modoBarraca() {
-  montandoBarraca = !montandoBarraca;
-  $("btn-barraca")?.classList.toggle("ativo", montandoBarraca);
-  $("mapa").classList.toggle("mira", montandoBarraca);
-  if (montandoBarraca) marcarSeguindo(false);
-}
-async function montarBarraca(ll) {
-  modoBarraca();
+let barracasTexto = "", barracasInfo = { preco: 300, max: 10, n: 0 };
+// a barraca é montada onde você está agora no jogo
+async function modoBarraca() {
   const n = barracasInfo.n;
   if (n >= barracasInfo.max) return perguntar(`Você já tem ${barracasInfo.max} barracas nesta reserva. Desmonte uma primeiro.`, "Ok");
-  if (!await perguntar(`Montar uma barraca aqui por $${fmt(barracasInfo.preco)}?\n(${n} de ${barracasInfo.max} nesta reserva)\n\nDepois é só clicar nela e escolher "Ir até a barraca".`, "Montar")) return;
-  const w = fromLL(ll);
-  const r = await post("/api/barraca", { acao: "comprar", x: w.x, y: w.y }).catch(() => ({ ok: false, erro: "Sem resposta do app." }));
+  if (!await perguntar(`Montar uma barraca aqui, onde você está agora, por $${fmt(barracasInfo.preco)}?\n(${n} de ${barracasInfo.max} nesta reserva)\n\nDepois é só clicar nela no mapa e escolher "Ir até a barraca".`, "Montar")) return;
+  const r = await post("/api/barraca", { acao: "comprar" }).catch(() => ({ ok: false, erro: "Sem resposta do app." }));
   if (!r.ok) perguntar(r.erro || "Não deu para montar.", "Ok");
 }
 async function barraca(acao, id) {
@@ -238,6 +231,8 @@ async function barraca(acao, id) {
 }
 function desenharBarracas(d) {
   barracasInfo = { preco: d.preco_barraca || 300, max: d.max_barracas || 10, n: (d.barracas || []).length };
+  const cont = $("barraca-n");
+  if (cont) cont.textContent = `${barracasInfo.n}/${barracasInfo.max}`;
   const t = JSON.stringify(d.barracas || []);
   if (t === barracasTexto) return;
   barracasTexto = t;
@@ -678,6 +673,8 @@ async function moRecarregar() {
   if (b) b.textContent = r.ok ? "✔ Pedido enviado ao jogo" : (r.erro || "Não deu");
   setTimeout(() => renderArmario(true), 2500);
 }
+const moMunSel = {};   // munição escolhida no carrossel (ainda não mandada para o jogo), por arma
+function moMunPassar(arma, n, passo, k) { moMunSel[arma] = (k + passo + n) % n; renderArmario(true); }
 async function renderArmario(forcar) {
   const p = $("painel-armario");
   if (!forcar && (document.querySelector(".mo-modal") || p.contains(document.activeElement) && ["SELECT", "INPUT"].includes(document.activeElement.tagName))) return;
@@ -759,17 +756,18 @@ async function renderArmario(forcar) {
       if (it.municoes) {
         const ruim = it.municoes.some(m => m.atual && !m.serve) || !it.municoes.some(m => m.atual);
         const carregada = it.municoes.find(m => m.atual);
-        // carrossel: ◀ munição ▶ (as espécies que ela serve aparecem passando o mouse ou tocando no nome)
-        const ms = it.municoes, k = Math.max(0, ms.findIndex(m => m.atual));
-        const vizinha = (passo) => ms[(k + passo + ms.length) % ms.length];
-        const atualM = ms.find(m => m.atual);
-        const nomeM = (m) => `${m.serve ? "✔" : "✖"} ${esc(m.nome)}${m.tem === false ? " · comprar" : ""}`;
-        mun = ms.length ? `<div class="mo-municao mo-carrossel ${ruim ? "ruim" : ""}" onclick="event.stopPropagation()">
-            <span>Munição</span>
-            <button class="mo-seta" ${pode && ms.length > 1 ? "" : "disabled"} title="${esc(vizinha(-1).nome)}" onclick="moAcao({acao:'municao',arma:'${esc(it.id)}',municao:'${esc(vizinha(-1).id)}'})">◀</button>
-            <b class="mo-mun-nome" tabindex="0" ${atualM ? `data-dica="${dicaEspecies(atualM.nome, atualM.especies)}"` : ""}>${atualM ? nomeM(atualM) : "— escolha —"}${(atualM?.cobre_nomes || []).length ? `<small>${esc(atualM.cobre_nomes.join(", "))}</small>` : ""}</b>
-            <button class="mo-seta" ${pode && ms.length > 1 ? "" : "disabled"} title="${esc(vizinha(atualM ? 1 : 0).nome)}" onclick="moAcao({acao:'municao',arma:'${esc(it.id)}',municao:'${esc(vizinha(atualM ? 1 : 0).id)}'})">▶</button>
-            <small class="mo-mun-n">${atualM ? k + 1 : 0}/${ms.length}</small></div>`
+        // carrossel: ◀ munição ▶ só escolhe aqui; "Mandar para o jogo" troca de verdade
+        const ms = it.municoes, kAtual = ms.findIndex(m => m.atual);
+        let k = moMunSel[it.id] ?? kAtual;
+        if (k < 0 || k >= ms.length) k = Math.max(0, kAtual);
+        const m = ms[k], mudou = k !== kAtual;
+        const esp = (m.especies || []);
+        mun = ms.length ? `<div class="mo-municao mo-carrossel ${!m.serve ? "ruim" : ""}" onclick="event.stopPropagation()">
+            <button class="mo-seta" ${ms.length > 1 ? "" : "disabled"} onclick="moMunPassar('${esc(it.id)}', ${ms.length}, -1, ${k})">◀</button>
+            <div class="mo-mun-nome"><b>${m.serve ? "✔" : "✖"} ${esc(m.nome)}</b> <small class="mo-mun-n">${k + 1}/${ms.length}${m.atual ? " · carregada" : ""}</small>
+              <small class="mo-mun-esp">${esp.length ? "Serve para: " + esc(esp.join(", ")) : "Não serve para nenhum animal desta lista"}</small></div>
+            <button class="mo-seta" ${ms.length > 1 ? "" : "disabled"} onclick="moMunPassar('${esc(it.id)}', ${ms.length}, 1, ${k})">▶</button></div>
+            ${mudou ? `<button class="btn-papel verde mo-mun-ok" ${pode ? "" : "disabled"} onclick="event.stopPropagation();delete moMunSel['${esc(it.id)}'];moAcao({acao:'municao',arma:'${esc(it.id)}',municao:'${esc(m.id)}'})">Mandar ${esc(m.nome)} para o jogo</button>` : ""}`
           : `<div class="mo-aviso">Você não tem munição para esta arma</div>`;
       }
       const aces = (it.acessorios || []).length ? `<div class="mo-aces">${it.acessorios.map(e =>

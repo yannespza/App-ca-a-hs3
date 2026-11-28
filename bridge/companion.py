@@ -1226,7 +1226,7 @@ class Companion:
         agora = time.time()
         if nivel and nivel != self.estava_em and "Hub" not in nivel:
             destino = self.dados["ultima_pos"].get(nivel)
-            if destino and not destino.get("chao"):
+            if destino and not destino.get("solo"):
                 destino = None   # posição gravada antes da v0.1.39 (podia ser no meio de uma queda)
             self.anterior = destino if destino and (distancia_m(self.estado["pos"], destino) or 0) > 150 else None
             if self.cfg.get("voltar_ao_ultimo_local") and destino and (distancia_m(self.estado["pos"], destino) or 0) > 150:
@@ -1246,8 +1246,10 @@ class Companion:
             # só guarda com o caçador no chão: altura quase igual nas últimas leituras (nada de queda ou pulo)
             alturas = (getattr(self, "_alturas", []) + [p["z"]])[-4:]
             self._alturas = alturas
-            if len(alturas) == 4 and max(alturas) - min(alturas) < 40:
-                self.dados["ultima_pos"][nivel] = {"x": p["x"], "y": p["y"], "z": p["z"], "ts": agora, "chao": True}
+            no_chao = self.estado.get("chao")
+            if len(alturas) == 4 and max(alturas) - min(alturas) < 40 and no_chao is not False:
+                self.dados["ultima_pos"][nivel] = {"x": p["x"], "y": p["y"], "z": p["z"], "ts": agora, "chao": True,
+                                                   "solo": no_chao is True}
 
     def voltar_agora(self):
         with self.lock:
@@ -1374,6 +1376,7 @@ class Companion:
             return {"ok": False, "erro": "Entre numa reserva no jogo primeiro."}
         try:
             x, y = float(corpo["x"]), float(corpo["y"])
+            z = float(corpo["z"]) if corpo.get("z") not in (None, "") else None
         except (KeyError, TypeError, ValueError):
             return {"ok": False, "erro": "Ponto inválido."}
         # chega a 10 m do ponto, do lado de onde você vem (no centro da estrutura o jogo prende o caçador)
@@ -1381,8 +1384,9 @@ class Companion:
         dx, dy = (p.get("x", x + 1) - x), (p.get("y", y) - y)
         n = math.hypot(dx, dy) or 1.0
         x, y = x + dx / n * 1000, y + dy / n * 1000
-        self.pausa_pos_ate = time.time() + 15        # não grava "último local" no meio da viagem
-        if not self.enviar_comando([f"teleport {x:.0f} {y:.0f}"]):      # sem z: o mod usa a altura do chão
+        self.pausa_pos_ate = time.time() + 45        # não grava "último local" no meio da viagem (o mapa ainda carrega)
+        # com a altura do ponto (o traço do chão falha quando o destino está longe e o terreno ainda não carregou)
+        if not self.enviar_comando([f"teleport {x:.0f} {y:.0f}" + (f" {z:.0f}" if z is not None else "")]):
             return {"ok": False, "erro": "O jogo não está respondendo."}
         return {"ok": True}
 
@@ -1405,14 +1409,15 @@ class Companion:
             cred = (self.estado.get("moedas") or {}).get("Currency.Credits") or 0
             if cred < self.PRECO_BARRACA:
                 return {"ok": False, "erro": "Créditos insuficientes."}
-            try:
-                x, y = float(corpo["x"]), float(corpo["y"])
-            except (KeyError, TypeError, ValueError):
-                return {"ok": False, "erro": "Lugar inválido."}
+            # a barraca é montada onde o caçador está (posição real, com a altura do chão)
+            p = (self.estado or {}).get("pos")
+            if not p or self.estado.get("chao") is False:
+                return {"ok": False, "erro": "Fique parado no chão para montar a barraca."}
+            x, y, z = float(p["x"]), float(p["y"]), float(p.get("z") or 0)
             ref = uuid.uuid4().hex[:6]
             if not self.enviar_comando([f"cobrar {self.PRECO_BARRACA} {ref}"]):
                 return {"ok": False, "erro": "O jogo não está respondendo."}
-            lista.append({"id": ref, "x": x, "y": y, "nome": f"Barraca {len(lista) + 1}", "ts": time.time(), "pendente": ref})
+            lista.append({"id": ref, "x": x, "y": y, "z": z, "nome": f"Barraca {len(lista) + 1}", "ts": time.time(), "pendente": ref})
         elif acao == "desmontar":
             lista[:] = [b for b in lista if b["id"] != corpo.get("id")]
         elif acao == "ir":
@@ -1420,8 +1425,10 @@ class Companion:
             if not b:
                 return {"ok": False, "erro": "Barraca não encontrada."}
             self.pausa_pos_ate = time.time() + 15
-            # do lado da barraca, a 3 m (a barraca é só do app: não há estrutura no lugar)
-            if not self.enviar_comando([f"teleport {b['x'] + 300:.0f} {b['y']:.0f}"]):
+            # exatamente onde você estava ao montar (altura conhecida; barracas antigas sem altura: o mod mede o chão)
+            alvo = f"teleport {b['x']:.0f} {b['y']:.0f}" + (f" {b['z']:.0f}" if b.get("z") is not None else "")
+            self.pausa_pos_ate = time.time() + 45
+            if not self.enviar_comando([alvo]):
                 return {"ok": False, "erro": "O jogo não está respondendo."}
         else:
             return {"ok": False, "erro": "Ação inválida."}
