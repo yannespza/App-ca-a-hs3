@@ -870,7 +870,13 @@ body.apk .so-apk { display: inline-flex !important; }
   .ficha .ficha-rod { display: none; }
 }
 
-.mk-camera { width: 30px; height: 30px; border-radius: 8px; background: #1d2b33; border: 2px solid #7fb0c9; display: flex; align-items: center; justify-content: center; font-size: 15px; box-shadow: 0 1px 5px #000a; }
-.mk-camera.pendente { opacity: .55; }
-.pz-cab .mk-camera { flex: none; }
-#camera-n { opacity: .8; margin-left: 4px; font-weight: 600; }
+
+/* licenças acabando (aviso no mapa) */
+.lic-alerta { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 1000; display: flex; flex-direction: column; gap: 6px; max-width: min(92%, 420px); pointer-events: none; }
+.lic-item { pointer-events: auto; display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 8px; border: 1px solid #c9a23a;
+  background: rgba(40, 30, 12, .92); color: #f3e3b5; font: inherit; font-size: 13px; text-align: left; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
+.lic-item b { color: #ffd76a; }
+.lic-item span { opacity: .9; }
+.lic-item.zerou { border-color: #d0573f; background: rgba(52, 18, 12, .94); }
+.lic-item.zerou b { color: #ff9b85; }
+@media (max-width: 700px) { .lic-item { font-size: 12px; padding: 6px 10px; } }

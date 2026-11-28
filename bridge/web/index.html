@@ -60,6 +60,7 @@
   <main class="palco">
     <section class="mapa-papel so-mapa">
       <div id="mapa"></div>
+      <div id="lic-alerta" class="lic-alerta" style="display:none"></div>
       <div class="camadas legenda">
         <label><input type="checkbox" id="f-pois" checked><span>Pontos</span></label>
         <label><input type="checkbox" id="f-zonas" checked><span>Zonas dos animais</span></label>
@@ -72,7 +73,6 @@
         <button class="btn-mapa ativo" id="btn-eu" onclick="centralizar()" title="Seguir o caçador no mapa (arrastar o mapa solta)">
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/></svg>Eu</button>
         <button class="btn-mapa" id="btn-barraca" onclick="modoBarraca()" title="Montar uma barraca onde você está agora no jogo. Até 10 por reserva; vira ponto de viagem.">⛺ Barraca <small id="barraca-n">0/10</small></button>
-        <button class="btn-mapa" id="btn-camera" onclick="comprarCamera()" title="Instalar uma câmera de trilha onde você está. Até 4 por reserva; registra os animais que passam perto.">📷 Câmera <small id="camera-n">0/4</small></button>
         <button class="btn-mapa" id="btn-tempo" onclick="abrirTempo()" style="display:none" title="Passar o tempo, como dormir na cama do acampamento">
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span id="btn-tempo-hora">Passar tempo</span></button>
         <button class="btn-mapa" id="btn-tirar-pino" onclick="tirarPino()" style="display:none">Tirar pino</button>

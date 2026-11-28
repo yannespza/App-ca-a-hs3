@@ -944,7 +944,7 @@ class Companion:
             return avaliar_missoes(d, dict(ab, tipo="abate_confirmado"), self.reserva())
         elif tipo == "compra":
             d["compras"] = (d["compras"] + [ev])[-50:]
-            for lista in list((d.get("barracas") or {}).values()) + list((d.get("cameras") or {}).values()):
+            for lista in list((d.get("barracas") or {}).values()):
                 for b in lista:
                     if b.get("pendente") and b["pendente"] == ev.get("ref"):
                         b.pop("pendente")
@@ -1238,6 +1238,7 @@ class Companion:
             missao["reserva"] = reserva
             d["missoes"].append(missao)
             carc[id_] = {"x": m["x"], "y": m["y"], "missao": missao["id"], "ts": time.time()}
+            self.carcaca_nova = {"id": missao["id"], "ts": time.time(), "especie": missao.get("titulo")}
             self.salvar_pendente = True
         # sumiu da lista com você perto = recolhida
         for id_, c in list(carc.items()):
@@ -1464,6 +1465,19 @@ class Companion:
             atual = None      # leitura de outra reserva: não vale para comprar aqui
         return atual, self._licencas_todas
 
+    def vigiar_licencas(self):
+        """Espécies da reserva atual com 1 ou 0 animal restante na licença (aviso no mapa)."""
+        if not self.em_reserva() or time.time() - getattr(self, "_lic_vista", 0) < 5:
+            return
+        self._lic_vista = time.time()
+        lic_mod, todas = self.licencas()
+        alerta = []
+        for l in (lic_mod or {}).get("licencas") or []:
+            info = extras.licenca_da_especie(l.get("tag"), lic_mod, todas)
+            if info and info.get("restam") is not None and info["restam"] <= 1:
+                alerta.append({"tag": l["tag"], "especie_nome": nome_especie(l["tag"]), "restam": info["restam"], "max": info["max"]})
+        self.licencas_alerta = sorted(alerta, key=lambda x: (x["restam"], x["especie_nome"]))
+
     def trazer_carro(self, corpo):
         """Traz o último carro usado para ~12 m de um ponto (acampamento), do lado de onde você vem."""
         if not self.em_reserva():
@@ -1502,68 +1516,22 @@ class Companion:
             return {"ok": False, "erro": "O jogo não está respondendo."}
         return {"ok": True}
 
-    # ------------------------------------------------------------ câmeras de trilha (Loja do Earl)
-    PRECO_CAMERA, MAX_CAMERAS, RAIO_CAMERA_M = 150, 4, 100
-
-    def cameras(self):
-        return [c for c in (self.dados.get("cameras") or {}).get(self.reserva() or "", []) if not c.get("falhou")]
-
-    def acao_camera(self, corpo):
-        if not self.em_reserva():
-            return {"ok": False, "erro": "Entre numa reserva no jogo primeiro."}
-        lista = self.dados.setdefault("cameras", {}).setdefault(self.reserva(), [])
-        lista[:] = [c for c in lista if not c.get("falhou")]
-        acao = corpo.get("acao")
-        if acao == "comprar":
-            if len(lista) >= self.MAX_CAMERAS:
-                return {"ok": False, "erro": f"Você já tem {self.MAX_CAMERAS} câmeras nesta reserva. Tire uma primeiro."}
-            cred = (self.estado.get("moedas") or {}).get("Currency.Credits") or 0
-            if cred < self.PRECO_CAMERA:
-                return {"ok": False, "erro": "Créditos insuficientes."}
-            p = (self.estado or {}).get("pos")
-            if not p:
-                return {"ok": False, "erro": "Posição do caçador desconhecida."}
-            ref = uuid.uuid4().hex[:6]
-            if not self.enviar_comando([f"cobrar {self.PRECO_CAMERA} {ref}"]):
-                return {"ok": False, "erro": "O jogo não está respondendo."}
-            usados = {c["nome"] for c in lista}
-            nome = next(f"Câmera {i}" for i in range(1, 10) if f"Câmera {i}" not in usados)
-            lista.append({"id": ref, "x": float(p["x"]), "y": float(p["y"]), "z": float(p.get("z") or 0), "nome": nome,
-                          "ts": time.time(), "pendente": ref})
-        elif acao == "remover":
-            lista[:] = [c for c in lista if c["id"] != corpo.get("id")]
-        else:
-            return {"ok": False, "erro": "Ação inválida."}
-        salvar_json(DADOS_PATH, self.dados)
-        return {"ok": True}
-
-    def vigiar_cameras(self):
-        """Animal que passa a até 100 m de uma câmera vira um registro (espécie, sexo se já marcado, hora e dia do jogo).
-        O jogo só tem animais 'de verdade' perto de você: a câmera registra quando a área dela está carregada."""
-        if not self.em_reserva() or time.time() - getattr(self, "_cam_visto", 0) < 4:
+    # ------------------------------------------------------------ câmeras de trilha: saíram (v0.1.72)
+    def reembolsar_cameras(self):
+        """O jogo só tem animais a ~750 m de você, então as câmeras saíram da loja: devolve o que foi pago, uma vez."""
+        d = self.dados
+        if d.get("cameras_reembolsadas") or not self.em_reserva():
             return
-        self._cam_visto = time.time()
-        cams = self.cameras()
-        if not cams:
+        cams = [c for lista in (d.get("cameras") or {}).values() for c in lista if not c.get("falhou") and not c.get("pendente")]
+        valor = 150 * len(cams)
+        if valor and not self.enviar_comando([f"add_credits {valor} reembolso_cameras"]):
             return
-        vivos = (self.cache.json(self.caminho("animais.json"), None) or {}).get("animais") or []
-        regs = self.dados.setdefault("camera_registros", [])
-        agora, raio = time.time(), self.RAIO_CAMERA_M * 100
-        recentes = {(r["cam"], str(r["id"])) for r in regs[-300:] if agora - r["ts"] < 1800}
-        for c in cams:
-            for a in vivos:
-                if not isinstance(a, dict) or a.get("x") is None:
-                    continue
-                if (a["x"] - c["x"]) ** 2 + (a["y"] - c["y"]) ** 2 > raio * raio or (c["id"], str(a.get("id"))) in recentes:
-                    continue
-                marc = self.dados["marcados"].get(str(a.get("id"))) or {}
-                esp = a.get("especie") or marc.get("especie")
-                regs.append({"cam": c["id"], "cam_nome": c["nome"], "reserva": self.reserva(), "id": a.get("id"), "especie": esp,
-                             "especie_nome": nome_especie(esp) if esp else "Animal", "sexo_nome": marc.get("sexo_nome"),
-                             "hora": (self.estado or {}).get("hora"), "dia": self.dados.get("dia_jogo", 0), "ts": agora})
-                recentes.add((c["id"], str(a.get("id"))))
-                self.salvar_pendente = True
-        del regs[:-400]
+        d["cameras_reembolsadas"] = {"valor": valor, "ts": time.time()}
+        d.pop("cameras", None)
+        d.pop("camera_registros", None)
+        if valor:
+            self.aviso_app = {"texto": f"As câmeras saíram da loja. Devolvemos ${valor} ({len(cams)} câmera{'s' if len(cams) != 1 else ''}).", "ts": time.time()}
+        salvar_json(DADOS_PATH, d)
 
     # ------------------------------------------------------------ barracas (Loja do Earl)
     PRECO_BARRACA, MAX_BARRACAS = 300, 10
@@ -1954,7 +1922,8 @@ class Companion:
             self.cuidar_posicao()
             self.contar_dias()
             self.recontar_marcacoes()
-            self.vigiar_cameras()
+            self.reembolsar_cameras()
+            self.vigiar_licencas()
             self.vigiar_mortos()
             self.marcar_estruturas_perto()
             self.revisar_contratos()
@@ -2067,8 +2036,8 @@ class Companion:
                 "pino_app": self.dados.get("pino_app"),
                 "rastreados": rastreados, "ultimo_marcado": getattr(self, "ultimo_marcado", None),
                 "barracas": self.barracas(), "preco_barraca": self.PRECO_BARRACA, "max_barracas": self.MAX_BARRACAS,
-                "cameras": self.cameras(), "preco_camera": self.PRECO_CAMERA, "max_cameras": self.MAX_CAMERAS, "raio_camera": self.RAIO_CAMERA_M,
-                "camera_registros": [r for r in self.dados.get("camera_registros") or [] if r.get("reserva") == self.reserva()][-40:][::-1],
+                "licencas_alerta": getattr(self, "licencas_alerta", []), "aviso_app": getattr(self, "aviso_app", None),
+                "carcaca_nova": getattr(self, "carcaca_nova", None),
                 "ofertas": [m for m in lista if m["status"] == "oferta"],
                 "ativas": [m for m in lista if m["status"] == "ativa"],
                 "contratos_jogo": self.contratos_jogo(),
@@ -2393,9 +2362,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.responder(200, {"ok": True})
         if p == "/api/setups":
             return self.responder(200, APP.setups(corpo))
-        if p == "/api/camera":
-            with APP.lock:
-                return self.responder(200, APP.acao_camera(corpo))
         if p == "/api/barraca":
             with APP.lock:
                 return self.responder(200, APP.acao_barraca(corpo))

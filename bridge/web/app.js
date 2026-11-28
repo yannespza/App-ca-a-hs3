@@ -237,43 +237,46 @@ async function modoBarraca() {
   const r = await post("/api/barraca", { acao: "comprar" }).catch(() => ({ ok: false, erro: "Sem resposta do app." }));
   if (!r.ok) perguntar(r.erro || "Não deu para montar.", "Ok");
 }
-// ---- câmeras de trilha: até 4 por reserva, montadas onde você está, registram quem passa a até 100 m
-const grupoCameras = L.layerGroup().addTo(mapa);
-let camInfo = { preco: 150, max: 4, n: 0, raio: 100 }, camTexto = "", camRegs = [];
-async function comprarCamera() {
-  if (camInfo.n >= camInfo.max) return perguntar(`Você já tem ${camInfo.max} câmeras nesta reserva. Tire uma primeiro.`, "Ok");
-  if (!await perguntar(`Instalar uma câmera de trilha aqui, onde você está, por $${fmt(camInfo.preco)}?\n(${camInfo.n} de ${camInfo.max} nesta reserva)\n\nEla registra os animais que passam a até ${camInfo.raio} m (espécie, hora e dia do jogo). Só registra enquanto a área estiver carregada no jogo, ou seja, com você por perto.`, "Instalar")) return;
-  const r = await post("/api/camera", { acao: "comprar" }).catch(() => ({ ok: false, erro: "Sem resposta do app." }));
-  if (!r.ok) perguntar(r.erro || "Não deu para instalar.", "Ok");
+// ---- licenças acabando: aviso no mapa (o jogo só deixa renovar quando zera; aí é pelo Diário)
+let licTexto = "";
+function desenharLicencas(d) {
+  const el = $("lic-alerta");
+  if (!el) return;
+  const lista = d.em_reserva ? (d.licencas_alerta || []) : [];
+  const t = JSON.stringify(lista);
+  if (t === licTexto) return;
+  licTexto = t;
+  el.innerHTML = lista.map(l => `<button class="lic-item ${l.restam === 0 ? "zerou" : ""}" onclick="abrirZona(${esc(JSON.stringify({ especie: l.tag }))})"
+      title="Abrir a espécie no Diário para comprar outra licença">📜 <b>${esc(l.especie_nome)}</b>
+      <span>${l.restam === 0 ? "licença acabou, compre outra no Diário" : "resta 1 animal na licença"}</span></button>`).join("");
+  el.style.display = lista.length ? "" : "none";
 }
-async function camera(acao, id) {
-  if (acao === "remover" && !await perguntar("Tirar esta câmera? O dinheiro não volta.", "Tirar")) return;
-  mapa.closePopup();
-  const r = await post("/api/camera", { acao, id }).catch(() => ({ ok: false, erro: "Sem resposta do app." }));
-  if (!r.ok) perguntar(r.erro || "Não deu certo.", "Ok");
+// ---- aviso sonoro (contrato de carcaça novo)
+let somCtx = null, carcacaVista = undefined, avisoVisto = undefined;
+document.addEventListener("pointerdown", () => { try { somCtx = somCtx || new (window.AudioContext || window.webkitAudioContext)(); somCtx.resume(); } catch (e) {} }, { passive: true });
+function tocarAviso() {
+  try {
+    somCtx = somCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const t0 = somCtx.currentTime;
+    [[660, 0], [880, 0.18], [990, 0.36]].forEach(([f, dt]) => {
+      const o = somCtx.createOscillator(), g = somCtx.createGain();
+      o.type = "triangle"; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t0 + dt);
+      g.gain.exponentialRampToValueAtTime(0.35, t0 + dt + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dt + 0.16);
+      o.connect(g).connect(somCtx.destination); o.start(t0 + dt); o.stop(t0 + dt + 0.2);
+    });
+  } catch (e) {}
+  try { navigator.vibrate && navigator.vibrate([120, 60, 120]); } catch (e) {}
 }
-function popupCamera(c) {
-  const regs = camRegs.filter(r => r.cam === c.id).slice(0, 8);
-  const lin = regs.length ? regs.map(r => `<div class="ficha-lin"><span>${esc(r.especie_nome)}${r.sexo_nome && r.sexo_nome !== "?" ? " · " + esc(r.sexo_nome) : ""}</span><b>${r.hora != null ? horaTexto(r.hora) : "–"} · dia ${r.dia}</b></div>`).join("")
-    : `<p class="mo-dica">Nada registrado ainda. A câmera só vê quando você está por perto (área carregada no jogo).</p>`;
-  return `<div class="pop-zona"><div class="pz-cab"><span class="mk-camera">📷</span><div><b>${esc(c.nome)}</b><small>Raio de ${camInfo.raio} m</small></div></div>
-    ${lin}<button class="btn-papel" style="margin-top:8px;width:100%" onclick="camera('remover','${esc(c.id)}')">Tirar câmera</button></div>`;
-}
-function desenharCameras(d) {
-  camInfo = { preco: d.preco_camera || 150, max: d.max_cameras || 4, n: (d.cameras || []).length, raio: d.raio_camera || 100 };
-  camRegs = d.camera_registros || [];
-  const cont = $("camera-n");
-  if (cont) cont.textContent = `${camInfo.n}/${camInfo.max}`;
-  const t = JSON.stringify([d.cameras || [], camRegs.length && camRegs[0].ts]);
-  if (t === camTexto) return;
-  camTexto = t;
-  grupoCameras.clearLayers();
-  for (const c of d.cameras || []) {
-    const centro = toLL(c), borda = toLL({ x: c.x + camInfo.raio * 100, y: c.y });
-    L.circle(centro, { radius: Math.abs(borda[1] - centro[1]), color: "#7fb0c9", weight: 1, dashArray: "3 4", fillOpacity: 0.05, interactive: false }).addTo(grupoCameras);
-    L.marker(centro, { icon: L.divIcon({ className: "", html: `<div class="mk-camera ${c.pendente ? "pendente" : ""}">📷</div>`, iconSize: [30, 30], iconAnchor: [15, 15] }), zIndexOffset: 1900 })
-      .bindTooltip(esc(c.nome)).bindPopup(() => popupCamera(c), { maxWidth: 280 }).addTo(grupoCameras);
-  }
+function vigiarAvisos(d) {
+  const c = d.carcaca_nova;
+  const ts = c ? c.ts : null;
+  if (carcacaVista !== undefined && ts && ts !== carcacaVista) tocarAviso();
+  carcacaVista = ts;
+  const a = d.aviso_app;
+  if (avisoVisto !== undefined && a && a.ts !== avisoVisto) perguntar(a.texto, "Ok");
+  avisoVisto = a ? a.ts : null;
 }
 async function barraca(acao, id) {
   if (acao === "desmontar" && !await perguntar("Desmontar esta barraca? O dinheiro não volta.", "Desmontar")) return;
@@ -452,7 +455,8 @@ function atualizarMarcadores(d) {
     marcPino.setLatLng(toLL(pino)).bindTooltip(`${esc(rot)} · ${metros(distancia(st.pos, pino))}`);
   } else if (marcPino) { mapa.removeLayer(marcPino); marcPino = null; }
   desenharBarracas(d);
-  desenharCameras(d);
+  desenharLicencas(d);
+  vigiarAvisos(d);
   grupoMissoes.clearLayers();
   for (const m of d.ativas) if (m.local && m.local.raio_m) {
     // área de busca (carcaça): círculo no tamanho real
