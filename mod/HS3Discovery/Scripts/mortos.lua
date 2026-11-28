@@ -40,4 +40,74 @@ function M.completar(mortos)
     return mortos
 end
 
+-- animais que levaram tiro do jogador neste mapa: vivos (feridos) ou mortos. Só leitura, listas pequenas.
+-- nivel = trecho do nome do mapa (ex.: Colorado_BlockOut); mortosIds = ids que o jogo marca como mortos no mapa
+function M.alvejados(nivel, mortosIds)
+    local lista, chaves = {}, {}
+    pcall(function()
+        FindFirstOf("CreatureShotSaveChunk").CreatureShotMap:ForEach(function(k, v)
+            local nome = ""
+            pcall(function() nome = k:get().PrimaryAssetName:ToString() end)
+            if nivel and not nome:find(nivel, 1, true) then return end
+            local inner = v:get().InnerMap
+            for j = 1, math.min(#inner, 60) do
+                pcall(function()
+                    local c = inner[j]
+                    local el = c.Elements
+                    local t = { id = c.CreatureId, tiros = #el, orgaos = {} }
+                    local vistos = {}
+                    for i = 1, math.min(#el, 4) do
+                        pcall(function()
+                            local s = el[i]
+                            if i == #el or i == 4 then
+                                t.torre = s.bWasShotFromHuntingStand
+                                local o = s.ProjectileOrigin
+                                t.origem = { x = o.X, y = o.Y }
+                                t.hora = s.SingleHits[1].TimeOfShot.Ticks
+                            end
+                            local hits = s.SingleHits
+                            for h = 1, math.min(hits:GetArrayNum(), 3) do
+                                local secs = hits[h].PenetrationResolution.ExitPropertiesPerSection
+                                for q = 1, math.min(secs:GetArrayNum(), 16) do
+                                    local nomeO = secs[q].OrganType.TagName:ToString()
+                                    if nomeO ~= "" and nomeO ~= "None" and not vistos[nomeO] then
+                                        vistos[nomeO] = true; t.orgaos[#t.orgaos + 1] = nomeO
+                                    end
+                                end
+                            end
+                        end)
+                    end
+                    if mortosIds and mortosIds[t.id] then t.morto = true end
+                    lista[#lista + 1] = t
+                    chaves[#chaves + 1] = t.id .. ":" .. t.tiros
+                end)
+            end
+        end)
+    end)
+    -- animais carregados perto: vivo ou morto (o jogo só carrega até ~750 m)
+    if #lista > 0 then
+        local porId = {}
+        for _, t in ipairs(lista) do porId[t.id] = t end
+        pcall(function()
+            local lib = StaticFindObject("/Script/HS3AnimalsRuntime.Default__CreatureUtilsFunctionLibrary")
+            for i, a in ipairs(FindAllOf("AnimalCharacter") or {}) do
+                if i > 300 then break end
+                pcall(function()
+                    local t = porId[a.EcoSimCreatureId]
+                    if not t then return end
+                    t.vivo = lib:IsCreatureAlive(a)
+                    local p = a:K2_GetActorLocation()
+                    t.pos = { x = p.X, y = p.Y }
+                    t.especie = a.SpeciesTag.TagName:ToString()
+                end)
+            end
+        end)
+        for _, t in ipairs(lista) do
+            if t.vivo ~= nil then chaves[#chaves + 1] = t.id .. (t.vivo and "v" or "m") end
+        end
+    end
+    table.sort(chaves)
+    return lista, table.concat(chaves, ",")
+end
+
 return M

@@ -74,6 +74,7 @@ end
 -- 10 s e guardadas como números: ler esse tipo de dado o tempo todo já fechou o jogo (ver mochila.lua).
 local lentos = { quando = 0, pontos_campo = nil, reputacao = nil }
 local caoCache = { nome = nil, ultimo = nil, tick = 0 }   -- só números/texto: nunca guardar objeto do jogo entre leituras
+local estrCache = { tick = 0, dentro = nil }              -- estrutura de caça em que o caçador está (só texto/números)
 local function readState()
     local s = { ok = false, ts = os.time() }
     local pc = FindFirstOf("HS3PlayerController")
@@ -158,12 +159,34 @@ local function readState()
         local mm = pawn.CharacterMovement.MovementMode
         s.chao = (mm == 1 or mm == 2)
     end)
+    -- dentro de estrutura de caça (torre, esconderijo): a cada 2 s; o tipo só é procurado ao entrar
+    pcall(function()
+        if os.time() <= calmoAte then return end
+        estrCache.tick = estrCache.tick + 1
+        if estrCache.tick % 2 ~= 0 then if estrCache.dentro then s.estrutura = estrCache.dentro end; return end
+        local d = FindFirstOf("HS3AttributeSet_Detection")
+        if not valid(d) or (d.InHuntingStructure.CurrentValue or 0) <= 0 then estrCache.dentro = nil; return end
+        if not estrCache.dentro then
+            local pawn = FindFirstOf("HS3PlayerController").Pawn
+            local p = pawn:K2_GetActorLocation()
+            local melhor, md, mz = nil, 1e18, 0
+            local lista = FindAllOf("HuntingStructureActor") or {}
+            for i, a in ipairs(lista) do
+                if i > 200 then break end
+                pcall(function()
+                    local t = a:K2_GetActorLocation()
+                    local dd = (t.X - p.X) ^ 2 + (t.Y - p.Y) ^ 2
+                    if dd < md then md, melhor, mz = dd, a:GetClass():GetFName():ToString(), t.Z end
+                end)
+            end
+            estrCache.dentro = { classe = melhor, altura_m = math.floor((p.Z - mz) / 10 + 0.5) / 10, dist_m = math.floor(math.sqrt(md) / 100) }
+        end
+        s.estrutura = estrCache.dentro
+    end)
     pcall(function()
         local e = FindFirstOf("EnvironmentManagerComponent")
         if e and e:IsValid() then
             s.hora = e.CurrentSolarTime
-            pcall(function() s.vento = { angulo = e.WindAngle } end)      -- só um número do relógio do clima
-            pcall(function() s.vento.forca = e:GetNormalizedWindSpeed() end)
         end
     end)
     -- cão em campo (só leitura; sonda 28/11): posição, estado, raça, energia e nome
@@ -328,6 +351,7 @@ end
 local ticks = 0
 local mortosAssinatura = nil
 local trofeusAntes = nil
+local alvejadosAssinatura = nil
 
 ------------------------------------------------------------------ eventos: abates
 local function readKill(info)
@@ -759,6 +783,7 @@ local function passoCatalogo()
     end
 end
 
+local maxMunicao = {}      -- máximo da reserva por arma (definição do jogo, não muda)
 local function writeEquipamento()
     local eq = { ts = os.time(), mochila = {}, roupa = {}, comprados = {} }
     pcall(function()
@@ -784,6 +809,42 @@ local function writeEquipamento()
         local d = FindFirstOf("HS3AttributeSet_Detection")
         eq.deteccao = { visual = d.VisualDetectionFactor.CurrentValue, som = d.SoundDetectionFactor.CurrentValue,
                         cheiro = d.SmellDetectionFactor.CurrentValue, na_estrutura = d.InHuntingStructure.CurrentValue }
+    end)
+    -- munição de cada arma da mochila: reserva (Spare) e o que mais o jogo guardar com "Ammo" na tag; máximo da reserva
+    pcall(function()
+        eq.municao = {}
+        for i, it in ipairs(FindAllOf("HS3InventoryItemInstance") or {}) do
+            if i > 40 then break end
+            pcall(function()
+                local st = it.StatTags.Stacks
+                local r = nil
+                for j = 1, math.min(#st, 12) do
+                    local nome = st[j].Tag.TagName:ToString()
+                    if nome:find("Ammo") then
+                        r = r or { arma = it.ItemDef:GetFName():ToString() }
+                        r[nome:match("([^%.]+)$")] = st[j].StackCount
+                    end
+                end
+                if r and maxMunicao[r.arma] then r.max = maxMunicao[r.arma] end
+                if r and not r.max then
+                    pcall(function()
+                        local fr = it.ItemDef:GetCDO().Fragments
+                        for j = 1, math.min(#fr, 12) do
+                            pcall(function()
+                                fr[j].InitialItemStats:ForEach(function(k, v)
+                                    if k:get().TagName:ToString() == "Inventory.Weapon.Properties.Ammo.Spare" then r.max = v:get() end
+                                end)
+                            end)
+                        end
+                    end)
+                    maxMunicao[r.arma] = r.max or false
+                end
+                if r then
+                    if r.max == false then r.max = nil end
+                    eq.municao[#eq.municao + 1] = r
+                end
+            end)
+        end
     end)
     writeFile(DIR .. "equipamento.json", jsonEncode(eq))
 end
@@ -976,6 +1037,21 @@ local function periodic()
             if ass ~= mortosAssinatura then
                 mortosAssinatura = ass
                 writeFile(DIR .. "mortos.json", jsonEncode({ ts = os.time(), mortos = M.completar(lista) }))
+            end
+        end)
+    end
+    -- animais alvejados neste mapa (feridos ou mortos) para o card do app; só regrava quando muda
+    if curto and ticks % 10 == 7 and os.time() > calmoAte then
+        pcall(function()
+            local ch = loadfile(DIR .. "Scripts\\mortos.lua")
+            if not ch then return end
+            local M = ch()
+            local ids = {}
+            for _, m in ipairs((M.ler())) do ids[m.id] = true end
+            local lista, ass = M.alvejados(curto, ids)
+            if ass ~= alvejadosAssinatura then
+                alvejadosAssinatura = ass
+                writeFile(DIR .. "alvejados.json", jsonEncode({ ts = os.time(), mapa = curto, lista = lista }))
             end
         end)
     end

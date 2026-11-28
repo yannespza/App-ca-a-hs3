@@ -175,6 +175,116 @@ def monitorados(avist, abates, dia, nome_especie):
     return saida[:10]
 
 
+def plano(linhas, nome_grupo=None):
+    """Plano de abate da semana por espécie, a partir do censo (binóculo) e dos abates dos últimos 7 dias.
+    Cota ~30% dos animais vistos; o perfil (macho, fêmea, descarte) segue o equilíbrio entre os sexos."""
+    saida = []
+    for l in linhas:
+        n = l["vistos"]
+        if n < 3 or l["grupo"] in ("outro",):
+            continue
+        cota = max(1, int(n * 0.3 + 0.5))
+        if l["defeso"]:
+            cota = 0
+        m, f = l["machos"], l["femeas"]
+        if l["defeso"]:
+            perfil, sexo, gmax, texto = "defeso", None, None, "Em defeso: deixe a espécie descansar."
+        elif f and m / f > 1.5:
+            perfil, sexo, gmax, texto = "machos", "macho", None, "Machos sobrando: colha machos maduros."
+        elif f and m / f < 0.25 and n >= 5:
+            perfil, sexo, gmax, texto = "femeas", "femea", 0.5, "Poucos machos: abata fêmeas de genética fraca (até 50%)."
+        elif m == 0 and n >= 4:
+            perfil, sexo, gmax, texto = "nenhum", None, None, "Só fêmeas vistas: espere aparecer macho antes de abater."
+            cota = 0
+        else:
+            perfil, sexo, gmax, texto = "descarte", None, 0.5, "Equilibrado: prefira descartar genética fraca (até 50%)."
+        feitos = l["abates_7d"]
+        saida.append({"tag": l["tag"], "nome": l["nome"], "grupo": l["grupo"], "cota": cota, "feitos": feitos,
+                      "restam": max(0, cota - feitos), "perfil": perfil, "sexo": sexo, "genetica_max": gmax, "texto": texto})
+    saida.sort(key=lambda x: (-x["restam"], x["nome"]))
+    return saida
+
+
+def zonas_cansadas(abates, zonas, dia, raio_m=300, dist=None):
+    """Zona descoberta com 2+ abates por perto nos últimos 2 dias do jogo: 'deixe descansar' por 2 dias."""
+    rec = [a for a in abates if _dia(a) is not None and dia - _dia(a) <= 1 and isinstance(a.get("pos"), dict)]
+    saida = []
+    if not rec:
+        return saida
+    for z in zonas:
+        if not z.get("descoberta"):
+            continue
+        perto = [a for a in rec if dist({"x": z["x"], "y": z["y"], "z": 0}, {"x": a["pos"]["x"], "y": a["pos"]["y"], "z": 0}) <= raio_m]
+        if len(perto) >= 2:
+            ult = max(_dia(a) for a in perto)
+            saida.append({"x": z["x"], "y": z["y"], "raio": z.get("raio"), "especie_nome": z.get("especie_nome"), "tipo": z.get("tipo"),
+                          "abates": len(perto), "livre_no_dia": ult + 2})
+    return saida
+
+
+def qualidade(avist, abates, dia, nome_especie, semanas=4):
+    """Genética média (binóculo) e peso médio (abates) por espécie, semana a semana (7 dias do jogo cada)."""
+    porEsp = {}
+    for a in avist:
+        d, t = _dia(a), a.get("especie")
+        if d is None or not t or not isinstance(a.get("genetica"), (int, float)):
+            continue
+        k = (dia - d) // JANELA_DIAS
+        if 0 <= k < semanas:
+            e = porEsp.setdefault(t, {"gen": [[] for _ in range(semanas)], "peso": [[] for _ in range(semanas)]})
+            e["gen"][k].append(a["genetica"])
+    for a in abates:
+        d, t = _dia(a), a.get("especie")
+        if d is None or not t or not isinstance(a.get("peso_kg"), (int, float)):
+            continue
+        k = (dia - d) // JANELA_DIAS
+        if 0 <= k < semanas:
+            e = porEsp.setdefault(t, {"gen": [[] for _ in range(semanas)], "peso": [[] for _ in range(semanas)]})
+            e["peso"][k].append(a["peso_kg"])
+    saida = []
+    for t, e in porEsp.items():
+        gen = [round(sum(x) / len(x), 3) if x else None for x in e["gen"]][::-1]      # mais antiga -> atual
+        peso = [round(sum(x) / len(x), 1) if x else None for x in e["peso"]][::-1]
+        if sum(1 for g in gen if g is not None) < 2 and sum(1 for p in peso if p is not None) < 2:
+            continue
+        validos = [g for g in gen if g is not None]
+        tend = None if len(validos) < 2 else ("melhorando" if validos[-1] - validos[0] >= 0.03 else
+                                              "piorando" if validos[0] - validos[-1] >= 0.03 else "estável")
+        saida.append({"tag": t, "nome": nome_especie(t), "genetica": gen, "peso": peso, "tendencia": tend,
+                      "amostras": sum(len(x) for x in e["gen"])})
+    saida.sort(key=lambda x: -x["amostras"])
+    return saida[:6]
+
+
+def o_que_cacar(linhas, plano_, licencas=None):
+    """Recomendação do dia: junta o que falta no plano, a demanda de carne e a pressão; tira defeso e licença zerada."""
+    pl = {p["tag"]: p for p in plano_}
+    sem_lic = {l.get("tag") for l in (licencas or []) if l.get("restam") == 0}
+    cand = []
+    for l in linhas:
+        if l["defeso"] or l["tag"] in sem_lic or l["grupo"] == "outro":
+            continue
+        p = pl.get(l["tag"])
+        if p and p["perfil"] in ("nenhum", "defeso"):
+            continue
+        pontos, porque = 0.0, []
+        if p and p["restam"] > 0:
+            pontos += 2 + p["restam"]
+            porque.append(f"plano: faltam {p['restam']}")
+        if l["demanda"] >= 1.2:
+            pontos += (l["demanda"] - 1) * 6
+            porque.append(f"açougue paga {round(l['demanda'] * 100)}%")
+        if l["pressao"] == "baixa" and l["vistos"]:
+            pontos += 1
+            porque.append("pouca pressão de caça")
+        if pontos < 2:            # só "pouca pressão" não basta para recomendar
+            continue
+        cand.append({"tag": l["tag"], "nome": l["nome"], "grupo": l["grupo"], "pontos": round(pontos, 1), "porque": porque,
+                     "perfil": (p or {}).get("texto")})
+    cand.sort(key=lambda x: -x["pontos"])
+    return cand[:3]
+
+
 def painel(dados, reserva, nome_especie, grupo_de):
     dia = dados.get("dia_jogo", 0)
     avist = [a for a in dados.get("avistamentos") or [] if reserva and a.get("reserva") and reserva in a["reserva"]]
@@ -184,4 +294,5 @@ def painel(dados, reserva, nome_especie, grupo_de):
     return {"dia": dia, "reserva": reserva, "especies": linhas, "indice": indice(abates, linhas),
             "hoje": boletim(dia, avist, abates, linhas), "boletins": bol[-7:][::-1], "semana": semana(dia, abates, avist),
             "monitorados": monitorados(avist, abates, dia, nome_especie),
+            "plano": plano(linhas), "qualidade": qualidade(avist, abates, dia, nome_especie),
             "totais": {"avistados": len({a.get("id") for a in avist}), "abates": len(abates)}}

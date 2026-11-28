@@ -1,5 +1,20 @@
 [
  {
+  "id": "2026-11-28n",
+  "titulo": "Alvejados, estruturas e manejo novo",
+  "itens": [
+   "Card do animal mostra se ele já levou tiro seu: \"Tiro fatal\" ou \"Ferido, ainda vivo\", com os órgãos atingidos. Animal ferido ganha anel vermelho no mapa.",
+   "Mapa: nova caixa \"Abatidos\". Desligue para não ver onde o animal caiu e achar pelos rastros.",
+   "Vento saiu do mapa.",
+   "Estruturas: o app sabe quando você está numa torre ou num esconderijo. Contratos novos pedem tiro da torre ou do esconderijo, e o Diário mostra de onde foi o tiro.",
+   "Munição baixa: aviso no mapa quando uma arma tem menos de um pente de reserva.",
+   "Caçadas: pontaria da sessão (tiros no alvo, abates de um tiro, acertos vitais, órgão mais atingido e feridos ainda vivos).",
+   "Manejo: O que caçar hoje, O que fazer agora (bandos nas próximas 3 horas do jogo), Plano de abate da semana, Zonas cansadas (amarelo no mapa) e Qualidade do bando.",
+   "Contratos do Guarda-florestal: Plano de abate e Rodízio de área.",
+   "Card da semana: imagem pronta para divulgar, salva na pasta Divulgacao do app."
+  ]
+ },
+ {
   "id": "2026-11-28m",
   "titulo": "Patente nova e modo noite corrigido",
   "itens": [

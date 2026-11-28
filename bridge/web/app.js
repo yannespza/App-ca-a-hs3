@@ -314,17 +314,37 @@ async function modoBarraca() {
 }
 // ---- licenças acabando: aviso no mapa (o jogo só deixa renovar quando zera; aí é pelo Diário)
 let licTexto = "";
+let munVista = undefined, cansadasTxt = "", grupoCansadas = null;
+function desenharCansadas(d) {
+  const lista = d.em_reserva ? (d.cansadas || []) : [];
+  const t = JSON.stringify(lista);
+  if (t === cansadasTxt) return;
+  cansadasTxt = t;
+  if (!grupoCansadas) grupoCansadas = L.layerGroup().addTo(mapa);
+  grupoCansadas.clearLayers();
+  for (const z of lista) {
+    L.circleMarker(toLL(z), { radius: 22, color: "#e0b000", weight: 3, dashArray: "6 5", fillColor: "#ffd23f", fillOpacity: 0.22, interactive: true })
+      .bindTooltip(`<b>Zona cansada</b><br>${esc(z.especie_nome || "")} · ${z.abates} abates perto<br>Deixe descansar até o dia ${z.livre_no_dia}`, { className: "cartao-animal" })
+      .addTo(grupoCansadas);
+  }
+}
 function desenharLicencas(d) {
+  try { desenharCansadas(d); } catch (e) {}
   const el = $("lic-alerta");
   if (!el) return;
   const lista = d.em_reserva ? (d.licencas_alerta || []) : [];
-  const t = JSON.stringify(lista);
+  const mun = d.em_reserva ? (d.municao_baixa || []) : [];
+  const t = JSON.stringify([lista, mun]);
   if (t === licTexto) return;
   licTexto = t;
   el.innerHTML = lista.map(l => `<button class="lic-item ${l.restam === 0 ? "zerou" : ""}" onclick="abrirZona(${esc(JSON.stringify({ especie: l.tag }))})"
       title="Abrir a espécie no Diário para comprar outra licença">📜 <b>${esc(l.especie_nome)}</b>
-      <span>${l.restam === 0 ? "licença acabou, compre outra no Diário" : "resta 1 animal na licença"}</span></button>`).join("");
-  el.style.display = lista.length ? "" : "none";
+      <span>${l.restam === 0 ? "licença acabou, compre outra no Diário" : "resta 1 animal na licença"}</span></button>`).join("")
+    + mun.map(m => `<button class="lic-item ${m.reserva === 0 ? "zerou" : ""}" onclick="irPara('armario')" title="Abrir a Mochila para recarregar a munição">🎯 <b>${esc(m.arma)}</b>
+      <span>${m.reserva === 0 ? "sem munição de reserva" : `só ${m.reserva} de reserva`} · ${m.na_arma} na arma</span></button>`).join("");
+  if (munVista !== undefined && mun.length > munVista) tocarAviso("tecla");
+  munVista = mun.length;
+  el.style.display = lista.length || mun.length ? "" : "none";
 }
 // ---- aviso sonoro (contrato de carcaça novo)
 let somCtx = null, carcacaVista = undefined, avisoVisto = undefined, boletimVisto = undefined, fotoVista = undefined, teclaVista = undefined;
@@ -478,6 +498,14 @@ function direcaoTexto(g) {
   return a < 15 ? "à frente" : a > 165 ? "atrás" : a > 110 ? `atrás, à ${lr}` : a < 60 ? `à frente, à ${lr}` : `à ${lr}`;
 }
 
+function alvejadoHtml(v) {
+  if (!v) return `<div class="ficha-lin"><span>Alvejado</span><b>Não</b></div>`;
+  const tiros = v.tiros === 1 ? "1 tiro" : `${v.tiros} tiros`;
+  const ond = v.orgaos && v.orgaos.length ? ": " + v.orgaos.join(", ") : "";
+  const txt = v.estado === "fatal" ? "Tiro fatal" : v.estado === "ferido" ? "Ferido, ainda vivo" : (v.vital ? "Atingido em órgão vital" : "Atingido");
+  return `<div class="ficha-alvo ${v.estado}"><b>${txt}</b><small>${tiros}${esc(ond)}${v.estado === "incerto" ? " · longe demais para o jogo dizer se morreu" : ""}</small></div>`;
+}
+
 function fichaAnimal(a) {
   const pot = a.potencial ?? a.genetica;
   return `<div class="ficha">${a.morto ? `<div class="ficha-morto">✕ Abatido — falta recolher</div>` : ""}
@@ -489,6 +517,7 @@ function fichaAnimal(a) {
     <div class="ficha-barra"><i style="width:${(a.genetica || 0) * 100}%"></i><em style="left:${(pot || 0) * 100}%"></em></div>
     <div class="ficha-lin"><span>Potencial genético</span><b>${pct(pot)}</b></div>
     ${a.peso_faixa ? `<div class="ficha-lin"><span>Peso estimado</span><b>${a.peso_faixa.map(x => String(x).replace(".", ",")).join("–")} kg</b></div>` : ""}
+    ${alvejadoHtml(a.alvejado)}
     <div class="ficha-lin"><span>Distância</span><b>${metros(a.distancia_m)}</b></div>
     <div class="ficha-lin"><span>Direção</span><b>${direcaoTexto(a.direcao)}</b></div>
     <div class="ficha-lin"><span>Posição</span><b>${a.ao_vivo ? "🟢 ao vivo" : "⚪ última conhecida"}</b></div>
@@ -503,7 +532,7 @@ function atualizarAnimais(lista) {
     if (!a.pos) continue;
     vistos.add(String(a.id));
     const sexo = a.sexo === 0 ? " macho" : a.sexo === 1 ? " femea" : "";
-    const cls = a.morto ? "mk-animal morto" : `mk-animal${sexo}${a.lendario ? " lendario" : ""}${(a.genetica || 0) >= 0.9 ? " dourado" : ""}${a.ao_vivo ? "" : " velho"}`;
+    const cls = a.morto ? "mk-animal morto" : `mk-animal${sexo}${a.lendario ? " lendario" : ""}${(a.genetica || 0) >= 0.9 ? " dourado" : ""}${a.ao_vivo ? "" : " velho"}${a.alvejado?.estado === "ferido" ? " ferido" : ""}`;
     const icone = L.divIcon({ className: "mov", html: `<div class="${cls}">${silhueta(a.grupo, a.especie)}${a.morto ? '<b class="mk-x">✕</b>' : ""}</div>`, iconSize: [24, 24], iconAnchor: [12, 12] });
     let m = marcAnimais[a.id];
     if (!m) {
@@ -574,7 +603,6 @@ function atualizarMarcadores(d) {
   desenharBarracas(d);
   desenharCao(d);
   desenharMarcas(d);
-  desenharVento(d);
   desenharLicencas(d);
   vigiarAvisos(d);
   grupoMissoes.clearLayers();
@@ -762,6 +790,7 @@ async function atualizar() {
   $("p-patente-barra").style.width = (pt.progresso * 100) + "%";
   $("p-patente-sub").textContent = pt.proxima ? `faltam ${fmt(pt.faltam)} pts para ${pt.proxima}` : `${fmt(pt.pontos)} pts`;
   $("f-voltar").checked = !!d.config?.voltar_ao_ultimo_local;
+  $("f-abatidos").checked = d.config?.mostrar_abatidos !== false;
   $("f-hud").checked = d.config?.contratos_no_jogo !== false;
   $("btn-voltar").style.display = d.tem_local_salvo ? "" : "none";
   $("aviso-teleporte").textContent = d.aviso_teleporte || "";
@@ -816,7 +845,11 @@ async function atualizar() {
   const se = d.sessao || {};
   const linhaSessao = (r, titulo) => `<div class="sess"><b>${titulo}</b><span>${r.minutos} min de jogo</span><span>${r.abates} abate${r.abates === 1 ? "" : "s"}</span>
       <span>${r.avistados || 0} marcado${r.avistados === 1 ? "" : "s"} no binóculo</span><span>${r.contratos} contrato${r.contratos === 1 ? "" : "s"} pago${r.contratos === 1 ? "" : "s"}</span>
-      ${r.creditos != null ? `<span class="${r.creditos >= 0 ? "pos" : "neg"}">${r.creditos >= 0 ? "+" : "−"}$${fmt(Math.abs(r.creditos))}</span>` : ""}</div>`;
+      ${r.creditos != null ? `<span class="${r.creditos >= 0 ? "pos" : "neg"}">${r.creditos >= 0 ? "+" : "−"}$${fmt(Math.abs(r.creditos))}</span>` : ""}</div>
+      ${r.precisao ? `<div class="sess prec"><b>Pontaria</b><span>${r.precisao.acertos} tiro${r.precisao.acertos === 1 ? "" : "s"} no alvo</span>
+        <span>${r.precisao.um_tiro} de ${r.abates} com um tiro só</span><span>${r.precisao.vitais} em órgão vital</span>
+        ${r.precisao.orgao_top ? `<span>Mais atingido: ${esc(r.precisao.orgao_top)}</span>` : ""}
+        ${r.precisao.feridos_vivos ? `<span class="neg">${r.precisao.feridos_vivos} ferido${r.precisao.feridos_vivos === 1 ? "" : "s"} ainda vivo${r.precisao.feridos_vivos === 1 ? "" : "s"}</span>` : ""}</div>` : ""}`;
   if ($("cac-sessao")) $("cac-sessao").innerHTML = se.ativa ? linhaSessao(se, "Agora")
     : se.ultima ? linhaSessao(se.ultima, "Última sessão") : `<p class="vazio">O resumo aparece quando você entra numa reserva.</p>`;
   if ($("cac-recordes")) $("cac-recordes").innerHTML = (s.recordes || []).length ? `<div class="recordes">${s.recordes.map(r => `<div class="rec">
@@ -826,13 +859,13 @@ async function atualizar() {
     : `<p class="vazio">Seus melhores troféus por espécie aparecem aqui.</p>`;
   barras(s.por_grupo || [], "cac-especies");
   barras((s.por_arma || []).map(([n, v]) => [n.replace(/^ID_/, "").replace(/_/g, " "), v]), "cac-armas");
-  $("ultimos").innerHTML = d.abates.length ? `<table class="tabela"><thead><tr><th>Animal</th><th>Peso</th><th>Troféu</th><th>Genética</th><th>Distância</th><th>Morte</th><th>Órgãos</th><th>Arma</th><th>Reserva</th></tr></thead><tbody>` +
+  $("ultimos").innerHTML = d.abates.length ? `<table class="tabela"><thead><tr><th>Animal</th><th>Peso</th><th>Troféu</th><th>Genética</th><th>Distância</th><th>Morte</th><th>Órgãos</th><th>De onde</th><th>Arma</th><th>Reserva</th></tr></thead><tbody>` +
     d.abates.slice(0, 15).map(a => `<tr><td><b>${esc(a.especie_nome || a.grupo_nome)}</b>${a.sexo_nome && a.sexo_nome !== "?" ? ` <small>${esc(a.sexo_nome)}</small>` : ""}</td>
       <td>${a.peso_kg ? `${a.peso_kg.toFixed(1).replace(".", ",")} kg` : "–"}</td>
       <td>${a.pontos_trofeu ? `${a.pontos_trofeu.toFixed(1).replace(".", ",")}${a.lendario ? ` <span title="Pelagem rara / lendário">★</span>` : ""}` : "–"}</td>
       <td>${pct(a.genetica)}</td><td>${metros(a.distancia_m)}</td>
       <td title="Tempo entre o tiro e a morte">${a.segundos_ate_morte != null ? `${a.segundos_ate_morte < 10 ? a.segundos_ate_morte.toFixed(1).replace(".", ",") : Math.round(a.segundos_ate_morte)} s` : "–"}</td>
-      <td class="${a.vital ? "orgao-vital" : ""}" title="${a.vital ? "Acertou órgão vital" : ""}">${a.orgaos_nome && a.orgaos_nome.length ? esc(a.orgaos_nome.join(", ")) : "–"}</td><td>${esc((a.arma || "").replace(/^ID_/, "").replace(/_/g, " "))}</td><td>${esc(a.reserva ? nomeMapa(a.reserva) : "–")}</td></tr>`).join("") + `</tbody></table>`
+      <td class="${a.vital ? "orgao-vital" : ""}" title="${a.vital ? "Acertou órgão vital" : ""}">${a.orgaos_nome && a.orgaos_nome.length ? esc(a.orgaos_nome.join(", ")) : "–"}</td><td>${({ torre: "Torre", esconderijo: "Esconderijo", estrutura: "Estrutura" })[a.estrutura_tipo] || (a.torre === false ? "Chão" : "–")}</td><td>${esc((a.arma || "").replace(/^ID_/, "").replace(/_/g, " "))}</td><td>${esc(a.reserva ? nomeMapa(a.reserva) : "–")}</td></tr>`).join("") + `</tbody></table>`
     : `<p class="vazio">Nenhum abate ainda. Cada animal recolhido no jogo aparece aqui.</p>`;
   renderSalaTrofeus();
 }
@@ -862,6 +895,7 @@ document.querySelectorAll("#abas button[data-aba]").forEach(b => b.onclick = () 
   atualizarAba();
 });
 $("f-voltar").onchange = (e) => post("/api/config", { chave: "voltar_ao_ultimo_local", valor: e.target.checked });
+$("f-abatidos").onchange = (e) => post("/api/config", { chave: "mostrar_abatidos", valor: e.target.checked });
 $("f-hud").onchange = (e) => post("/api/config", { chave: "contratos_no_jogo", valor: e.target.checked });
 async function voltarAgora() { const r = await post("/api/voltar"); if (!r.ok) moAviso(r.erro, "erro"); }
 
@@ -1529,23 +1563,9 @@ function desenharMarcas(d) {
       <div style="margin-top:8px;display:flex;gap:6px"><button class="btn-papel" onclick="apagarMarca('${m.id}')">Apagar</button></div>`).addTo(grupoMarcas));
 }
 async function apagarMarca(id) { mapa.closePopup(); await post("/api/marca", { id }); marcasTexto = ""; }
-// ---- vento: de onde vem e para onde vai o seu cheiro
-let ventoCtl = null;
-function desenharVento(d) {
-  const v = (d.estado || {}).vento;
-  if (!v || v.angulo == null || !d.em_reserva) { if (ventoCtl) ventoCtl.style.display = "none"; return; }
-  if (!ventoCtl) {
-    ventoCtl = document.createElement("div"); ventoCtl.className = "vento"; ventoCtl.title = "Vento no jogo: a seta aponta para onde o vento (e o seu cheiro) vai";
-    document.querySelector(".mapa-papel").appendChild(ventoCtl);
-  }
-  ventoCtl.style.display = "";
-  const forca = v.forca != null ? Math.round(v.forca * 100) : null;
-  const ang = ((v.angulo % 360) + 360) % 360;
-  ventoCtl.innerHTML = `<div class="vento-rosa"><span>N</span><i style="transform:rotate(${ang}deg)">➤</i></div><div><b>Vento</b><small>${forca != null ? forca + "% de força" : ""}</small><small>seu cheiro vai para a seta</small></div>`;
-}
 function verNoMapa(pos) {
   document.querySelector('#abas button[data-aba="mapa"]').click();
-  setTimeout(() => { marcarSeguindo(false); mapa.setView(toLL(pos), Math.max(mapa.getZoom(), 2)); L.popup().setLatLng(toLL(pos)).setContent("Último lugar onde você viu o animal").openOn(mapa); }, 120);
+  setTimeout(() => { marcarSeguindo(false); mapa.setView(toLL(pos), Math.max(mapa.getZoom(), 2)); L.popup().setLatLng(toLL(pos)).setContent(pos.txt || "Último lugar onde você viu o animal").openOn(mapa); }, 120);
 }
 async function renderManejo() {
   let d;
@@ -1587,10 +1607,47 @@ async function renderManejo() {
       ${tot ? `<div class="mj-sexo"><i class="m" style="width:${l.machos / tot * 100}%"></i><i class="f" style="width:${l.femeas / tot * 100}%"></i></div>` : ""}
       ${l.alertas.length ? `<ul class="mj-alertas">${l.alertas.map(a => `<li>${esc(a)}</li>`).join("")}</ul>` : ""}</div>`;
   }).join("");
+  const TIPO_Z = { comer: "comer", beber: "beber", descansar: "descansar", Eating: "comer", Drinking: "beber", Sleeping: "descansar", Roaming: "passar" };
+  const tz = t => TIPO_Z[t] || "passar";
+  const agora = (d.cacar_hoje || []).length || (d.agora || []).length ? `<div class="mj-agora">
+      ${(d.cacar_hoje || []).length ? `<div class="mj-hoje"><h4>O que caçar hoje</h4>${d.cacar_hoje.map((c, i) => `<div class="mj-hoje-i">
+        <b>${i + 1}. ${silhueta(c.grupo, c.tag)} ${esc(c.nome)}</b><small>${esc(c.porque.join(" · "))}</small>${c.perfil ? `<small>${esc(c.perfil)}</small>` : ""}</div>`).join("")}</div>` : ""}
+      ${(d.agora || []).length ? `<div class="mj-prox"><h4>O que fazer agora</h4>${d.agora.map(a => `<div class="mj-prox-i">
+        <span>${a.falta_h < 0.5 ? "<b>Agora</b>" : `Às <b>${a.hora}h</b>`} · ${esc(a.especie_nome || "Bando")} vai ${tz(a.tipo)}</span>
+        <small>${a.dist != null ? metros(a.dist) + " de você" : ""}</small>
+        <button class="btn-papel" onclick='verNoMapa(${JSON.stringify({ x: a.x, y: a.y, txt: "Zona de " + (a.especie_nome || "animais") })})'>Ver</button></div>`).join("")}
+        <p class="item-sub">Pelos horários em que você viu animais nas zonas. Horas do relógio do jogo.</p></div>` : ""}
+    </div>` : "";
+  const plano = (d.plano || []).length ? `<table class="tabela mj-plano"><thead><tr><th>Espécie</th><th>Cota da semana</th><th>Feitos</th><th>Faltam</th><th>Perfil</th></tr></thead><tbody>
+      ${d.plano.map(x => `<tr class="${x.restam ? "" : "ok"}"><td>${silhueta(x.grupo, x.tag)} ${esc(x.nome)}</td><td>${x.cota}</td><td>${x.feitos}</td><td><b>${x.restam}</b></td><td>${esc(x.texto)}</td></tr>`).join("")}
+    </tbody></table><p class="item-sub">Cota de cerca de 30% dos animais diferentes que você viu nos últimos 7 dias. O Guarda-florestal passa a oferecer contratos deste plano.</p>`
+    : `<p class="vazio">Marque pelo menos 3 animais de uma espécie no binóculo para montar o plano.</p>`;
+  const linhaSvg = (vals, max) => {
+    const pts = vals.map((v, i) => v == null ? null : [8 + i * 40, 46 - (v / max) * 38]).filter(Boolean);
+    return `<svg viewBox="0 0 136 52" class="mj-spark"><polyline points="${pts.map(p => p.join(",")).join(" ")}" fill="none" stroke="currentColor" stroke-width="2.5"/>
+      ${pts.map(p => `<circle cx="${p[0]}" cy="${p[1]}" r="3.2" fill="currentColor"/>`).join("")}</svg>`;
+  };
+  const quali = (d.qualidade || []).length ? `<div class="mj-quali">${d.qualidade.map(q => {
+      const pesoMax = Math.max(1, ...q.peso.filter(x => x != null));
+      return `<div class="mj-quali-i ${q.tendencia || ""}"><b>${esc(q.nome)}</b>
+        <span class="mj-tend">${q.tendencia ? esc(q.tendencia) : "poucos dados"}</span>
+        <div class="mj-quali-g"><div><small>Genética média</small>${linhaSvg(q.genetica, 1)}<small>${q.genetica.map(v => v == null ? "–" : Math.round(v * 100) + "%").join(" · ")}</small></div>
+        <div><small>Peso médio (abates)</small>${linhaSvg(q.peso, pesoMax)}<small>${q.peso.map(v => v == null ? "–" : Math.round(v) + " kg").join(" · ")}</small></div></div></div>`;
+    }).join("")}</div><p class="item-sub">Últimas 4 semanas do jogo, da mais antiga para a atual.</p>`
+    : `<p class="vazio">Aparece depois de duas semanas do jogo com animais marcados no binóculo.</p>`;
+  const cansadas = (d.cansadas || []).length ? `<div class="mj-mon">${d.cansadas.map(z => `<div class="mj-mon-i"><b>${esc(z.especie_nome || "Zona")}</b> · ${tz(z.tipo)}
+      <span>${z.abates} abates perto · descansa até o dia ${z.livre_no_dia}</span>
+      <button class="btn-papel" onclick='verNoMapa(${JSON.stringify({ x: z.x, y: z.y, txt: "Zona cansada: deixe descansar" })})'>Ver no mapa</button></div>`).join("")}</div>
+    <p class="item-sub">Zona com 2 abates ou mais a até 300 m em 2 dias do jogo. Caçar longe delas rende o contrato "Rodízio de área".</p>` : "";
   p.innerHTML = `<header class="pag-topo"><h2>Manejo · ${esc(NOME_RESERVA(d.reserva))}</h2>
       <p>Censo, equilíbrio e pressão de caça calculados com o que você avistou no binóculo e abateu. Dia ${d.dia} do jogo pelo contador do app. Nada aqui mexe no jogo.</p></header>
+    ${agora}
     ${agendaHtml()}
     <h3>Índice de sustentabilidade</h3>${indice}
+    <div class="mj-card-acoes"><button class="btn-papel" onclick="cardSemana()">🖼 Card da semana</button><small>Imagem pronta para divulgar, salva na pasta Divulgacao do app.</small></div>
+    <h3>Plano de abate da semana</h3>${plano}
+    ${cansadas ? `<h3>Zonas cansadas</h3>${cansadas}` : ""}
+    <h3>Qualidade do bando</h3>${quali}
     <h3>Boletins</h3><div class="mj-bols">${bol(d.hoje)}${(d.boletins || []).filter(b => b.dia !== d.hoje.dia).map(bol).join("")}</div>
     ${(d.monitorados || []).length ? `<h3>Monitorados sumidos</h3><p class="item-sub">Animais bons que você marcou e não vê há 2 dias ou mais. O jogo não avisa quando um animal sai do mapa; vale procurar por onde ele andava.</p>
       <div class="mj-mon">${d.monitorados.map(m => `<div class="mj-mon-i"><b>${esc(m.nome)}</b> ${m.sexo === 0 ? "♂" : m.sexo === 1 ? "♀" : ""}
@@ -1600,4 +1657,84 @@ async function renderManejo() {
     <h3>Espécies (${d.especies.length})</h3>
     <p class="item-sub">${d.totais.avistados} animais diferentes avistados e ${d.totais.abates} abates nesta reserva. A procura do açougue sobe com os dias sem abater a espécie e muda o valor dos contratos do Açougueiro.</p>
     <div class="mj-lista">${esp || `<p class="vazio">Use o binóculo para começar o censo.</p>`}</div>`;
+}
+
+function irPara(aba) { const b = document.querySelector(`#abas button[data-aba="${aba}"]`); if (b) b.click(); }
+
+// ---- card da semana (imagem para divulgar): desenhado no navegador com as fontes do app e salvo na pasta Divulgacao
+async function cardSemana() {
+  let d;
+  try { d = await (await fetch("/api/card_semana")).json(); } catch { return moAviso("Sem resposta do app.", "erro"); }
+  if (!d.reserva) return moAviso("Faça alguns abates numa reserva para montar o card.", "erro");
+  try { await Promise.all(["64px Rye", "700 30px Oswald", "500 30px Oswald", "700 40px Slab", "38px Yellowtail"].map(f => document.fonts.load(f))); } catch (e) {}
+  const W = 1080, H = 1350, c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const g = c.getContext("2d");
+  const papel = "#ece4cc", tinta = "#3a2316", ferrugem = "#a3441c", ouro = "#c9962e";
+  g.fillStyle = "#3a2316"; g.fillRect(0, 0, W, H);
+  g.fillStyle = papel; g.fillRect(40, 40, W - 80, H - 80);
+  g.strokeStyle = tinta; g.lineWidth = 6; g.strokeRect(58, 58, W - 116, H - 116);
+  g.lineWidth = 2; g.strokeRect(72, 72, W - 144, H - 144);
+  g.textAlign = "center"; g.fillStyle = tinta;
+  g.font = "64px Rye, serif"; g.fillText("Painel do Caçador HS3", W / 2, 170);
+  g.font = "700 34px Oswald, sans-serif"; g.fillStyle = ferrugem;
+  const dIni = Math.max(0, d.dia - 6);
+  g.fillText(`BOLETIM DA SEMANA · ${NOME_RESERVA(d.reserva).toUpperCase()} · ${dIni === d.dia ? "DIA " + d.dia : `DIAS ${dIni}–${d.dia}`}`, W / 2, 230);
+  g.strokeStyle = tinta; g.lineWidth = 3; g.beginPath(); g.moveTo(140, 262); g.lineTo(W - 140, 262); g.stroke();
+  const caixa = (x, y, w, h, num, rot) => {
+    g.fillStyle = "#e2d6b4"; g.fillRect(x, y, w, h); g.strokeStyle = tinta; g.lineWidth = 3; g.strokeRect(x, y, w, h);
+    g.fillStyle = tinta; g.font = "700 88px Oswald, sans-serif"; g.fillText(String(num), x + w / 2, y + 112);
+    g.font = "500 28px Oswald, sans-serif"; g.fillStyle = ferrugem; g.fillText(rot.toUpperCase(), x + w / 2, y + 156);
+  };
+  const bw = 270, gap = 30, x0 = (W - (bw * 3 + gap * 2)) / 2;
+  caixa(x0, 300, bw, 190, d.abates, d.abates === 1 ? "abate" : "abates");
+  caixa(x0 + bw + gap, 300, bw, 190, d.limpos, "com um tiro");
+  caixa(x0 + 2 * (bw + gap), 300, bw, 190, d.avistados, "avistados");
+  g.textAlign = "left"; let y = 560;
+  const linha = (rot, val) => {
+    g.font = "500 30px Oswald, sans-serif"; g.fillStyle = ferrugem; g.fillText(rot.toUpperCase(), 140, y);
+    g.font = "700 40px Slab, serif"; g.fillStyle = tinta; g.fillText(val, 140, y + 46); y += 100;
+  };
+  if (d.melhor) linha("Melhor troféu", `${d.melhor.especie} · ${fmt(Math.round(d.melhor.pontos))} pts${d.melhor.peso_kg ? " · " + Math.round(d.melhor.peso_kg) + " kg" : ""}`);
+  if (d.especies.length) linha("Espécies abatidas", d.especies.map(([n, q]) => `${n} ${q}`).join(" · ").slice(0, 52));
+  linha("Índice de manejo", d.indice == null ? "ainda sem dados" : `${d.indice} de 100${d.selo ? " · Reserva Modelo" : ""}`);
+  if (d.patente) linha("Patente", d.patente);
+  // gráfico dos últimos 7 dias: avistados (claro) e abates (ferrugem)
+  const sem = d.semana || [];
+  if (sem.length) {
+    const gx = 140, gy = Math.max(y + 40, 900), gw = 560, gh = 150, mx = Math.max(1, ...sem.map(x => Math.max(x.abates, x.avistados)));
+    g.font = "500 28px Oswald, sans-serif"; g.fillStyle = ferrugem; g.textAlign = "left"; g.fillText("ÚLTIMOS 7 DIAS", gx, gy - 16);
+    const col = gw / 7;
+    sem.forEach((x, i) => {
+      const cx = gx + i * col;
+      const ha = x.avistados / mx * gh, hb = x.abates / mx * gh;
+      g.fillStyle = "#c9b48a"; g.fillRect(cx + 8, gy + gh - ha, col / 2 - 10, ha);
+      g.fillStyle = ferrugem; g.fillRect(cx + col / 2, gy + gh - hb, col / 2 - 10, hb);
+      g.fillStyle = tinta; g.font = "500 22px Oswald, sans-serif"; g.textAlign = "center"; g.fillText(String(x.dia), cx + col / 2, gy + gh + 28);
+    });
+    g.strokeStyle = tinta; g.lineWidth = 2; g.beginPath(); g.moveTo(gx, gy + gh); g.lineTo(gx + gw, gy + gh); g.stroke();
+    g.textAlign = "left"; g.font = "500 22px Oswald, sans-serif";
+    g.fillStyle = "#c9b48a"; g.fillRect(gx, gy + gh + 46, 18, 18); g.fillStyle = tinta; g.fillText("AVISTADOS", gx + 26, gy + gh + 63);
+    g.fillStyle = ferrugem; g.fillRect(gx + 170, gy + gh + 46, 18, 18); g.fillStyle = tinta; g.fillText("ABATES", gx + 196, gy + gh + 63);
+  }
+  if (d.selo) {
+    g.save(); g.translate(W - 240, H - 300); g.rotate(-0.18);
+    g.strokeStyle = ferrugem; g.lineWidth = 8; g.beginPath(); g.arc(0, 0, 120, 0, Math.PI * 2); g.stroke();
+    g.lineWidth = 3; g.beginPath(); g.arc(0, 0, 100, 0, Math.PI * 2); g.stroke();
+    g.fillStyle = ferrugem; g.textAlign = "center"; g.font = "30px Rye, serif"; g.fillText("RESERVA", 0, -8); g.fillText("MODELO", 0, 32);
+    g.restore();
+  }
+  g.textAlign = "center"; g.fillStyle = tinta; g.font = "38px Yellowtail, cursive";
+  g.fillText("“O vento não mente. Quem mente é caçador apressado.” — Earl", W / 2, H - 120);
+  const png = c.toDataURL("image/png");
+  const nome = `semana-${NOME_RESERVA(d.reserva)}-dia${d.dia}`;
+  const r = await post("/api/salvar_card", { png, nome }).catch(() => ({ ok: false }));
+  const div = document.createElement("div");
+  div.className = "mo-modal";
+  div.innerHTML = `<div class="mo-janela card-semana"><button class="mo-x" onclick="this.closest('.mo-modal').remove()">✕</button>
+    <h3>Card da semana</h3><img src="${png}" alt="Card da semana">
+    <p class="item-sub">${r.ok ? `Salvo no PC em <b>${esc(r.arquivo)}</b>.` : "Não deu para salvar no PC."} No celular, toque e segure a imagem para guardar.</p>
+    <a class="btn-papel" href="${png}" download="${nome}.png">Baixar imagem</a></div>`;
+  div.onclick = e => { if (e.target === div) div.remove(); };
+  document.body.appendChild(div);
 }

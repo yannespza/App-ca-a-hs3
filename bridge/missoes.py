@@ -63,6 +63,8 @@ TITULOS_COND = {
     "curta_arma": ["Arma de cinto", "Revólver de fazendeiro"],
     "genetica": ["Troféu de colecionador", "Só o melhor", "Cabeça de parede", "Linhagem nobre", "Peça de museu"],
     "sem_torre": ["Pé-ante-pé", "Sem escada", "No chão, como antigamente", "Caçador de chão"],
+    "torre": ["Lá de cima", "Vista da torre", "Paciência no alto", "Olho de gavião"],
+    "esconderijo": ["Escondido no mato", "Quieto na espera", "Dentro da moita", "Paciência de esconderijo"],
     "atrair": ["Chamando o bicho", "Conversa de chamariz", "Vem pra mim", "Isca e paciência", "Canto de sereia"],
     "nao_detectado": ["Fantasma do mato", "Sombra no capim", "Ninguém te viu", "Vento na cara"],
     "calibre": ["Arma certa, abate limpo", "Calibre de respeito", "Ética em primeiro lugar"],
@@ -105,6 +107,8 @@ FALAS_COND = {
     "genetica": ["Não atire no primeiro que aparecer: use o binóculo e escolha um bicho de boa genética.",
                  "O cliente é exigente: só bicho de genética alta."],
     "sem_torre": ["Nada de torre ou espera. No chão, pé-ante-pé.", "Quero você andando, não sentado em escada."],
+    "torre": ["Sobe numa torre e espera o bicho passar. Lá de cima ele não te sente.", "Torre de caça e paciência: deixa o bicho vir."],
+    "esconderijo": ["Entra num esconderijo e fica quieto até o bicho chegar.", "Do esconderijo, sem pressa. Quem se mexe espanta."],
     "atrair": ["Use o chamador ou a isca de cheiro e espere o bicho vir até você.", "Bicho que vem até você é bicho que não te viu."],
     "nao_detectado": ["O animal não pode nem desconfiar que você está lá.", "Se ele te notar, não vale. Vento contra e devagar."],
     "calibre": ["Calibre certo pra espécie, senão é crueldade.", "Confira a tabela de calibres antes de sair."],
@@ -122,12 +126,13 @@ FALAS_VISITAR = ["Tem um lugar que ninguém do posto foi conferir ainda. Dá uma
 
 DESC_COND = {
     "um_tiro": "com um único tiro", "arco": "usando arco ou besta", "espingarda": "usando espingarda", "rifle": "usando rifle",
-    "curta_arma": "usando arma curta", "sem_torre": "sem estar em torre ou espera", "atrair": "atraído por chamador ou isca de cheiro",
+    "curta_arma": "usando arma curta", "sem_torre": "sem estar em torre ou espera", "torre": "atirando de dentro de uma torre de caça",
+    "esconderijo": "atirando de dentro de um esconderijo", "atrair": "atraído por chamador ou isca de cheiro",
     "nao_detectado": "sem que ele perceba você", "calibre": "com o calibre certo para a espécie",
     "macho": "macho (marque no binóculo antes)", "femea": "fêmea (marque no binóculo antes)",
 }
 MULT = {"longa": 1.7, "media": 1.25, "curta": 1.3, "um_tiro": 1.3, "arco": 1.6, "espingarda": 1.1, "rifle": 1.0, "curta_arma": 1.6,
-        "sem_torre": 1.2, "atrair": 1.35, "nao_detectado": 1.4, "calibre": 1.1, "macho": 1.2, "femea": 1.1}
+        "sem_torre": 1.2, "torre": 1.15, "esconderijo": 1.25, "atrair": 1.35, "nao_detectado": 1.4, "calibre": 1.1, "macho": 1.2, "femea": 1.1}
 # só distância mínima (sem limite máximo): "a X m ou mais"
 FAIXAS = {"curta": [20, 25, 30, 35], "media": [60, 80, 100, 120, 150], "longa": [200, 250, 300, 350]}
 
@@ -235,7 +240,7 @@ def _um(grupos, pois, nome_grupo, cap):
     n = random.choices([0, 1, 2, 3], weights=[max(2, 18 - 4 * nv), max(15, 45 - 4 * nv), 28 + 4 * nv, 9 + 4 * nv])[0]
     if nv >= 3 and random.random() < 0.4:
         meta += 1
-    opcoes = ["dist", "um_tiro", "arma", "genetica", "sem_torre", "atrair", "nao_detectado", "calibre", "sexo"]
+    opcoes = ["dist", "um_tiro", "arma", "genetica", "sem_torre", "atrair", "nao_detectado", "calibre", "sexo", "estrutura"]
     random.shuffle(opcoes)
     for o in opcoes:
         if len(chaves) >= n:
@@ -269,6 +274,14 @@ def _um(grupos, pois, nome_grupo, cap):
             cond["sexo"] = s
             chaves.append(s)
         elif o == "atrair" and not pode_atrair:
+            continue
+        elif o == "estrutura":
+            if cond.get("sem_torre"):
+                continue
+            e = "esconderijo" if grupo in AVES else random.choice(["torre", "esconderijo"])
+            cond[e] = True
+            chaves.append(e)
+        elif o == "sem_torre" and (cond.get("torre") or cond.get("esconderijo")):
             continue
         elif o in ("um_tiro", "sem_torre", "atrair", "nao_detectado", "calibre"):
             cond[o] = True
@@ -410,6 +423,12 @@ def conta(m, evento, dentro, arma_tipo_de):
     if "genetica" in c and (evento.get("genetica") or 0) < c["genetica"]:
         return False
     if c.get("sem_torre") and evento.get("torre") is not False:
+        return False
+    if c.get("longe_cansada") and evento.get("longe_cansada") is not True:
+        return False
+    if c.get("torre") and evento.get("estrutura_tipo") != "torre":
+        return False
+    if c.get("esconderijo") and evento.get("estrutura_tipo") != "esconderijo":
         return False
     if c.get("atrair") and evento.get("atraido") is not True:
         return False
@@ -618,7 +637,7 @@ AVES = ("pato", "ganso", "faisao", "codorna", "pomba", "peru")
 ORGAOS = [("heart", "Coração"), ("lung", "Pulmão"), ("brain", "Cérebro"), ("spin", "Coluna"), ("neck", "Pescoço"),
           ("liver", "Fígado"), ("kidney", "Rim"), ("stomach", "Estômago"), ("intestin", "Intestino"), ("bowel", "Intestino"),
           ("artery", "Artéria"), ("aorta", "Artéria"), ("bone", "Osso"), ("muscle", "Músculo"), ("flesh", "Carne"), ("rib", "Costelas"), ("leg", "Perna"),
-          ("head", "Cabeça"), ("jaw", "Mandíbula")]
+          ("head", "Cabeça"), ("jaw", "Mandíbula"), ("guts", "Vísceras"), ("skull", "Crânio")]
 VITAIS = ("heart", "lung", "brain", "spin", "artery", "aorta")
 
 
@@ -714,6 +733,40 @@ def descarte(grupo, nome_grupo, nivel=0):
               f"Abata {meta} {plural(nome, meta)} com potencial genético de {int(teto * 100)}% ou menos (confira no binóculo).",
               meta, 500 + 150 * nivel)
     m.update({"tipo": "combo", "grupo": grupo, "cond": {"genetica_max": teto}, "vendedor": "NPC.Vendor.Ranger"})
+    return m
+
+
+def plano_abate(item, nome_grupo, nivel=0):
+    """Contrato do Guarda-florestal tirado do plano de abate da semana (painel Manejo)."""
+    if not item or item.get("restam", 0) <= 0 or item.get("perfil") in ("defeso", "nenhum"):
+        return None
+    nome = _g(nome_grupo(item["grupo"]))
+    meta = min(item["restam"], 2)
+    cond, extra = {}, ""
+    if item.get("sexo"):
+        cond["sexo"] = item["sexo"]
+        extra += " " + ({"macho": "macho", "femea": "fêmea"}[item["sexo"]] if meta == 1 else {"macho": "machos", "femea": "fêmeas"}[item["sexo"]])
+        extra += " (confirme no binóculo)"
+    if item.get("genetica_max"):
+        cond["genetica_max"] = item["genetica_max"]
+        extra += f" com potencial genético de {int(item['genetica_max'] * 100)}% ou menos"
+    m = _base(f"Plano de abate: {nome}"[:60],
+              f"Fechei a conta do censo da semana. {item.get('texto', '')} Siga o plano que a reserva agradece.",
+              f"Abata {meta} {plural(nome, meta)}{extra}.", meta, 650 + 300 * meta + 100 * nivel)
+    m.update({"tipo": "combo", "grupo": item["grupo"], "cond": cond, "vendedor": "NPC.Vendor.Ranger", "plano": True})
+    return m
+
+
+def rodizio(zonas_cansadas, nivel=0):
+    """Rodízio de área: abater longe das zonas que estão descansando (Guarda-florestal)."""
+    if not zonas_cansadas:
+        return None
+    meta = 1 + (nivel >= 3)
+    m = _base("Rodízio de área",
+              "Você bateu demais naquela área e os bichos estão ressabiados. Deixa ela descansar e vai caçar em outro canto.",
+              f"Abata {meta} {'animal' if meta == 1 else 'animais'} a mais de 500 m das zonas marcadas como cansadas no mapa.",
+              meta, 700 + 250 * meta + 100 * nivel)
+    m.update({"tipo": "combo", "cond": {"longe_cansada": True}, "vendedor": "NPC.Vendor.Ranger"})
     return m
 
 

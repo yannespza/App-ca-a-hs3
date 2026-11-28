@@ -7,7 +7,7 @@ const AJUDA = {
   campo: ["Pontos de campo", "Pontos da reserva atual que o jogo dá ao explorar e caçar. Servem para desbloquear coisas na loja da reserva."],
   atualizar: ["Procurar atualização", "Procura uma versão nova do app na internet. Se tiver, baixa, troca o programa e o mod e reabre sozinho. Depois feche e abra o jogo uma vez."],
   celular: ["Usar no celular", "Mostra o QR code para abrir este app no celular, pela mesma rede Wi-Fi. O PC continua ligado com o jogo e o app abertos; o celular vira uma segunda tela."],
-  camadas: ["Camadas do mapa", "Liga e desliga o que aparece no mapa: pontos da reserva (torres, acampamentos, lugares e as estruturas de caça que você já descobriu), estruturas ainda não descobertas, névoa (áreas que você ainda não explorou) e os animais marcados no binóculo."],
+  camadas: ["Camadas do mapa", "Liga e desliga o que aparece no mapa: pontos da reserva (torres, acampamentos, lugares e as estruturas de caça que você já descobriu), estruturas ainda não descobertas, névoa (áreas que você ainda não explorou), os animais marcados no binóculo e os abatidos. Desligue \"Abatidos\" para achar o animal pelos rastros, como no jogo; o card do animal continua dizendo se o tiro foi fatal."],
   nevoa: ["Névoa", "Lê do jogo as áreas que você já explorou. O jogo dá uma travadinha de 1 segundo nessa leitura, por isso ela só acontece quando você toca aqui."],
   pino: ["Pino no mapa", "Toque/clique num ponto do mapa para marcar um pino. Ele aparece também no mapa do jogo, para você ir até lá."],
   voltar: ["Voltar ao último local", "Ao entrar numa reserva, o jogo te leva de volta para onde você estava quando saiu (por viagem rápida)."],

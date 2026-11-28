@@ -977,6 +977,13 @@ class Companion:
                     ab["perto_presa_m"] = round(dz) if dz is not None and dz < 1e8 else None
                 except Exception:
                     pass
+            ab["estrutura_tipo"] = self.estrutura_do_tiro(ab)
+            if isinstance(ab.get("pos"), dict):
+                try:
+                    cz = self.zonas_cansadas()
+                    ab["longe_cansada"] = all((distancia_m(ab["pos"], {"x": z["x"], "y": z["y"], "z": ab["pos"].get("z", 0)}) or 0) > 500 for z in cz)
+                except Exception:
+                    pass
             if isinstance(ab.get("orgaos"), list):
                 ab["orgaos_nome"] = list(dict.fromkeys(missoes.nome_orgao(o) for o in ab["orgaos"]))
                 ab["vital"] = missoes.acertou_vital(ab["orgaos"])
@@ -1191,6 +1198,21 @@ class Companion:
                 if self.reserva() != reserva:
                     return  # trocou de reserva no meio: gera de novo na próxima volta
                 novas = missoes.gerar(self.dados, self.pois(), nome_grupo, grupos, cap, n)
+                # do painel Manejo: plano de abate da semana e rodízio de área viram contrato de vez em quando
+                try:
+                    ativos = {m["titulo"] for m in self.dados["missoes"] if m.get("status") in ("oferta", "ativa")}
+                    pm = manejo.painel(self.dados, self.nivel(), nome_especie, grupo_de)
+                    extra = []
+                    itens = [i for i in pm["plano"] if i["restam"] > 0 and i["grupo"] in grupos]
+                    if itens and random.random() < 0.35:
+                        extra.append(missoes.plano_abate(random.choice(itens[:3]), nome_grupo, cap.get("nivel") or 0))
+                    if random.random() < 0.3:
+                        extra.append(missoes.rodizio(self.zonas_cansadas(), cap.get("nivel") or 0))
+                    for m in extra:
+                        if m and m["titulo"] not in ativos and novas:
+                            novas[random.randrange(len(novas))] = m
+                except Exception as e:
+                    print("plano/rodízio:", e)
                 espera = self.dados.get("espera_agente") or {}
                 dia = self.dados.get("dia_jogo", 0)
                 novas = [m for m in novas if espera.get(missoes.agente_de(m), -1) <= dia]
@@ -1356,6 +1378,130 @@ class Companion:
                 avaliar_missoes(d, {"tipo": "carcaca_recolhida", "id": id_, "ts": time.time()}, reserva)
                 self.salvar_pendente = True
 
+    @staticmethod
+    def tipo_estrutura(e):
+        """Classe do jogo + altura do caçador lá dentro -> torre (elevada) ou esconderijo (no chão / de pato)."""
+        cl = (e or {}).get("classe") or ""
+        if "Duck" in cl:
+            return "esconderijo"
+        alt = (e or {}).get("altura_m")
+        if isinstance(alt, (int, float)) and alt >= 2.5:
+            return "torre"
+        return "esconderijo"
+
+    def anotar_estrutura(self):
+        """Guarda onde e em que tipo de estrutura você esteve (o abate só chega ao recolher, bem depois do tiro)."""
+        e = (self.estado or {}).get("estrutura")
+        pos = (self.estado or {}).get("pos")
+        if not e or not pos or not self.em_reserva():
+            self.na_estrutura = None
+            return
+        tipo = self.tipo_estrutura(e)
+        self.na_estrutura = {"tipo": tipo, "classe": e.get("classe"), "altura_m": e.get("altura_m")}
+        hist = self.dados.setdefault("estruturas_usadas", [])
+        ult = hist[-1] if hist else None
+        if ult and ult.get("reserva") == self.nivel() and distancia_m(pos, {"x": ult["x"], "y": ult["y"], "z": pos.get("z", 0)}) < 15:
+            ult["ate"] = time.time()
+            return
+        hist.append({"tipo": tipo, "classe": e.get("classe"), "x": pos["x"], "y": pos["y"], "reserva": self.nivel(),
+                     "de": time.time(), "ate": time.time()})
+        del hist[:-60]
+        self.salvar_pendente = True
+
+    def estrutura_do_tiro(self, ab):
+        """Tipo da estrutura de onde saiu o tiro: a que você usou mais perto da origem do tiro."""
+        if ab.get("torre") is not True:
+            return None
+        o = ab.get("origem")
+        melhor, md = None, 25
+        for h in self.dados.get("estruturas_usadas", []):
+            if not isinstance(o, dict) or h.get("reserva") != ab.get("reserva"):
+                continue
+            dd = distancia_m({"x": o["x"], "y": o["y"], "z": 0}, {"x": h["x"], "y": h["y"], "z": 0})
+            if dd is not None and dd < md:
+                melhor, md = h, dd
+        return melhor["tipo"] if melhor else "estrutura"
+
+    def zonas_cansadas(self):
+        nv = self.nivel()
+        if not nv:
+            return []
+        if time.time() - getattr(self, "_cansadas_ts", 0) < 20 and getattr(self, "_cansadas_nv", None) == nv:
+            return self._cansadas
+        abates = [a for a in self.dados.get("abates") or [] if a.get("reserva") == nv]
+        try:
+            self._cansadas = manejo.zonas_cansadas(abates, self.zonas(), self.dados.get("dia_jogo", 0), dist=distancia_m)
+        except Exception as e:
+            print("zonas cansadas:", e)
+            self._cansadas = []
+        self._cansadas_ts, self._cansadas_nv = time.time(), nv
+        return self._cansadas
+
+    def proximos_movimentos(self, tags=None):
+        """O que fazer agora: zonas que você conhece onde o bando costuma estar nas próximas 3 horas do jogo."""
+        h = (self.estado or {}).get("hora")
+        pos = (self.estado or {}).get("pos")
+        if not isinstance(h, (int, float)) or not self.em_reserva():
+            return []
+        out = {}
+        for z in self.zonas():
+            if not z.get("descoberta") or not z.get("horas") or (tags and z.get("especie") not in tags):
+                continue
+            futuras = [((x - h) % 24) for x in z["horas"]]
+            falta = min(futuras)
+            if falta > 3:
+                continue
+            dist = distancia_m(pos, {"x": z["x"], "y": z["y"], "z": 0}) if pos else None
+            k = (z.get("especie"), z.get("tipo"))
+            if k not in out or (falta, dist or 1e9) < (out[k]["falta_h"], out[k]["dist"] or 1e9):
+                out[k] = {"especie": z.get("especie"), "especie_nome": z.get("especie_nome"), "tipo": z.get("tipo"),
+                          "falta_h": round(falta, 1), "hora": int((h + falta) % 24), "dist": round(dist) if dist else None,
+                          "x": z["x"], "y": z["y"]}
+        return sorted(out.values(), key=lambda a: (a["falta_h"], a["dist"] or 1e9))[:5]
+
+    def municao_baixa(self):
+        """Armas da mochila com menos de um pente de reserva (lido do jogo a cada 15 s)."""
+        if not self.em_reserva():
+            return []
+        eq = self.equipamento() or {}
+        out = []
+        for r in eq.get("municao") or []:
+            if not isinstance(r, dict) or r.get("Spare") is None:
+                continue
+            reserva = int(r.get("Spare") or 0)
+            na_arma = int(r.get("Amount") or 0) + int(r.get("Chamber") or 0)
+            pente = int(r.get("Size") or 0) or 5
+            if reserva < pente:
+                nome = re.sub(r"_C$", "", str(r.get("arma") or "")).replace("ID_", "").replace("_", " ").strip()
+                out.append({"arma": nome, "reserva": reserva, "na_arma": na_arma, "max": r.get("max")})
+        return out
+
+    def alvejados(self):
+        """Animais que levaram tiro seu neste mapa (alvejados.json, gravado pelo mod), por id."""
+        arq = self.cache.json(self.caminho("alvejados.json"), None)
+        if not isinstance(arq, dict) or not isinstance(arq.get("lista"), list):
+            return {}
+        if self.nivel() and arq.get("mapa") and arq["mapa"] not in self.nivel() and self.nivel() not in arq["mapa"]:
+            return {}
+        return {str(a.get("id")): a for a in arq["lista"] if isinstance(a, dict)}
+
+    @staticmethod
+    def situacao_alvejado(a, abatidos_ids):
+        """Resumo para o card: fatal (morreu) ou ferido (vivo), com tiros e órgãos atingidos."""
+        orgaos = []
+        for o in a.get("orgaos") or []:
+            n = missoes.nome_orgao(o)
+            if n and n not in orgaos:
+                orgaos.append(n)
+        vital = missoes.acertou_vital(a.get("orgaos"))
+        if a.get("morto") or a.get("vivo") is False or str(a.get("id")) in abatidos_ids:
+            estado = "fatal"
+        elif a.get("vivo"):
+            estado = "ferido"
+        else:
+            estado = "incerto"
+        return {"estado": estado, "tiros": int(a.get("tiros") or 0), "orgaos": orgaos[:5], "vital": vital}
+
     def arma_tem_luneta(self, arma):
         try:
             mun = (self.cache.json(self.caminho("armas.json"), None) or {}).get("municao") or {}
@@ -1444,7 +1590,56 @@ class Companion:
             nv = self.nivel() if self.em_reserva() else None
             if not nv:
                 nv = next((a.get("reserva") for a in reversed(self.dados.get("avistamentos") or []) if a.get("reserva")), None)
-            return manejo.painel(self.dados, nv, nome_especie, grupo_de)
+            p = manejo.painel(self.dados, nv, nome_especie, grupo_de)
+            p["cansadas"] = self.zonas_cansadas() if nv == self.nivel() else []
+            p["cacar_hoje"] = manejo.o_que_cacar(p["especies"], p["plano"], getattr(self, "licencas_alerta", []))
+            tags = {c["tag"] for c in p["cacar_hoje"]} or None
+            p["agora"] = self.proximos_movimentos(tags) or self.proximos_movimentos()
+            return p
+
+    def card_semana(self):
+        """Resumo dos últimos 7 dias do jogo nesta reserva, para a imagem de divulgação."""
+        with self.lock:
+            nv = self.nivel() if self.em_reserva() else None
+            if not nv:
+                nv = next((a.get("reserva") for a in reversed(self.dados.get("abates") or []) if a.get("reserva")), None)
+            dia = self.dados.get("dia_jogo", 0)
+            p = manejo.painel(self.dados, nv, nome_especie, grupo_de)
+            ab = [a for a in self.dados.get("abates") or [] if a.get("reserva") == nv
+                  and isinstance(a.get("dia_jogo"), int) and dia - a["dia_jogo"] < 7]
+            melhor = max(ab, key=lambda a: a.get("pontos_trofeu") or 0, default=None)
+            esp = {}
+            for a in ab:
+                esp[a.get("especie_nome") or a.get("grupo_nome") or "?"] = esp.get(a.get("especie_nome") or a.get("grupo_nome") or "?", 0) + 1
+            pat = (self.estado_cache_patente() or {})
+            return {"reserva": nv, "dia": dia, "abates": len(ab), "limpos": sum(1 for a in ab if (a.get("tiros") or 1) == 1),
+                    "vitais": sum(1 for a in ab if a.get("vital")),
+                    "avistados": sum(x["avistados"] for x in p["semana"]), "indice": p["indice"].get("valor"), "selo": p["indice"].get("selo"),
+                    "especies": sorted(esp.items(), key=lambda x: -x[1])[:5],
+                    "melhor": {"especie": melhor.get("especie_nome"), "pontos": melhor.get("pontos_trofeu"), "peso_kg": melhor.get("peso_kg"),
+                               "genetica": melhor.get("genetica")} if melhor and melhor.get("pontos_trofeu") else None,
+                    "patente": pat.get("patente"), "semana": p["semana"]}
+
+    def estado_cache_patente(self):
+        try:
+            earl = self.pontos_earl()
+            return extras.patente(self.reputacao_guardada(self.estado), earl["valor"], {t for t, _ in AGENTES})
+        except Exception:
+            return None
+
+    def salvar_card(self, data_url, nome):
+        import base64
+        if not isinstance(data_url, str) or not data_url.startswith("data:image/png;base64,"):
+            return {"ok": False, "erro": "Imagem inválida."}
+        bruto = base64.b64decode(data_url.split(",", 1)[1])
+        if len(bruto) > 8_000_000:
+            return {"ok": False, "erro": "Imagem grande demais."}
+        pasta = os.path.join(BASE_DIR, "Divulgacao")
+        os.makedirs(pasta, exist_ok=True)
+        nome = re.sub(r"[^\w\-]+", "-", str(nome or "card-semana"))[:60] + ".png"
+        with open(os.path.join(pasta, nome), "wb") as f:
+            f.write(bruto)
+        return {"ok": True, "arquivo": os.path.join("Divulgacao", nome)}
 
     def vigiar_queda(self, x, y, z):
         if z is not None:
@@ -1504,7 +1699,7 @@ class Companion:
         return {"ok": True}
 
     def configurar(self, chave, valor):
-        if chave in ("voltar_ao_ultimo_local", "contratos_no_jogo"):
+        if chave in ("voltar_ao_ultimo_local", "contratos_no_jogo", "mostrar_abatidos"):
             self.cfg[chave] = bool(valor)
             salvar_json(CONFIG_PATH, self.cfg)
             return {"ok": True}
@@ -1653,7 +1848,8 @@ class Companion:
             if not se:
                 self.sessao = {"inicio": agora, "visto": agora, "cred_ini": cred, "cred": cred,
                                "abates_ini": len(self.dados["abates"]), "pagas_ini": sum(1 for m in self.dados["missoes"] if m["status"] == "paga"),
-                               "marcados_ini": len(self.dados.get("avistamentos") or [])}
+                               "marcados_ini": len(self.dados.get("avistamentos") or []),
+                               "alv_ini": {k: int(v.get("tiros") or 0) for k, v in self.alvejados().items()}}
             else:
                 se["visto"], se["cred"] = agora, cred if cred is not None else se.get("cred")
         elif se and agora - se["visto"] > 600:       # 10 min sem jogo: a sessão acabou
@@ -1674,7 +1870,24 @@ class Companion:
         return {"ativa": True, "inicio": se["inicio"], "minutos": int((se["visto"] - se["inicio"]) / 60),
                 "abates": len(d["abates"]) - se["abates_ini"], "creditos": ganho,
                 "contratos": sum(1 for m in d["missoes"] if m["status"] == "paga") - se["pagas_ini"],
-                "avistados": len(d.get("avistamentos") or []) - se["marcados_ini"]}
+                "avistados": len(d.get("avistamentos") or []) - se["marcados_ini"], "precisao": self.precisao_sessao(se)}
+
+    def precisao_sessao(self, se):
+        """Pontaria da sessão: acertos (o jogo só registra tiro que pega no animal), abates de um tiro só,
+        acertos vitais, órgão mais atingido e animais feridos que ainda estão vivos."""
+        abs_ = self.dados["abates"][se["abates_ini"]:]
+        ini = se.get("alv_ini") or {}
+        alv = self.alvejados()
+        acertos = sum(max(0, int(v.get("tiros") or 0) - ini.get(k, 0)) for k, v in alv.items())
+        feridos = sum(1 for k, v in alv.items() if v.get("vivo") and int(v.get("tiros") or 0) > ini.get(k, 0))
+        orgaos = {}
+        for a in abs_:
+            for o in a.get("orgaos_nome") or []:
+                if o not in ("Carne", "Osso"):
+                    orgaos[o] = orgaos.get(o, 0) + 1
+        return {"acertos": acertos, "um_tiro": sum(1 for a in abs_ if (a.get("tiros") or 1) == 1),
+                "vitais": sum(1 for a in abs_ if a.get("vital")), "feridos_vivos": feridos,
+                "orgao_top": max(orgaos, key=orgaos.get) if orgaos else None}
 
     # ------------------------------------------------------------ agenda do bando (horários que você viu nas zonas)
     def agenda_agora(self):
@@ -2260,6 +2473,7 @@ class Companion:
                     print("desafio:", e)
             self.vigiar_mortos()
             self.marcar_estruturas_perto()
+            self.anotar_estrutura()
             self.revisar_contratos()
             if self.em_reserva():
                 if avaliar_missoes(self.dados, {"tipo": "posicao", "id": "local", "pos": self.estado["pos"], "ts": time.time()}, self.reserva()):
@@ -2352,7 +2566,15 @@ class Companion:
                 mortos_tiro = {str(x.get("id")): x for x in mortos if isinstance(x, dict) and x.get("tiro")}
             except Exception:
                 mortos_tiro = {}
+            mostrar_abatidos = self.cfg.get("mostrar_abatidos", True)
+            if not mostrar_abatidos:          # quem prefere achar o animal pelos rastros: o app não entrega onde ele caiu
+                mortos_tiro = {}
+            alv = self.alvejados()
+            abatidos_ids = {str(a.get("id")) for a in self.dados.get("abates", [])[-400:] if a.get("id") is not None}
             for item in rastreados:
+                a = alv.get(str(item.get("id")))
+                if a:
+                    item["alvejado"] = self.situacao_alvejado(a, abatidos_ids)
                 mt = mortos_tiro.pop(str(item.get("id")), None)
                 if mt:
                     item["morto"] = True
@@ -2391,8 +2613,8 @@ class Companion:
                 "pino_app": self.dados.get("pino_app"),
                 "rastreados": rastreados, "ultimo_marcado": getattr(self, "ultimo_marcado", None),
                 "barracas": self.barracas(), "preco_barraca": self.PRECO_BARRACA, "max_barracas": self.MAX_BARRACAS,
-                "licencas_alerta": getattr(self, "licencas_alerta", []), "aviso_app": getattr(self, "aviso_app", None),
-                "carcaca_nova": getattr(self, "carcaca_nova", None), "boletim_novo": getattr(self, "boletim_novo", None),
+                "licencas_alerta": getattr(self, "licencas_alerta", []), "municao_baixa": self.municao_baixa(), "cansadas": self.zonas_cansadas() if self.em_reserva() else [], "aviso_app": getattr(self, "aviso_app", None),
+                "carcaca_nova": getattr(self, "carcaca_nova", None), "na_estrutura": getattr(self, "na_estrutura", None), "boletim_novo": getattr(self, "boletim_novo", None),
                 "novidade_vista": self.dados.get("novidade_vista"),
                 "foto_nova": getattr(self, "foto_nova", None), "aviso_tecla": getattr(self, "aviso_tecla", None),
                 "marcas": (self.dados.get("marcas") or {}).get(self.nivel()) or [],
@@ -2411,7 +2633,7 @@ class Companion:
                 "npc": missoes.NPC,
                 "patente": extras.patente(self.reputacao_guardada(st), earl["valor"], {t for t, _ in AGENTES}),
                 "aviso_teleporte": self.aviso_teleporte,
-                "config": {"voltar_ao_ultimo_local": self.cfg.get("voltar_ao_ultimo_local"),
+                "config": {"voltar_ao_ultimo_local": self.cfg.get("voltar_ao_ultimo_local"), "mostrar_abatidos": self.cfg.get("mostrar_abatidos", True),
                            "contratos_no_jogo": self.cfg.get("contratos_no_jogo", True)},
                 "tem_local_salvo": bool(getattr(self, "anterior", None)),
                 "chat": [{"role": c["role"], "content": c["content"]} for c in self.dados["chat"][-20:]],
@@ -2618,6 +2840,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.responder(200, APP.mapa_manejo())
         if caminho == "/api/manejo":
             return self.responder(200, APP.dados_manejo())
+        if caminho == "/api/card_semana":
+            return self.responder(200, APP.card_semana())
         if caminho == "/api/instalacao":
             q = urllib.parse.parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
             return self.responder(200, APP.info_instalacao((q.get("pasta") or [None])[0]))
@@ -2774,6 +2998,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.responder(200, APP.voltar_agora())
         if p == "/api/config":
             return self.responder(200, APP.configurar(corpo.get("chave"), corpo.get("valor")))
+        if p == "/api/salvar_card":
+            return self.responder(200, APP.salvar_card(corpo.get("png"), corpo.get("nome")))
         if p == "/api/marca":
             return self.responder(200, APP.apagar_marca(str(corpo.get("id") or "")))
         if p == "/api/novidade_vista":
