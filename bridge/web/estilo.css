@@ -833,3 +833,20 @@ body.apk .so-apk { display: inline-flex !important; }
 .mk-animal.dourado { background: radial-gradient(circle at 35% 30%, #ffe9a3, #d9a520 55%, #8a6410); border-color: #ffe08a; box-shadow: 0 0 14px #f5c542cc; }
 .mk-animal.dourado svg { fill: #3a2a05; }
 .mk-animal.dourado .sil-img { color: #3a2a05; }
+
+/* animais: menores, macho azul, fêmea rosa, abatido cinza com ✕ */
+.mk-animal { width: 27px; height: 27px; position: relative; }
+.mk-animal svg { width: 19px; height: 19px; }
+.mk-animal .sil-img { width: 19px; height: 17px; }
+.mk-animal.macho { background: #1f4f86; border-color: #8fc2ff; }
+.mk-animal.femea { background: #8a2f63; border-color: #ffb0da; }
+.mk-animal.macho .sil-img, .mk-animal.femea .sil-img { color: #fff; }
+.mk-animal.macho svg, .mk-animal.femea svg { fill: #fff; }
+.mk-animal.lendario { border-color: var(--ambar); }
+.mk-animal.morto { background: #2b2b2b; border-color: #9a9a9a; opacity: .9; }
+.mk-animal.morto .sil-img { color: #9a9a9a; }
+.mk-x { position: absolute; right: -5px; top: -7px; color: #ff6b5a; font-size: 13px; text-shadow: 0 0 3px #000; }
+/* dourado (genética 90%+) vale mais que a cor do sexo; a borda continua mostrando o sexo */
+.mk-animal.dourado { background: radial-gradient(circle at 35% 30%, #ffe9a3, #d9a520 55%, #8a6410); box-shadow: 0 0 12px #f5c542cc; }
+.mk-animal.dourado .sil-img { color: #3a2a05; }
+.mk-animal.dourado svg { fill: #3a2a05; }

@@ -343,8 +343,9 @@ function atualizarAnimais(lista) {
   for (const a of lista) {
     if (!a.pos) continue;
     vistos.add(String(a.id));
-    const cls = `mk-animal${a.lendario ? " lendario" : ""}${(a.genetica || 0) >= 0.9 ? " dourado" : ""}${a.ao_vivo ? "" : " velho"}`;
-    const icone = L.divIcon({ className: "", html: `<div class="${cls}">${silhueta(a.grupo, a.especie)}</div>`, iconSize: [34, 34], iconAnchor: [17, 17] });
+    const sexo = a.sexo === 0 ? " macho" : a.sexo === 1 ? " femea" : "";
+    const cls = a.morto ? "mk-animal morto" : `mk-animal${sexo}${a.lendario ? " lendario" : ""}${(a.genetica || 0) >= 0.9 ? " dourado" : ""}${a.ao_vivo ? "" : " velho"}`;
+    const icone = L.divIcon({ className: "", html: `<div class="${cls}">${silhueta(a.grupo, a.especie)}${a.morto ? '<b class="mk-x">✕</b>' : ""}</div>`, iconSize: [27, 27], iconAnchor: [14, 14] });
     let m = marcAnimais[a.id];
     if (!m) {
       m = L.marker(toLL(a.pos), { icon: icone, riseOnHover: true });
@@ -358,7 +359,8 @@ function atualizarAnimais(lista) {
     }
     m._cls = cls;
     m._rotulo = a.especie_nome || a.grupo_nome;
-    m.setTooltipContent(fichaAnimal(a));
+    m.setTooltipContent(a.morto ? `<div class="ficha"><div class="ficha-nome">${esc(a.especie_nome || a.grupo_nome || "Animal")}</div>
+      <div>✕ Abatido — falta recolher</div><div class="ficha-lin"><span>Distância</span><b>${metros(a.distancia_m)}</b></div></div>` : fichaAnimal(a));
   }
   for (const id of Object.keys(marcAnimais)) {
     if (!vistos.has(id)) { grupoAnimais.removeLayer(marcAnimais[id]); delete marcAnimais[id]; }

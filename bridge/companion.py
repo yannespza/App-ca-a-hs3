@@ -1937,6 +1937,23 @@ class Companion:
                 item["direcao"] = direcao(pos, item.get("pos"), yaw)
                 item["minutos"] = round((agora - m.get("visto_em", agora)) / 60, 1)
                 rastreados.append(item)
+            # animal baleado que já morreu e ainda não foi recolhido (o jogo marca no mapa): ícone de abatido
+            try:
+                mortos = (self.cache.json(self.caminho("mortos.json"), None) or {}).get("mortos") or []
+                mortos_tiro = {str(x.get("id")): x for x in mortos if isinstance(x, dict) and x.get("tiro")}
+            except Exception:
+                mortos_tiro = {}
+            for item in rastreados:
+                mt = mortos_tiro.pop(str(item.get("id")), None)
+                if mt:
+                    item["morto"] = True
+                    item["pos"] = {"x": mt["x"], "y": mt["y"], "z": mt.get("z", 0)}
+                    item["distancia_m"] = distancia_m(pos, item["pos"])
+            for mt in mortos_tiro.values():     # baleado sem ter sido marcado no binóculo
+                rastreados.append({"id": mt.get("id"), "morto": True, "pos": {"x": mt["x"], "y": mt["y"], "z": mt.get("z", 0)},
+                                   "especie": mt.get("especie"), "especie_nome": nome_especie(mt.get("especie")) if mt.get("especie") else "Animal",
+                                   "grupo": grupo_de(mt.get("especie"))[0] if mt.get("especie") else "outro", "grupo_nome": "",
+                                   "distancia_m": distancia_m(pos, {"x": mt["x"], "y": mt["y"], "z": 0}), "ao_vivo": False, "minutos": 0})
             rastreados.sort(key=lambda x: x["distancia_m"] if x["distancia_m"] is not None else 1e9)
             rep = next((r for r in st.get("reputacao", []) or [] if self.nivel() and self.nivel() in (r.get("mapa") or "")), None)
             # os 4 agentes de campo da reserva (níveis do jogo: 200, 400, 600, 800, 1000 pontos)
