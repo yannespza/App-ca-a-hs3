@@ -11,6 +11,8 @@
    "Caçadas: resumo da sessão de jogo (tempo, abates, créditos, contratos) e recordes pessoais por espécie.",
    "Desafio da semana do Earl: abates de espécies diferentes em 7 dias do jogo, paga bem.",
    "Botão Noite no topo: o mesmo rancho em versão escura (vale em cada aparelho).",
+   "Mais leve no celular: as respostas grandes do app (zonas, mochila, loja) vão comprimidas e só são reenviadas quando mudam (de ~320 KB para ~40 KB nas zonas).",
+   "Cópia de segurança automática: uma por dia dos dados do app, na pasta 'backup' (guarda as 7 últimas).",
    "Precisa reiniciar o jogo uma vez (teclas e vento são do mod)."
   ]
  },

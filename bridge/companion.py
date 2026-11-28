@@ -5,6 +5,8 @@ paga recompensas escrevendo comandos em cmd.txt e serve o app em http://localhos
 Só usa a biblioteca padrão do Python.
 """
 import hmac
+import gzip
+import hashlib
 import socket
 import json
 import random
@@ -195,7 +197,26 @@ def salvar_json(path, dados):
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(dados, f, ensure_ascii=False, indent=1)
+    if path == DADOS_PATH:
+        copia_do_dia(path)
     os.replace(tmp, path)
+
+
+def copia_do_dia(path):
+    """Uma cópia por dia dos dados do app (pasta 'backup', guarda as 7 últimas)."""
+    try:
+        pasta = os.path.join(os.path.dirname(path), "backup")
+        nome = os.path.join(pasta, time.strftime("dados_hs3_%Y-%m-%d.json"))
+        if os.path.exists(nome) or not os.path.exists(path):
+            return
+        os.makedirs(pasta, exist_ok=True)
+        import shutil
+        shutil.copy2(path, nome)
+        antigas = sorted(f for f in os.listdir(pasta) if f.startswith("dados_hs3_"))
+        for f in antigas[:-7]:
+            os.remove(os.path.join(pasta, f))
+    except Exception as e:
+        print("cópia do dia falhou:", e)
 
 
 def carregar_config():
@@ -725,10 +746,23 @@ class Companion:
                                                "ts": vivos.get("ts", time.time())}
 
     def zonas(self):
-        """Zonas de necessidade da reserva atual (exportadas pelo mod com o estado de descoberta)."""
+        """Zonas de necessidade da reserva atual (com cache curto: várias partes do app pedem a mesma lista)."""
         nivel = self.nivel()
         if not nivel:
             return []
+        try:
+            mt = os.path.getmtime(self.caminho(f"zonas_{nivel}.json"))
+        except OSError:
+            mt = 0
+        chave = (nivel, mt, len(self.dados.get("avistamentos") or []))
+        c = getattr(self, "_zonas_cache", None)
+        if c and c[0] == chave and time.time() - c[1] < 10:
+            return [dict(z) for z in c[2]]
+        lista = self._zonas_calc(nivel)
+        self._zonas_cache = (chave, time.time(), lista)
+        return [dict(z) for z in lista]
+
+    def _zonas_calc(self, nivel):
         lista = carregar_json(self.caminho(f"zonas_{nivel}.json"), []) or []
         if not isinstance(lista, list):
             lista = []
@@ -2454,10 +2488,32 @@ class Handler(BaseHTTPRequestHandler):
 
     def responder(self, codigo, corpo, tipo="application/json", cache=False):
         if isinstance(corpo, (dict, list)):
-            corpo = json.dumps(corpo, ensure_ascii=False).encode("utf-8")
+            corpo = json.dumps(corpo, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        if isinstance(corpo, str):
+            corpo = corpo.encode("utf-8")
+        extra = {}
+        # respostas grandes (zonas, mochila, loja): o navegador revalida e, se nada mudou, recebe só "304" (bom no celular pelo Wi-Fi)
+        if codigo == 200 and not cache and tipo.startswith("application/json") and len(corpo) > 8000:
+            etag = '"' + hashlib.md5(corpo).hexdigest()[:16] + '"'
+            if self.headers.get("If-None-Match") == etag:
+                self.send_response(304)
+                self.send_header("ETag", etag)
+                self.send_header("Cache-Control", "no-cache")
+                self.end_headers()
+                return
+            extra["ETag"] = etag
+        comprimir = len(corpo) > 4000 and "gzip" in (self.headers.get("Accept-Encoding") or "") and \
+            (tipo.startswith("application/json") or tipo.startswith("text/") or tipo.startswith("application/javascript"))
+        if comprimir:
+            corpo = gzip.compress(corpo, 5)
         self.send_response(codigo)
         self.send_header("Content-Type", tipo)
-        self.send_header("Cache-Control", "max-age=86400" if cache else "no-store")
+        self.send_header("Cache-Control", "max-age=86400" if cache else ("no-cache" if "ETag" in extra else "no-store"))
+        for k, v in extra.items():
+            self.send_header(k, v)
+        if comprimir:
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Vary", "Accept-Encoding")
         self.send_header("Content-Length", str(len(corpo)))
         self.end_headers()
         self.wfile.write(corpo)
