@@ -905,8 +905,9 @@ class Companion:
                           | {"ts": time.time(), "dia": d.get("dia_jogo", 0), "hora": (self.estado or {}).get("hora"), "reserva": self.nivel()})
                 del av[:-4000]
             self.registrar_grupo(chave)
-            if novo:
-                return avaliar_missoes(d, {"tipo": "marcado", "id": ev.get("id"), "ts": time.time()}, self.reserva())
+            # conta para "marque N ... diferentes" mesmo se o animal já tinha sido marcado antes (o contrato não repete o mesmo id)
+            return avaliar_missoes(d, {"tipo": "marcado", "id": ev.get("id"), "grupo": chave, "especie": ev.get("especie"),
+                                       "ts": time.time()}, self.reserva())
         elif tipo in ("abate", "abate_final"):
             id_ = str(ev.get("id"))
             if any(str(a.get("id")) == id_ for a in d["abates"]):
@@ -1211,6 +1212,22 @@ class Companion:
                 c["fim"] = time.time()
                 avaliar_missoes(d, {"tipo": "carcaca_recolhida", "id": id_, "ts": time.time()}, reserva)
                 self.salvar_pendente = True
+
+    def recontar_marcacoes(self):
+        """Uma vez ao abrir: marcações feitas depois de aceitar um contrato de censo e que não contaram (erro até a v0.1.58)."""
+        if getattr(self, "_recontou", False) or not self.em_reserva():
+            return
+        self._recontou = True
+        d = self.dados
+        for m in d["missoes"]:
+            if m["status"] != "ativa" or not (m.get("cond") or {}).get("marcar"):
+                continue
+            for a in d.get("avistamentos") or []:
+                if a.get("ts", 0) >= m.get("aceita_em", m["criada"]) and a.get("reserva") == self.nivel():
+                    chave = grupo_de(a.get("especie"))[0]
+                    avaliar_missoes(d, {"tipo": "marcado", "id": a.get("id"), "grupo": chave, "especie": a.get("especie"),
+                                        "ts": a["ts"]}, self.reserva())
+        self.salvar_pendente = True
 
     def contar_dias(self):
         """Dia do jogo contado pelo app: a hora volta de ~24 para ~0 (noite passando ou "dormir")."""
@@ -1771,6 +1788,7 @@ class Companion:
                 mudou = True
             self.cuidar_posicao()
             self.contar_dias()
+            self.recontar_marcacoes()
             self.vigiar_mortos()
             self.marcar_estruturas_perto()
             self.revisar_contratos()
