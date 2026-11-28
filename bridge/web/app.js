@@ -1234,7 +1234,7 @@ function renderLojaEquip(d, abas) {
 function itemLojaEquip(i) {
   const acao = i.comprado ? `<span class="item-tag cinza">Já é seu</span>`
     : `<button class="btn-papel verde" onclick="comprarItem('${esc(i.id)}','${esc(i.nome).replace(/'/g, "")}',${i.preco})">Comprar $${fmt(i.preco)}</button>`;
-  return `<div class="item loja-eq ${i.comprado ? "seu" : ""}">${i.imagem ? `<img class="loja-eq-img" src="${esc(i.imagem)}" alt="" loading="lazy">` : ""}
+  return `<div class="item loja-eq ${i.comprado ? "seu" : ""}">${i.imagem ? `<img class="loja-eq-img" src="${esc(i.imagem)}" alt="" loading="lazy" onerror="this.remove()">` : ""}
     <div class="item-nome">${esc(i.nome)}</div>
     <div class="item-sub">${esc(i.sub)}${i.marca ? " · " + esc(i.marca) : ""}${i.cargas ? ` · ${i.cargas} usos` : ""}${i.dlc ? " · DLC" : ""}</div>
     ${i.descricao ? `<div class="item-sub">${esc(i.descricao)}</div>` : ""}
@@ -1243,7 +1243,7 @@ function itemLojaEquip(i) {
 function itemLoja(i) {
   const acao = i.vestido ? `<span class="item-tag">Vestindo</span>` : i.comprado ? `<span class="item-tag cinza">Já é seu · vista no guarda-roupa</span>`
     : `<button class="btn-papel verde" onclick="comprarItem('${i.id}','${esc(i.nome).replace(/'/g, "")}',${i.preco})">Comprar $${fmt(i.preco)}</button>`;
-  return `<div class="item ${i.vestido ? "vestido" : ""}"><div class="item-nome">${esc(i.nome)}</div>
+  return `<div class="item ${i.vestido ? "vestido" : ""}">${i.imagem ? `<img class="loja-eq-img" src="${esc(i.imagem)}" alt="" loading="lazy" onerror="this.remove()">` : ""}<div class="item-nome">${esc(i.nome)}</div>
     <div class="item-sub">${esc(i.parte)}${i.marca ? " · " + esc(i.marca) : ""} · camuflagem <b>${i.camuflagem}</b></div>
     ${barraStat("Visual", i.stats.visual)}${barraStat("Som", i.stats.som)}${barraStat("Cheiro", i.stats.cheiro)}${barraStat("Corrida", i.stats.corrida)}
     <div style="margin-top:6px">${acao}</div></div>`;

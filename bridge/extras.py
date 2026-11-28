@@ -99,7 +99,7 @@ def especies_por_calibre(calibres):
     return mapa
 
 
-def loja(catalogo, equip, na_mochila=None):
+def loja(catalogo, equip, na_mochila=None, icones=None):
     comprados = {b["id"] for b in equip.get("comprados", [])}
     vestidos = {r.get("item") for r in equip.get("roupa", [])}
     itens = []
@@ -109,14 +109,16 @@ def loja(catalogo, equip, na_mochila=None):
             continue
         stats = {nome: st.get(chave, 0) for chave, nome in STATS}
         camuflagem = round((stats["visual"] + stats["som"] + stats["cheiro"]) / 3)
+        ic = c.get("icone") or (icones or {}).get(c["id"])
         itens.append({"id": c["id"], "nome": c.get("nome") or c["id"], "parte": nome_parte(c.get("parte") or c.get("tipo")),
+                      "imagem": f"/api/img/{ic}?p=1" if ic else None,
                       "preco": c.get("preco") or 0, "marca": (c.get("marca") or "").split(".")[-1].replace("Clothes", "").replace("None", ""),
                       "stats": stats, "camuflagem": camuflagem, "comprado": c["id"] in comprados or c.get("padrao"),
                       "vestido": c.get("item") in vestidos})
     itens.sort(key=lambda x: (x["parte"], -x["camuflagem"], x["preco"]))
     vestidos_info = [i for i in itens if i["vestido"]]
     return {"itens": itens, "vestidos": vestidos_info, "deteccao": equip.get("deteccao"),
-            "equipamentos": loja_equipamentos(catalogo, comprados, na_mochila or set())}
+            "equipamentos": loja_equipamentos(catalogo, comprados, na_mochila or set(), icones or {})}
 
 
 CATEGORIAS_LOJA = [("Armas", ("Inventory.Weapon.Type.",)), ("Munição", ("Cosmetics.Weapons.Attachments.Ammo",)),
@@ -139,7 +141,7 @@ def _sub_loja(tipo):
     return "Outros"
 
 
-def loja_equipamentos(catalogo, comprados, na_mochila):
+def loja_equipamentos(catalogo, comprados, na_mochila, icones=None):
     """Tudo o que se compra com créditos fora as roupas: armas, munição, acessórios e equipamentos."""
     saida = []
     for c in catalogo:
@@ -151,7 +153,7 @@ def loja_equipamentos(catalogo, comprados, na_mochila):
         saida.append({"id": c["id"], "nome": c.get("nome") or c["id"], "categoria": cat, "sub": _sub_loja(tipo),
                       "preco": c.get("preco") or 0, "descricao": c.get("descricao") or "",
                       "marca": (c.get("marca") or "").split(".")[-1].replace("None", ""),
-                      "imagem": f"/api/img/{c['icone']}" if c.get("icone") else None,
+                      "imagem": (lambda ic: f"/api/img/{ic}?p=1" if ic else None)(c.get("icone") or (icones or {}).get(c["id"])),
                       "cargas": c.get("cargas") if (c.get("cargas") or -1) > 0 else None,
                       "comprado": tem, "dlc": DLC.get(c["id"])})
     saida.sort(key=lambda x: (x["comprado"], x["sub"], x["preco"], x["nome"]))

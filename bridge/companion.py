@@ -2005,7 +2005,9 @@ class Companion:
         with self.lock:
             lida = self._lida_mochila() or {}
             na_mochila = {i.get("item") for i in lida.get("itens") or [] if i.get("item")}
-            r = extras.loja(self.catalogo(), self.equipamento(), na_mochila)
+            jd = self.cache.json(self.caminho("jogo_dados.json"), None) or {}
+            icones = {i.get("id"): i.get("icone") for i in jd.get("itens", []) if i.get("id") and i.get("icone")}
+            r = extras.loja(self.catalogo(), self.equipamento(), na_mochila, icones)
             r["creditos"] = (self.estado.get("moedas") or {}).get("Currency.Credits")
             r["compras"] = self.dados["compras"][-5:]
             return r
