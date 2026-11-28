@@ -933,3 +933,4 @@ body.apk .so-apk { display: inline-flex !important; }
   .mj-indice { grid-template-columns: 1fr; gap: 10px; }
   .mj-parte { grid-template-columns: 1fr 70px auto; }
 }
+.mj-filtro { font: inherit; font-size: 12.5px; padding: 3px 6px; border-radius: 6px; background: rgba(20,24,20,.9); color: inherit; border: 1px solid var(--linha); max-width: 170px; }

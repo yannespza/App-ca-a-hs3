@@ -1324,6 +1324,27 @@ class Companion:
         except Exception as e:
             print("boletim:", e)
 
+    def mapa_manejo(self):
+        """Pontos para a camada Manejo do mapa: avistamentos (calor por sexo) e abates desta reserva, últimos 7 dias."""
+        with self.lock:
+            nv = self.nivel()
+            dia = self.dados.get("dia_jogo", 0)
+            ini = dia - manejo.JANELA_DIAS + 1
+
+            def recente(a, chave):
+                d = a.get(chave)
+                return d is None or d >= ini
+            av = [{"x": a["pos"]["x"], "y": a["pos"]["y"], "sexo": a.get("sexo"), "especie": a.get("especie"),
+                   "grupo": grupo_de(a.get("especie"))[0], "nome": nome_especie(a.get("especie")), "dia": a.get("dia")}
+                  for a in (self.dados.get("avistamentos") or [])
+                  if nv and a.get("reserva") == nv and a.get("pos") and a.get("especie") and recente(a, "dia")][-1500:]
+            ab = [{"x": a["pos"]["x"], "y": a["pos"]["y"], "especie": a.get("especie"), "nome": a.get("especie_nome") or nome_especie(a.get("especie")),
+                   "sexo": a.get("sexo_nome"), "dia": a.get("dia_jogo")}
+                  for a in (self.dados.get("abates") or [])
+                  if nv and a.get("reserva") == nv and isinstance(a.get("pos"), dict) and a["pos"].get("x") is not None
+                  and a.get("especie") and recente(a, "dia_jogo")][-500:]
+            return {"avistamentos": av, "abates": ab, "dia": dia}
+
     def dados_manejo(self):
         with self.lock:
             nv = self.nivel() if self.em_reserva() else None
@@ -2289,6 +2310,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.responder(200, APP.dados_mochila(ids, esp))
         if caminho == "/api/loja":
             return self.responder(200, APP.dados_loja())
+        if caminho == "/api/manejo_mapa":
+            return self.responder(200, APP.mapa_manejo())
         if caminho == "/api/manejo":
             return self.responder(200, APP.dados_manejo())
         if caminho == "/api/instalacao":

@@ -43,11 +43,12 @@ let zonasTexto = "";
 async function carregarZonas() {
   let texto = "", lista = [];
   try { texto = await (await fetch("/api/zonas")).text(); lista = JSON.parse(texto); } catch { return; }
-  if (texto === zonasTexto) return;
-  zonasTexto = texto;
+  const fEsp = mapa.hasLayer(grupoManejo) ? $("mj-filtro").value : "";
+  if (texto + fEsp === zonasTexto) return;
+  zonasTexto = texto + fEsp;
   grupoZonas.clearLayers();
   for (const z of lista) {
-    if (!z.descoberta) continue;
+    if (!z.descoberta || (fEsp && z.especie !== fEsp)) continue;
     const [nome, cls] = TIPO_ZONA[z.tipo] || [z.tipo, "comer"];
     L.marker(toLL(z), { icon: L.divIcon({ className: "", html: `<div class="mk-zona ${cls}">${silhueta(z.grupo || "outro", z.especie)}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }) })
       .bindTooltip(`<b>${esc(z.especie_nome || "")}</b><br>Zona de ${nome.toLowerCase()}`)
@@ -57,6 +58,75 @@ async function carregarZonas() {
   }
 }
 const NOME_TIPO = { Eating: "comer", Drinking: "beber", Sleeping: "descansar" };
+// ---- camada Manejo: calor de avistamentos por sexo, abates, territórios e corredores dos bandos, zonas não descobertas
+const grupoManejo = L.layerGroup();
+let manejoZonas = [], manejoPontos = null, manejoTexto = "";
+const corEspecie = tag => { let h = 0; for (const c of tag || "") h = (h * 31 + c.charCodeAt(0)) % 360; return `hsl(${h},55%,58%)`; };
+function hull(pts) {
+  const p = pts.slice().sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+  if (p.length < 3) return p;
+  const cr = (o, a, b) => (a[1] - o[1]) * (b[0] - o[0]) - (a[0] - o[0]) * (b[1] - o[1]);
+  const lo = [], up = [];
+  for (const q of p) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+  for (const q of p.slice().reverse()) { while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop(); up.push(q); }
+  return lo.slice(0, -1).concat(up.slice(0, -1));
+}
+async function carregarManejoMapa() {
+  if (!mapa.hasLayer(grupoManejo)) return;
+  let zt = "", pt = "";
+  try { zt = await (await fetch("/api/zonas")).text(); pt = await (await fetch("/api/manejo_mapa")).text(); } catch { return; }
+  try { manejoZonas = JSON.parse(zt) || []; manejoPontos = JSON.parse(pt); } catch { return; }
+  // espécies para o filtro
+  const sel = $("mj-filtro"), atual = sel.value;
+  const esp = new Map();
+  manejoZonas.forEach(z => z.especie && esp.set(z.especie, z.especie_nome || z.especie));
+  (manejoPontos.avistamentos || []).forEach(a => esp.set(a.especie, a.nome));
+  const ops = `<option value="">Todas as espécies</option>` + [...esp].sort((a, b) => a[1].localeCompare(b[1]))
+    .map(([t, n]) => `<option value="${esc(t)}" ${t === atual ? "selected" : ""}>${esc(n)}</option>`).join("");
+  if (sel.innerHTML !== ops) sel.innerHTML = ops;
+  const chave = zt + pt + sel.value;
+  if (chave === manejoTexto) return;
+  manejoTexto = chave;
+  desenharManejo();
+}
+function desenharManejo() {
+  grupoManejo.clearLayers();
+  carregarZonas();          // com espécie escolhida, as zonas do mapa mostram só ela
+  const filtro = $("mj-filtro").value;
+  const ok = t => !filtro || t === filtro;
+  // territórios e corredores: as zonas descobertas de cada bando
+  const bandos = {};
+  for (const z of manejoZonas) if (z.descoberta && z.bando != null && ok(z.especie)) (bandos[z.especie + "|" + z.bando] ||= []).push(z);
+  for (const lista of Object.values(bandos)) {
+    const cor = corEspecie(lista[0].especie);
+    const pts = lista.map(z => toLL(z));
+    if (pts.length >= 3) L.polygon(hull(pts), { color: cor, weight: 1, fillColor: cor, fillOpacity: 0.08, interactive: false }).addTo(grupoManejo);
+    const ordem = ["Eating", "Drinking", "Sleeping"];
+    const rota = lista.slice().sort((a, b) => ordem.indexOf(a.tipo) - ordem.indexOf(b.tipo)).map(z => toLL(z));
+    if (rota.length >= 2) L.polyline(rota.length >= 3 ? [...rota, rota[0]] : rota, { color: cor, weight: 3, dashArray: "8 6", opacity: 0.9 })
+      .bindTooltip(`Corredor do bando de ${esc(lista[0].especie_nome || "")}: ${lista.map(z => NOME_TIPO[z.tipo] || z.tipo).join(" → ")}`, { sticky: true })
+      .addTo(grupoManejo);
+  }
+  // zonas ainda não descobertas (alvo de reconhecimento): só com uma espécie escolhida, senão vira poluição
+  for (const z of manejoZonas) {
+    if (!filtro || z.descoberta || !ok(z.especie)) continue;
+    L.circleMarker(toLL(z), { radius: 8, color: "#e0c070", weight: 2, dashArray: "3 4", fillColor: "#e0c070", fillOpacity: 0.12 })
+      .bindTooltip(`Zona não descoberta: ${esc(z.especie_nome || "")} (${esc(NOME_TIPO[z.tipo] || "")})`, { sticky: true })
+      .addTo(grupoManejo);
+  }
+  // calor de avistamentos (azul = macho, rosa = fêmea) e abates
+  for (const a of (manejoPontos?.avistamentos || [])) {
+    if (!ok(a.especie)) continue;
+    const cor = a.sexo === 0 ? "#4a8fd8" : a.sexo === 1 ? "#d86aa8" : "#bbbbbb";
+    L.circleMarker(toLL(a), { radius: 16, stroke: false, fillColor: cor, fillOpacity: 0.16, interactive: false }).addTo(grupoManejo);
+  }
+  for (const a of (manejoPontos?.abates || [])) {
+    if (!ok(a.especie)) continue;
+    L.circleMarker(toLL(a), { radius: 4, color: "#2a1a0a", weight: 1.5, fillColor: "#e08a2a", fillOpacity: 1 })
+      .bindTooltip(`Abate: ${esc(a.nome || "")}${a.sexo ? " · " + esc(a.sexo) : ""}${a.dia != null ? " · dia " + a.dia : ""}`)
+      .addTo(grupoManejo);
+  }
+}
 function popupZona(z, nome) {
   const horas = (z.horas || []);
   const faixas = horas.length ? horas.map(h => `${String(h).padStart(2, "0")}h`).join(", ") : "ainda sem registro (marque animais aqui com o binóculo)";
@@ -342,6 +412,13 @@ mapa.on("dragstart", () => marcarSeguindo(false));
 
 $("f-pois").onchange = (e) => e.target.checked ? grupoPois.addTo(mapa) : mapa.removeLayer(grupoPois);
 $("f-zonas").onchange = (e) => e.target.checked ? grupoZonas.addTo(mapa) : mapa.removeLayer(grupoZonas);
+$("f-manejo").onchange = (e) => {
+  $("mj-filtro").style.display = e.target.checked ? "" : "none";
+  if (e.target.checked) { grupoManejo.addTo(mapa); manejoTexto = ""; carregarManejoMapa(); }
+  else { mapa.removeLayer(grupoManejo); carregarZonas(); }
+};
+$("mj-filtro").onchange = () => { manejoTexto = ""; carregarManejoMapa(); };
+setInterval(carregarManejoMapa, 20000);
 $("f-estr").onchange = (e) => e.target.checked ? grupoEstr.addTo(mapa) : mapa.removeLayer(grupoEstr);
 $("f-animais").onchange = (e) => e.target.checked ? grupoAnimais.addTo(mapa) : mapa.removeLayer(grupoAnimais);
 $("f-nevoa").onchange = (e) => {
