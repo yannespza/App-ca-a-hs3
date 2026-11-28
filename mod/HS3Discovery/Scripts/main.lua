@@ -209,26 +209,28 @@ local function giveCredits(amount, ref)
     emit("recompensa", { recurso = "creditos", valor = amount, ok = success, antes = before, depois = after, ref = ref, erro = (not ok) and tostring(err) or nil })
 end
 
-local function repSalva(mapaCurto)
+local function repSalva(mapaCurto, vendedor)
     -- reputação gravada no save (por mapa) para o vendedor
     local chunk = FindFirstOf("HS3ReputationSaveSlotChunk")
     local alvo
     chunk.ReputationSaveDataPerMap:ForEach(function(k, v)
         if k:get().PrimaryAssetName:ToString():find(mapaCurto, 1, true) then
             v:get().ReputationPerVendor:ForEach(function(vk, vv)
-                if tagName(vk:get()) == VENDOR then alvo = vv:get() end
+                if tagName(vk:get()) == (vendedor or VENDOR) then alvo = vv:get() end
             end)
         end
     end)
     return alvo
 end
 
-local function giveReputation(amount, ref)
+local function giveReputation(amount, ref, vendedor)
     if jaPago("reputacao", ref) then
         emit("recompensa", { recurso = "reputacao", valor = amount, ok = true, ref = ref, repetido = true }); return
     end
+    -- agente que recebe os pontos (o contrato do Earl diz qual); sem agente: Atirador esportivo
+    if not (vendedor and vendedor:match("^NPC%.Vendor%.%w+$")) then vendedor = VENDOR end
     local rm = FindFirstOf("HS3PlayerControllerComponent_ReputationManager")
-    local tag = { TagName = FName(VENDOR) }
+    local tag = { TagName = FName(vendedor) }
     local before, after
     pcall(function() before = rm:GetReputationForVendor(tag) end)
     local ok, err = pcall(function() rm:Client_AddReputationForVendor(tag, amount) end)
@@ -238,7 +240,7 @@ local function giveReputation(amount, ref)
         -- plano B: escreve direto na reputação salva do mapa atual (o jogo grava no save normalmente)
         local okB, errB = pcall(function()
             local mapa = FindFirstOf("HS3PlayerController").Pawn:GetFullName():match("/([^/%.]+)%.")
-            local d = repSalva(mapa)
+            local d = repSalva(mapa, vendedor)
             d.Reputation = d.Reputation + amount
         end)
         pcall(function() after = rm:GetReputationForVendor(tag) end)
@@ -854,7 +856,7 @@ LoopAsync(1000, function()
         ExecuteInGameThread(function()
             local ok, err = pcall(function()
                 if cmd == "add_credits" and n then giveCredits(n, ref)
-                elseif cmd == "add_rep" and n then giveReputation(n, ref)
+                elseif cmd == "add_rep" and n then giveReputation(n, ref, line:match("^add_rep%s+%S+%s+%S+%s+(%S+)"))
                 elseif cmd == "status" then log("status solicitado")
                 elseif cmd == "pin" then
                     local x, y, z = line:match("^pin%s+(%S+)%s+(%S+)%s*(%S*)")

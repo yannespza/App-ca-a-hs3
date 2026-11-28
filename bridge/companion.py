@@ -176,6 +176,8 @@ def nome_especie(tag):
 
 
 SEXO = {0: "Macho", 1: "Fêmea", 2: "Indefinido"}
+AGENTES = (("NPC.Vendor.SportsShooter", "Atirador esportivo"), ("NPC.Vendor.Ranger", "Guarda-florestal"),
+           ("NPC.Vendor.Butcher", "Açougueiro"), ("NPC.Vendor.DogHandler", "Adestrador de cães"))
 ACOES = {0: "Descartado", 1: "Vendido (danificado)", 2: "Vendido", 3: "Taxidermia"}
 
 
@@ -963,7 +965,7 @@ class Companion:
                     m["tentativas"] = m.get("tentativas", 1) + 1
                     linhas = [f"add_credits {m.get('creditos_pagos', 0)} {m['id']}"] if m.get("creditos_pagos") else []
                     if "reputacao" not in pago:
-                        linhas.append(f"add_rep {m['reputacao']} {m['id']}")
+                        linhas.append(f"add_rep {m['reputacao']} {m['id']} {missoes.agente_de(m)}")
                     if linhas and self.enviar_comando(linhas):
                         m["enviado"] = agora
                 continue
@@ -972,7 +974,7 @@ class Companion:
             linhas = [f"add_credits {cred} {m['id']}"] if cred > 0 else []
             if cred <= 0:
                 m.setdefault("pago", {})["creditos"] = True
-            linhas.append(f"add_rep {m['reputacao']} {m['id']}")
+            linhas.append(f"add_rep {m['reputacao']} {m['id']} {missoes.agente_de(m)}")
             self.enviar_comando(linhas)
             dia[hoje] = pago_hoje + cred
             m["enviado"] = time.time()
@@ -1839,15 +1841,27 @@ class Companion:
                 rastreados.append(item)
             rastreados.sort(key=lambda x: x["distancia_m"] if x["distancia_m"] is not None else 1e9)
             rep = next((r for r in st.get("reputacao", []) or [] if self.nivel() and self.nivel() in (r.get("mapa") or "")), None)
+            # os 4 agentes de campo da reserva (níveis do jogo: 200, 400, 600, 800, 1000 pontos)
+            agentes = []
+            for tag, nome in AGENTES:
+                r = next((r for r in st.get("reputacao", []) or [] if r.get("vendedor") == tag
+                          and self.nivel() and self.nivel() in (r.get("mapa") or "")), None)
+                v = int((r or {}).get("valor") or 0)
+                nivel = min(5, v // 200)
+                agentes.append({"tag": tag, "nome": nome, "valor": v, "nivel": nivel,
+                                "proximo": None if nivel >= 5 else (nivel + 1) * 200,
+                                "progresso": 1.0 if nivel >= 5 else (v - nivel * 200) / 200})
             r_atual = self.reserva()
             lista = [m for m in self.dados["missoes"] if r_atual and m.get("reserva") == r_atual]
+            for m in lista:
+                m["agente_nome"] = missoes.AGENTE_NOME.get(missoes.agente_de(m))
             return {
                 "versao": VERSAO,
                 "atualizacao": ATUALIZADOR.info() if ATUALIZADOR else None,
                 "conectado": self.conectado(),
                 "em_reserva": self.em_reserva(),
                 "estado": st,
-                "reputacao_mapa_atual": rep,
+                "reputacao_mapa_atual": rep, "agentes": agentes,
                 "mapa": self.info_mapa(),
                 "pino_app": self.dados.get("pino_app"),
                 "rastreados": rastreados,

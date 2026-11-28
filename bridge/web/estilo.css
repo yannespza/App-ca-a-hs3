@@ -817,3 +817,12 @@ body.apk .so-apk { display: inline-flex !important; }
 #barraca-n { opacity: .8; margin-left: 4px; font-weight: 600; }
 @media (max-width: 820px) { .mo-carrossel { grid-template-columns: 34px 1fr 34px !important; } }
 @media (max-width: 820px) { .mo-mun-nome .mo-mun-n { display: inline; } }
+
+.num.clicavel { cursor: pointer; }
+.num.clicavel:hover { border-color: var(--blaze); }
+.ag-lista { display: grid; gap: 14px; min-width: min(420px, 86vw); }
+.ag-cab { display: flex; justify-content: space-between; margin-bottom: 4px; }
+.ag-cab span { color: var(--liquen); font-size: 13px; }
+.ag-barra { height: 8px; border-radius: 5px; background: var(--linha); overflow: hidden; }
+.ag-barra i { display: block; height: 100%; background: linear-gradient(90deg, #d39a32, #6f9a3c); }
+.ag-lin small { color: var(--liquen); }

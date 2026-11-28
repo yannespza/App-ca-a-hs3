@@ -391,7 +391,7 @@ function atualizarMarcadores(d) {
 function distancia(a, b) { if (!a || !b) return null; return Math.hypot(a.x - b.x, a.y - b.y, (a.z || 0) - (b.z || 0)) / 100; }
 
 // ------------------------------------------------------------------ contratos
-function recompensa(m) { return `$${fmt(m.creditos_pagos ?? m.creditos)} <small>+${fmt(m.reputacao)} rep.</small>`; }
+function recompensa(m) { return `$${fmt(m.creditos_pagos ?? m.creditos)} <small>+${fmt(m.reputacao)} rep.${m.agente_nome ? ` · ${esc(m.agente_nome)}` : ""}</small>`; }
 
 function renderOfertas(d) {
   const of = d.ofertas;
@@ -559,8 +559,11 @@ async function atualizar() {
   $("f-hud").checked = d.config?.contratos_no_jogo !== false;
   $("btn-voltar").style.display = d.tem_local_salvo ? "" : "none";
   $("aviso-teleporte").textContent = d.aviso_teleporte || "";
-  const rep = d.reputacao_mapa_atual;
-  $("p-rep").textContent = rep ? fmt(rep.valor) : "–";
+  const ag = d.agentes || [];
+  agentesDados = ag;
+  const total = ag.reduce((t, a) => t + a.valor, 0);
+  $("p-rep").textContent = ag.length ? `${fmt(total)}` : "–";
+  $("p-rep").title = ag.map(a => `${a.nome}: nível ${a.nivel} (${a.valor})`).join("\n");
   const nAndamento = d.ativas.length + (d.contratos_jogo || []).length;
   $("p-contratos").textContent = nAndamento || "";
   $("n-ofertas").textContent = d.ofertas.length || "";
@@ -672,6 +675,16 @@ async function moRecarregar() {
   try { r = await (await fetch("/api/municao", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })).json(); } catch { r = { ok: false, erro: "Sem resposta do app." }; }
   if (b) b.textContent = r.ok ? "✔ Pedido enviado ao jogo" : (r.erro || "Não deu");
   setTimeout(() => renderArmario(true), 2500);
+}
+let agentesDados = [];
+function abrirAgentes() {
+  const linhas = agentesDados.map(a => `<div class="ag-lin"><div class="ag-cab"><b>${esc(a.nome)}</b><span>Nível ${a.nivel}${a.nivel >= 5 ? " (máximo)" : ""}</span></div>
+    <div class="ag-barra"><i style="width:${Math.round(a.progresso * 100)}%"></i></div>
+    <small>${fmt(a.valor)} pontos${a.proximo ? ` · faltam ${fmt(a.proximo - a.valor)} para o nível ${a.nivel + 1}` : ""}</small></div>`).join("");
+  moModal(`<header class="mo-jan-topo"><div><h3>Reputação nesta reserva</h3><small>Os quatro agentes de campo do jogo</small></div>
+      <button class="mo-x" onclick="moFecharModal()">✕</button></header>
+    <div class="mo-jan-corpo ag-lista">${linhas || "<p>Entre numa reserva para ver a reputação dos agentes.</p>"}
+    <p class="mo-dica">Cada nível pede 200 pontos (até 1000). Os contratos do Earl dizem antes de aceitar qual agente recebe os pontos.</p></div>`);
 }
 const moMunSel = {};   // munição escolhida no carrossel (ainda não mandada para o jogo), por arma
 function moMunPassar(arma, n, passo, k) { moMunSel[arma] = (k + passo + n) % n; renderArmario(true); }
