@@ -73,6 +73,7 @@ end
 -- Listas dentro de listas (pontos de campo por mapa, reputação por mapa e vendedor) são lidas só a cada
 -- 10 s e guardadas como números: ler esse tipo de dado o tempo todo já fechou o jogo (ver mochila.lua).
 local lentos = { quando = 0, pontos_campo = nil, reputacao = nil }
+local caoCache = { obj = nil, nome = nil }     -- (precisa vir antes de readState)
 local function readState()
     local s = { ok = false, ts = os.time() }
     local pc = FindFirstOf("HS3PlayerController")
@@ -311,7 +312,6 @@ end
 local ticks = 0
 local mortosAssinatura = nil
 local trofeusAntes = nil
-local caoCache = { obj = nil, nome = nil }
 
 ------------------------------------------------------------------ eventos: abates
 local function readKill(info)
