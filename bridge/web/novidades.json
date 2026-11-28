@@ -5,7 +5,8 @@
   "itens": [
    "Os botões do mapa (Eu, Barraca, hora, Voltar) ficam numa linha própria, abaixo das camadas: nada mais escondido atrás deles.",
    "Ícones do mapa com cores vivas e tamanho uniforme: estruturas turquesa, torres laranja, acampamentos amarelos, agentes vermelhos; zonas verde (comer), azul (beber), roxo (descansar) e amarelo (circulação das aves).",
-   "No PC estreito ou vertical, o topo quebra em duas linhas para caber tudo."
+   "No PC estreito ou vertical, o topo quebra em duas linhas para caber tudo.",
+   "Celular mais compacto: camadas e botões do mapa em uma linha cada (arraste para o lado), letras menores e sem os quadros de posição por cima do mapa. O app do celular novo também ignora a letra grande do sistema."
   ]
  },
  {

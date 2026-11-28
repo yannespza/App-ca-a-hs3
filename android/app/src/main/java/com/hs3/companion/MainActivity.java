@@ -30,16 +30,17 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle b) {
         super.onCreate(b);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        getWindow().setStatusBarColor(Color.parseColor("#14201b"));
+        getWindow().setStatusBarColor(Color.parseColor("#3a2316"));
         prefs = getSharedPreferences("hs3", MODE_PRIVATE);
         web = new WebView(this);
-        web.setBackgroundColor(Color.parseColor("#14201b"));
+        web.setBackgroundColor(Color.parseColor("#3a2316"));
         setContentView(web);
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
+        s.setTextZoom(100);   // ignora a letra grande do sistema: o app já tem tamanhos próprios
         CookieManager.getInstance().setAcceptCookie(true);
         web.addJavascriptInterface(new Ponte(), "HS3");
         web.setWebViewClient(new WebViewClient() {
