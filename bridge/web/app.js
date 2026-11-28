@@ -238,7 +238,7 @@ function desenharBarracas(d) {
   barracasTexto = t;
   grupoBarracas.clearLayers();
   for (const b of d.barracas || []) {
-    L.marker(toLL(b), { icon: L.divIcon({ className: "", html: `<div class="mk-barraca ${b.pendente ? "pendente" : ""}">⛺</div>`, iconSize: [28, 28], iconAnchor: [14, 14] }), zIndexOffset: 800 })
+    L.marker(toLL(b), { icon: L.divIcon({ className: "", html: `<div class="mk-barraca ${b.pendente ? "pendente" : ""}">⛺</div>`, iconSize: [42, 42], iconAnchor: [21, 21] }), zIndexOffset: 2000 })
       .bindTooltip(esc(b.nome) + (b.pendente ? " (pagando…)" : ""))
       .bindPopup(`<div class="pp-caixa" style="text-align:center"><b>${esc(b.nome)}</b><br>
         <button class="btn-papel verde" style="margin-top:6px;padding:10px 14px" onclick="barraca('ir','${esc(b.id)}')">🚶 Ir até a barraca</button><br>

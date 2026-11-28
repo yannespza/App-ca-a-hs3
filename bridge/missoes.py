@@ -178,8 +178,13 @@ def gerar(dados, pois, nome_grupo, grupos_reserva, cap, quantos=1):
         if len(saida) >= quantos:
             break
         m = _um(grupos, pois, nome_grupo, cap)
-        if grupos and random.random() < 0.10:      # de vez em quando: descarte de genética fraca
+        sorteio = random.random()
+        if grupos and sorteio < 0.10:      # de vez em quando: descarte de genética fraca
             m = descarte(random.choice(grupos), nome_grupo, int(cap.get("nivel") or 0))
+        elif grupos and sorteio < 0.10 + 0.10 + 0.04 * int(cap.get("nivel") or 0):   # especiais: mais comuns com o nível
+            abatidos = {str(a.get("id")) for a in dados.get("abates", [])}
+            av = cap.get("avistamentos") or []
+            m = especial(grupos, nome_grupo, cap, av, abatidos) or m
         if m and cap.get("nivel"):
             m["creditos"] = int(round(m["creditos"] * (1 + 0.1 * min(5, cap["nivel"])) / 10) * 10)   # mais difícil, paga mais
         if m and m["titulo"] not in usados:
@@ -403,9 +408,101 @@ def conta(m, evento, dentro, arma_tipo_de):
         s = (evento.get("sexo_nome") or "").lower()
         if not s.startswith("macho" if c["sexo"] == "macho" else "fêmea"):
             return False
+    # ---- contratos especiais
+    if "dist_max" in c and (d <= 0 or d > c["dist_max"]):
+        return False
+    if c.get("sem_chamariz") and evento.get("atraido") is True:
+        return False
+    if "janela" in c:
+        h = evento.get("hora_jogo")
+        ini, fim = c["janela"]
+        if not isinstance(h, (int, float)) or not ((ini <= h < fim) if ini < fim else (h >= ini or h < fim)):
+            return False
+    if "morte_max_s" in c:
+        t = evento.get("segundos_ate_morte")
+        if t is None or t > c["morte_max_s"]:
+            return False
+    if c.get("em_movimento") and (evento.get("vel_animal") or 0) < 2:
+        return False
+    if c.get("alvo_id") is not None and str(evento.get("id")) != str(c["alvo_id"]):
+        return False
+    if c.get("sem_luneta") and evento.get("tem_luneta") is not False:
+        return False
+    if c.get("mesmo_dia"):
+        dia = evento.get("dia_jogo")
+        if m.get("dia_ref") is None or dia != m["dia_ref"]:
+            # virou o dia: recomeça (o que valia era tudo no mesmo dia do jogo)
+            m["dia_ref"], m["contados"], m["grupos_feitos"] = dia, [], []
     if c.get("variedade"):
         m.setdefault("grupos_feitos", []).append(evento.get("grupo"))
     return True
+
+
+# ------------------------------------------------------------------ contratos especiais do Earl
+def especial(grupos, nome_grupo, cap, avistamentos=None, abatidos=()):
+    """Um contrato especial (mais difícil, paga mais). Devolve None se não houver como montar."""
+    if not grupos:
+        return None
+    nv = int(cap.get("nivel") or 0)
+    caca = [g for g in grupos if g not in AVES] or grupos
+    aves = [g for g in grupos if g in AVES]
+    opcoes = ["mira", "triplice", "madrugada", "longe", "perto", "corte"] + (["voo"] if aves else []) + (["fugitivo"] if avistamentos else [])
+    tipo = random.choice(opcoes)
+    g = random.choice(caca)
+    nome = _g(nome_grupo(g))
+    if tipo == "fugitivo":
+        vivos = [a for a in avistamentos if (a.get("potencial") or 0) >= 0.8 and str(a.get("id")) not in abatidos]
+        if not vivos:
+            tipo = "longe"
+        else:
+            a = max(vivos, key=lambda x: x.get("potencial") or 0)
+            nome_esp = a.get("especie_nome") or "animal"
+            m = _base("Troféu fugitivo", f"Aquele {nome_esp.lower()} de potencial {int(a['potencial'] * 100)}% que você marcou ainda está solto por aí. "
+                      "Cliente graúdo quer ele. Volte onde viu e termine o serviço.",
+                      f"Abata o {nome_esp.lower()} nº {a.get('id')} (potencial {int(a['potencial'] * 100)}%). Última vez visto no ponto marcado.",
+                      1, 2200 + 300 * nv)
+            m.update({"tipo": "combo", "cond": {"alvo_id": a.get("id")}, "vendedor": "NPC.Vendor.SportsShooter", "especial": "fugitivo"})
+            if a.get("pos"):
+                m["local"] = {"x": a["pos"]["x"], "y": a["pos"]["y"], "z": a["pos"].get("z", 0), "nome": "Último lugar visto", "raio_m": 150}
+            return m
+    if tipo == "mira":
+        m = _base("Caça tradicional", "Tem cliente que não acredita mais em caçador sem luneta. Vamos provar que você é dos antigos.",
+                  f"Abata 1 {nome} com rifle ou espingarda sem luneta (mira aberta).", 1, 900 + 150 * nv)
+        m.update({"tipo": "combo", "grupo": g, "cond": {"sem_luneta": True}, "vendedor": "NPC.Vendor.SportsShooter", "especial": "mira"})
+    elif tipo == "triplice":
+        n = 3
+        m = _base("Tríplice da reserva", "Três espécies diferentes no mesmo dia, do amanhecer até a noite. Se o dia virar, recomeça do zero.",
+                  f"Abata {n} espécies diferentes no mesmo dia do jogo (sem passar a noite).", n, 2400 + 300 * nv)
+        m.update({"tipo": "combo", "cond": {"variedade": True, "mesmo_dia": True}, "vendedor": "NPC.Vendor.Butcher", "especial": "triplice"})
+    elif tipo == "madrugada":
+        janela = random.choice([(4.5, 6.5), (20.0, 23.5)])
+        txt = "entre 4h30 e 6h30" if janela[0] < 12 else "depois das 20h"
+        m = _base("Turno da madrugada" if janela[0] < 12 else "Turno da noite",
+                  "Bicho esperto anda quando ninguém está olhando. Pouca luz, muita paciência.",
+                  f"Abata 1 {nome} {txt} (hora do jogo).", 1, 1100 + 150 * nv)
+        m.update({"tipo": "combo", "grupo": g, "cond": {"janela": list(janela)}, "vendedor": "NPC.Vendor.SportsShooter", "especial": "madrugada"})
+    elif tipo == "longe":
+        dist = 250 if nv < 3 else 300
+        m = _base("Tiro de precisão extrema", "Esse é pra quem sabe ler vento e queda de bala.",
+                  f"Abata 1 {nome} a {dist} m ou mais.", 1, 1500 + 200 * nv)
+        m.update({"tipo": "combo", "grupo": g, "cond": {"dist_min": dist}, "vendedor": "NPC.Vendor.SportsShooter", "especial": "longe"})
+    elif tipo == "perto":
+        m = _base("Aproximação fantasma", "Chegue perto sem chamariz e sem o bicho perceber. Silêncio e vento no rosto.",
+                  f"Abata 1 {nome} a menos de 25 m, sem chamariz e sem o animal perceber você.", 1, 1600 + 200 * nv)
+        m.update({"tipo": "combo", "grupo": g, "cond": {"dist_max": 25, "sem_chamariz": True, "nao_detectado": True},
+                  "vendedor": "NPC.Vendor.SportsShooter", "especial": "perto"})
+    elif tipo == "corte":
+        m = _base("Corte de primeira", "Cliente exigente: quer carne sem estrago. Tiro no lugar certo, calibre certo, bicho caindo na hora.",
+                  f"Abata 1 {nome} com calibre adequado e que morra em até 5 segundos depois do tiro.", 1, 1300 + 150 * nv)
+        m.update({"tipo": "combo", "grupo": g, "cond": {"calibre": True, "morte_max_s": 5}, "vendedor": "NPC.Vendor.Butcher", "especial": "corte"})
+    else:  # voo
+        ga = random.choice(aves)
+        na = _g(nome_grupo(ga))
+        m = _base("Ave em voo", "Ave parada qualquer um acerta. Quero ver no voo.",
+                  f"Abata 2 {plural(na, 2)} em movimento (voando ou correndo).", 2, 900 + 150 * nv)
+        m.update({"tipo": "combo", "grupo": ga, "cond": {"em_movimento": True}, "vendedor": "NPC.Vendor.SportsShooter", "especial": "voo"})
+    m["reputacao"] = int(m["reputacao"] * 1.5)
+    return m
 
 
 # ------------------------------------------------------------------ dicas do Earl (sem IA)

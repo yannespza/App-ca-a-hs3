@@ -826,3 +826,5 @@ body.apk .so-apk { display: inline-flex !important; }
 .ag-barra { height: 8px; border-radius: 5px; background: var(--linha); overflow: hidden; }
 .ag-barra i { display: block; height: 100%; background: linear-gradient(90deg, #d39a32, #6f9a3c); }
 .ag-lin small { color: var(--liquen); }
+
+.mk-barraca { width: 42px; height: 42px; font-size: 24px; border-radius: 10px; }

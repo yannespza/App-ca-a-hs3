@@ -913,6 +913,15 @@ class Companion:
             if any(str(a.get("id")) == id_ for a in d["abates"]):
                 return []
             ab = dict(ev)
+            # arma com ou sem luneta no tiro (para o contrato "Caça tradicional")
+            try:
+                lida = self.cache.json(self.caminho("armas.json"), None) or {}
+                anexos = (lida.get("municao") or {}).get(ab.get("arma") or "")
+                if anexos is not None:
+                    tipos = {c.get("id"): c.get("tipo") or "" for c in self.catalogo()}
+                    ab["tem_luneta"] = any("Scope" in tipos.get(x, "") for x in anexos)
+            except Exception:
+                pass
             marc = d["marcados"].get(id_)
             especie = (marc or {}).get("especie") or ab.get("especie_jogo")
             chave, nome = grupo_de(especie or ab.get("classe"))
@@ -1070,6 +1079,10 @@ class Companion:
         reps = [int(r.get("valor") or 0) for r in (self.estado or {}).get("reputacao") or []
                 if self.nivel() and self.nivel() in (r.get("mapa") or "")]
         cap["nivel"] = min(5, max(reps, default=0) // 200)
+        # avistamentos desta reserva (para o "troféu fugitivo")
+        cap["avistamentos"] = [dict(a, especie_nome=nome_especie(a.get("especie")))
+                               for a in (self.dados.get("avistamentos") or [])[-600:]
+                               if a.get("pos") and a.get("reserva") == self.nivel()]
         return grupos, cap
 
     def _gerar_ofertas(self, n, reserva):
