@@ -170,11 +170,16 @@ function setaJogador(yaw) {
 
 let pinoPendente = null;
 // animal clicado: no celular o ícone vai para a esquerda da tela, sobrando espaço para o cartão à direita
-function centrarAnimal(ll) {
-  marcarSeguindo(false);
-  const w = mapa.getSize().x;
-  const deslocar = w < 820 ? w * 0.3 : 0;
-  mapa.panTo(mapa.unproject(mapa.project(ll).add([deslocar, 0])));
+// centraliza o animal com a ficha (que abre à direita do ícone) inteira à vista
+let pausaSeguirAte = 0;
+function centrarAnimal(ll, manterSeguir) {
+  if (!manterSeguir) marcarSeguindo(false);
+  else pausaSeguirAte = Date.now() + 11000;      // ficha automática: o mapa para de seguir você por 10 s
+  const tam = mapa.getSize();
+  const largFicha = tam.x < 820 ? 230 : 300, altFicha = tam.x < 820 ? 260 : 330;
+  const dx = Math.min(tam.x * 0.35, (largFicha + 30) / 2);    // ícone à esquerda do centro, ficha no meio
+  const dy = Math.min(tam.y * 0.25, Math.max(0, altFicha / 2 - 40) * 0.3);
+  mapa.panTo(mapa.unproject(mapa.project(ll).add([dx, dy])), { animate: true, duration: 0.4 });
 }
 let destinoIr = null;
 // viagem rápida só para pontos com função: agentes, acampamentos e torres (e as barracas do app)
@@ -384,6 +389,7 @@ function mostrarAvistado(u) {
   if (fichaAuto.id && marcAnimais[fichaAuto.id]) marcAnimais[fichaAuto.id].closeTooltip();
   clearTimeout(fichaAuto.timer);
   fichaAuto.id = u.id;
+  centrarAnimal(m.getLatLng(), true);
   m.openTooltip();
   fichaAuto.timer = setTimeout(() => { if (marcAnimais[u.id]) marcAnimais[u.id].closeTooltip(); }, 10000);
 }
@@ -395,7 +401,7 @@ function atualizarMarcadores(d) {
   if (st.pos) {
     if (!marcJogador) marcJogador = L.marker(toLL(st.pos), { icon: setaJogador(st.yaw), zIndexOffset: 1000 }).addTo(mapa).bindTooltip("Você");
     else { marcJogador.setLatLng(toLL(st.pos)); marcJogador.setIcon(setaJogador(st.yaw)); }
-    if (seguindo && jaCentralizou) mapa.panTo(toLL(st.pos), { animate: true, duration: 0.5 });
+    if (seguindo && jaCentralizou && Date.now() > pausaSeguirAte) mapa.panTo(toLL(st.pos), { animate: true, duration: 0.5 });
     if (!jaCentralizou && nivelAtual) { mapa.setView(toLL(st.pos), -1); jaCentralizou = true; }
   }
   const pino = st.pino_jogo || d.pino_app;

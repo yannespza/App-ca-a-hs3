@@ -922,15 +922,10 @@ class Companion:
             if any(str(a.get("id")) == id_ for a in d["abates"]):
                 return []
             ab = dict(ev)
-            # arma com ou sem luneta no tiro (para o contrato "Caça tradicional")
-            try:
-                lida = self.cache.json(self.caminho("armas.json"), None) or {}
-                anexos = (lida.get("municao") or {}).get(ab.get("arma") or "")
-                if anexos is not None:
-                    tipos = {c.get("id"): c.get("tipo") or "" for c in self.catalogo()}
-                    ab["tem_luneta"] = any("Scope" in tipos.get(x, "") for x in anexos)
-            except Exception:
-                pass
+            # arma com ou sem luneta no tiro (para o contrato "Caça tradicional"): o mod lê do tiro;
+            # sem isso, olha os acessórios da arma na mochila (o tiro traz ID_X; a lista usa DA_X_StoreItem/StoreAsset)
+            if ab.get("tem_luneta") is None:
+                ab["tem_luneta"] = self.arma_tem_luneta(ab.get("arma"))
             marc = d["marcados"].get(id_)
             especie = (marc or {}).get("especie") or ab.get("especie_jogo")
             chave, nome = grupo_de(especie or ab.get("classe"))
@@ -1254,6 +1249,18 @@ class Companion:
                 avaliar_missoes(d, {"tipo": "carcaca_recolhida", "id": id_, "ts": time.time()}, reserva)
                 self.salvar_pendente = True
 
+    def arma_tem_luneta(self, arma):
+        try:
+            mun = (self.cache.json(self.caminho("armas.json"), None) or {}).get("municao") or {}
+            nome = (arma or "").split("ID_", 1)[-1]
+            anexos = mun.get(arma) or mun.get(f"DA_{nome}_StoreItem") or mun.get(f"DA_{nome}_StoreAsset")
+            if anexos is None:
+                return None
+            tipos = {c.get("id"): c.get("tipo") or "" for c in self.catalogo()}
+            return any("Scope" in tipos.get(x, "") or "Scope" in x for x in anexos)
+        except Exception:
+            return None
+
     def recontar_marcacoes(self):
         """Uma vez ao abrir: marcações feitas depois de aceitar um contrato de censo e que não contaram (erro até a v0.1.58)."""
         if getattr(self, "_recontou", False) or not self.em_reserva():
@@ -1262,6 +1269,12 @@ class Companion:
         d = self.dados
         # contratos de "linhagem" por nível (v0.1.60) saíram: genética nova é só dos agentes do jogo
         d["missoes"] = [m for m in d["missoes"] if not (m.get("genetica_nivel") and m["status"] in ("oferta", "ativa"))]
+        for m in d["missoes"]:
+            if m["status"] == "ativa" and (m.get("cond") or {}).get("sem_luneta"):
+                for ab in d["abates"]:
+                    if ab.get("ts", 0) >= m.get("aceita_em", m["criada"]) and ab.get("tem_luneta") is None:
+                        ab["tem_luneta"] = self.arma_tem_luneta(ab.get("arma"))
+                        avaliar_missoes(d, dict(ab, tipo="abate_confirmado"), self.reserva())
         for m in d["missoes"]:
             if m["status"] != "ativa" or not (m.get("cond") or {}).get("marcar"):
                 continue

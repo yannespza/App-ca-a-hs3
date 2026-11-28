@@ -350,6 +350,17 @@ local function readKill(info)
                 t.especie = tagName(esp)
             end
         end)
+        -- acessórios da arma no tiro (luneta ou mira aberta)
+        pcall(function()
+            local at, luneta = shot.WeaponAttachments, false
+            for j = 1, #at do
+                local tg = at[j].PartGameplayTag.TagName:ToString()
+                local id = at[j].PartId.PrimaryAssetName:ToString()
+                if tg:find("Scope") or id:find("Scope") then luneta = true end
+            end
+            t.tem_luneta = luneta
+            t.acessorios_tiro = #at
+        end)
         -- primeiro impacto: hora do tiro (tempo até a morte) e velocidade do animal (alvo em movimento)
         pcall(function()
             local h = shot.SingleHits[1]
