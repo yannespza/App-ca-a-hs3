@@ -1428,7 +1428,7 @@ async function renderSalaTrofeus() {
   $("sala-trofeus").innerHTML = l.length ? `<div class="sala">${l.map(t => `<figure class="sala-i">
       ${t.arquivo ? `<a href="/api/trofeu/${esc(t.arquivo)}" target="_blank"><img src="/api/trofeu/${esc(t.arquivo)}" loading="lazy" alt="Troféu"></a>` : `<div class="sala-sem">sem print</div>`}
       <figcaption>${quando(t.ts)}${t.dia != null ? ` · dia ${t.dia}` : ""}${t.total ? ` · ${t.total} no total` : ""}${t.manual ? " · sua foto (F9)" : " · foto automática"}</figcaption></figure>`).join("")}</div>
-      <p class="item-sub">Ao empalhar um animal, o app do PC tira um print automático. Aperte <b>F9</b> no jogo para tirar a sua: ela substitui a automática (até 15 min depois de empalhar; fora disso vira uma foto nova).</p>`
+      <p class="item-sub">Ao empalhar um animal, o app do PC tira um print automático. Aperte <b>F9</b> no jogo para tirar a sua (o app esconde os contratos dele da tela e fotografa uns 3 s depois): ela substitui a automática (até 15 min depois de empalhar; fora disso vira uma foto nova).</p>`
     : `<p class="vazio">Quando você empalhar um animal no jogo, o app do PC tira um print e ele aparece aqui.</p>`;
 }
 // ---- cão no mapa (posição, estado e energia lidos do jogo)

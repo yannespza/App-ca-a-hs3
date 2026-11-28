@@ -969,7 +969,10 @@ class Companion:
             if not alvo:
                 alvo = {"ts": time.time(), "total": None, "dia": d.get("dia_jogo"), "so_manual": True}
                 lista.append(alvo)
-            threading.Thread(target=self.print_trofeu, args=(alvo, True), daemon=True).start()
+            # foto limpa: tira os contratos do app da tela do jogo, espera o mod sincronizar (~2 s) e só então fotografa
+            self.hud_oculto_ate = time.time() + 8
+            self.escrever_hud()
+            threading.Timer(2.8, self.print_trofeu, args=(alvo, True)).start()
             return []
         elif tipo == "compra":
             d["compras"] = (d["compras"] + [ev])[-50:]
@@ -1625,8 +1628,12 @@ class Companion:
                 else:
                     reg["arquivo_auto"] = nome
                 self.salvar_pendente = True
+                if manual:
+                    self.hud_oculto_ate = 0      # devolve os contratos à tela do jogo
+                    self.escrever_hud()
         except Exception as e:
             print("print do troféu falhou:", e)
+            self.hud_oculto_ate = 0
 
     def vigiar_licencas(self):
         """Espécies da reserva atual com 1 ou 0 animal restante na licença (aviso no mapa)."""
@@ -2048,7 +2055,7 @@ class Companion:
 
     def escrever_hud(self):
         linhas = ["T\tContratos do Velho Earl"]
-        if self.cfg.get("contratos_no_jogo", True):
+        if self.cfg.get("contratos_no_jogo", True) and time.time() > getattr(self, "hud_oculto_ate", 0):
             agora = time.time()
             r = self.reserva()
             for m in self.dados["missoes"]:
