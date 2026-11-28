@@ -1370,6 +1370,11 @@ class Companion:
             x, y, z = float(corpo["x"]), float(corpo["y"]), float(corpo.get("z") or 0)
         except (KeyError, TypeError, ValueError):
             return {"ok": False, "erro": "Ponto inválido."}
+        # chega a 10 m do ponto, do lado de onde você vem (no centro da estrutura o jogo prende o caçador)
+        p = (self.estado or {}).get("pos") or {}
+        dx, dy = (p.get("x", x + 1) - x), (p.get("y", y) - y)
+        n = math.hypot(dx, dy) or 1.0
+        x, y = x + dx / n * 1000, y + dy / n * 1000
         self.pausa_pos_ate = time.time() + 15        # não grava "último local" no meio da viagem
         if not self.enviar_comando([f"teleport {x:.0f} {y:.0f} {z:.0f}"]):
             return {"ok": False, "erro": "O jogo não está respondendo."}

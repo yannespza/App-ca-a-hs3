@@ -129,7 +129,7 @@ async function carregarPois() {
   for (const p of lista) {
     const m = L.marker(toLL(p), { icon: iconePoi(p), riseOnHover: true })
       .bindTooltip(`<b>${esc(p.descoberto ? p.nome : "Local não descoberto")}</b>${p.descoberto ? "" : "<br><i>Explore para revelar</i>"}`, { direction: "top", offset: [0, -12] });
-    m.on("click", () => perguntarPino(L.latLng(toLL(p)), p.descoberto ? p.nome : "Local não descoberto", p.descoberto ? { x: p.x, y: p.y, z: p.z || 0 } : null));
+    m.on("click", () => perguntarPino(L.latLng(toLL(p)), p.descoberto ? p.nome : "Local não descoberto", p.descoberto && PODE_IR.has(p.categoria) ? { x: p.x, y: p.y, z: p.z || 0 } : null));
     // estruturas de caça descobertas aparecem com os pontos; as que faltam descobrir ficam na camada "Estruturas"
     (p.categoria === "estrutura" && !p.descoberto ? grupoEstr : grupoPois).addLayer(m);
   }
@@ -172,6 +172,8 @@ function centrarAnimal(ll) {
   mapa.panTo(mapa.unproject(mapa.project(ll).add([deslocar, 0])));
 }
 let destinoIr = null;
+// viagem rápida só para pontos com função: agentes, acampamentos e torres (e as barracas do app)
+const PODE_IR = new Set(["npc", "acampamento", "torre"]);
 async function irAte(ev) {
   ev?.stopPropagation();
   if (!destinoIr) return;
