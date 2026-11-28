@@ -56,6 +56,7 @@ local function tagName(tag)
 end
 
 local function valid(o) return o ~= nil and o:IsValid() end
+local calmoAte = 0     -- os.time(): até quando evitar leituras extras (mapa carregando / logo depois de viagem)
 
 local seq = 0
 local function emit(kind, data)
@@ -150,7 +151,9 @@ local function readState()
     end)
     pcall(function()
         -- 1 = andando no chão (MOVE_Walking); 3 = caindo. O app só guarda "último local" com o caçador no chão
-        local mm = FindFirstOf("HS3PlayerController").Pawn.CharacterMovement.MovementMode
+        local pawn = FindFirstOf("HS3PlayerController").Pawn
+        if not valid(pawn) or os.time() <= calmoAte then return end
+        local mm = pawn.CharacterMovement.MovementMode
         s.chao = (mm == 1 or mm == 2)
     end)
     pcall(function()
@@ -448,6 +451,7 @@ local function exportPois()
         end)
     end
     writeFile(DIR .. "pois_" .. curto .. ".json", jsonEncode(lista))
+    if os.time() <= calmoAte then return end
     -- zonas de necessidade do MAPA TODO (v0.1.62): ficam como "filhas" dos ícones de bando no mapa do jogo
     -- (NavigationActorDataChildsMap: pai = bando; ExtraTags = espécie + tipo). Antes vinham só dos atores carregados perto.
     pcall(function()
@@ -719,6 +723,7 @@ local function alturaChao(x, y)
 end
 
 local function teleportar(x, y, z)
+    calmoAte = os.time() + 90
     -- sem altura (barracas, pontos com afastamento): usa a do chão para não cair do céu
     if not z then
         z = alturaChao(x, y)
@@ -803,6 +808,7 @@ local function periodic()
     if curto and (curto:find("Hub") or curto:find("Menu")) then curto = nil end
     if curto and curto ~= ultimoNivel and FindFirstOf("HS3PlayerController") then
         ultimoNivel = curto
+        calmoAte = os.time() + 90
         local f = io.open(DIR .. "mapa_" .. curto .. ".png", "rb")
         if f then f:close() else pcall(exportMap) end
         pcall(exportPois); pcall(exportCalibres)   -- névoa só quando o app pede (leitura pesada)
@@ -828,9 +834,9 @@ local function periodic()
     if ticks % 5 == 0 then pcall(writeAnimals) end
     -- pontos descobertos a cada 5 min (o app marca na hora as estruturas por onde você passa)
     -- v0.1.34 tinha um gancho na descoberta: fechou o jogo ao descobrir uma estrutura. Não usar.
-    if curto and ticks % 300 == 0 then pcall(exportPois) end
+    if curto and ticks % 300 == 0 and os.time() > calmoAte then pcall(exportPois) end
     -- animais mortos no mapa (natural = sem tiro do jogador); só regrava quando a lista muda (v0.1.43)
-    if curto and ticks % 10 == 5 then
+    if curto and ticks % 30 == 5 and os.time() > calmoAte then
         pcall(function()
             local ch = loadfile(DIR .. "Scripts\\mortos.lua")
             if not ch then return end
