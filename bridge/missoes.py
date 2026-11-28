@@ -190,8 +190,8 @@ def gerar(dados, pois, nome_grupo, grupos_reserva, cap, quantos=1):
             m = corredor(nome_grupo, nv)
         elif grupos and sorteio < 0.24:    # campanha em 3 etapas
             m = campanha(random.choice([g for g in grupos if g not in PREDADORES] or grupos), nome_grupo, nv)
-        elif grupos and sorteio < 0.28 and cap.get("orgaos"):    # abate limpo (só com o mod que lê os órgãos)
-            m = abate_limpo(random.choice(grupos), nome_grupo, nv)
+        elif sorteio < 0.28 and cap.get("orgaos") and [g for g in grupos if g not in AVES]:   # abate limpo (mamíferos)
+            m = abate_limpo(random.choice([g for g in grupos if g not in AVES]), nome_grupo, nv)
         elif grupos and sorteio < 0.28 + 0.10 + 0.04 * nv:   # especiais: mais comuns com o nível
             abatidos = {str(a.get("id")) for a in dados.get("abates", [])}
             av = cap.get("avistamentos") or []
@@ -605,10 +605,11 @@ def agente_de(m):
 
 
 PREDADORES = ("coiote", "lobo", "raposa", "felino", "urso")
+AVES = ("pato", "ganso", "faisao", "codorna", "pomba", "peru")
 
 ORGAOS = [("heart", "Coração"), ("lung", "Pulmão"), ("brain", "Cérebro"), ("spin", "Coluna"), ("neck", "Pescoço"),
           ("liver", "Fígado"), ("kidney", "Rim"), ("stomach", "Estômago"), ("intestin", "Intestino"), ("bowel", "Intestino"),
-          ("artery", "Artéria"), ("aorta", "Artéria"), ("bone", "Osso"), ("muscle", "Músculo"), ("leg", "Perna"),
+          ("artery", "Artéria"), ("aorta", "Artéria"), ("bone", "Osso"), ("muscle", "Músculo"), ("flesh", "Carne"), ("leg", "Perna"),
           ("head", "Cabeça"), ("jaw", "Mandíbula")]
 VITAIS = ("heart", "lung", "brain", "spin", "artery", "aorta")
 
