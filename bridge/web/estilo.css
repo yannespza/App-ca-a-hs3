@@ -132,24 +132,24 @@ button, input, select { font: inherit; color: inherit; }
 .aviso-teleporte:empty { display: none; }
 
 /* marcadores do mapa */
-.mk-poi { display: grid; place-items: center; border-radius: 50%; border: 2px solid rgba(58,35,22,0.9);
-  box-shadow: 0 2px 6px rgba(0,0,0,0.55); background: #6b4a32; }
-.mk-poi svg { width: 64%; height: 64%; fill: none; stroke: #3a2316; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.mk-poi.lugar { background: #3c6f86; } .mk-poi.torre { background: #aa642c; } .mk-poi.acampamento { background: #aa7f2c; }
-.mk-poi.estrutura { background: #6b4a32; border-width: 1.5px; } .mk-poi.sede { background: #a44532; } .mk-poi.servico { background: #aa642c; }
-.mk-poi.npc { background: #a14735; } .mk-poi.veiculo, .mk-poi.cao { background: #5f7a3f; } .mk-poi.viagem { background: #346d8a; }
-.mk-poi.oculto { background: rgba(207,192,153,0.94); border-color: rgba(58,35,22,0.45); box-shadow: none; }
-.mk-poi.oculto svg { stroke: #3a2316; }
+.mk-poi { display: grid; place-items: center; border-radius: 50%; border: 2px solid rgba(255,255,255,.9);
+  box-shadow: 0 2px 6px rgba(0,0,0,.55); background: #4f6f7c; }
+.mk-poi svg { width: 64%; height: 64%; fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.mk-poi.lugar { background: #3f7f9c; } .mk-poi.torre { background: #c9702a; } .mk-poi.acampamento { background: #d39a2c; }
+.mk-poi.estrutura { background: #6b8592; border-width: 1.5px; } .mk-poi.sede { background: #b6452f; } .mk-poi.servico { background: #c9702a; }
+.mk-poi.npc { background: #a8432f; } .mk-poi.veiculo, .mk-poi.cao { background: #5f7d3c; } .mk-poi.viagem { background: #2f6f8f; }
+.mk-poi.oculto { background: rgba(60,70,66,.75); border-color: rgba(255,255,255,.45); box-shadow: none; }
+.mk-poi.oculto svg { stroke: #c9d1c9; }
 .mk-jogador { width: 32px; height: 32px; }
-.mk-jogador svg { width: 32px; height: 32px; filter: drop-shadow(0 0 4px rgba(0,0,0,0.8)); }
+.mk-jogador svg { width: 32px; height: 32px; filter: drop-shadow(0 0 4px rgba(0,0,0,.8)); }
 .mk-jogador svg path, .mk-jogador svg polygon { fill: var(--blaze); }
-.mk-pino { font-size: 30px; line-height: 30px; text-align: center; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.7)); }
-.mk-animal { width: 34px; height: 34px; border-radius: 50%; background: rgba(228,218,189,0.94); border: 2px solid var(--nevoa);
-  display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,0.6); }
+.mk-pino { font-size: 30px; line-height: 30px; text-align: center; filter: drop-shadow(0 2px 3px rgba(0,0,0,.7)); }
+.mk-animal { width: 34px; height: 34px; border-radius: 50%; background: rgba(18,28,25,.92); border: 2px solid var(--nevoa);
+  display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,.6); }
 .mk-animal svg { width: 24px; height: 24px; fill: var(--nevoa); }
 .mk-animal.lendario { border-color: var(--ambar); box-shadow: 0 0 12px var(--ambar); }
 .mk-animal.velho { opacity: .55; border-style: dashed; }
-.mk-missao { font-size: 24px; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.6)); }
+.mk-missao { font-size: 24px; filter: drop-shadow(0 2px 2px rgba(0,0,0,.6)); }
 
 /* ficha do animal (passar o mouse) */
 .leaflet-tooltip.cartao-animal { background: transparent; border: none; box-shadow: none; padding: 0; }
@@ -774,10 +774,10 @@ body.apk .so-apk { display: inline-flex !important; }
 
 /* zonas de necessidade no mapa */
 .mk-zona { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid #fff6; box-shadow: 0 1px 4px #0008; }
-.mk-zona svg { width: 18px; height: 18px; fill: #3a2316; }
-.mk-zona.comer { background: #5f8639; }
-.mk-zona.beber { background: #346e95; }
-.mk-zona.dormir { background: #6b4a32; }
+.mk-zona svg { width: 18px; height: 18px; fill: #fff; }
+.mk-zona.comer { background: #5f8a35; }
+.mk-zona.beber { background: #2f6f9a; }
+.mk-zona.dormir { background: #7a5a9a; }
 
 .pop-zona { min-width: 230px; }
 .pz-cab { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
@@ -788,7 +788,7 @@ body.apk .so-apk { display: inline-flex !important; }
   .mo-municao select { width: 100%; font-size: 14px; }
 }
 
-.mk-barraca { width: 28px; height: 28px; border-radius: 8px; background: #392b1a; border: 2px solid #a97d2d; display: flex; align-items: center; justify-content: center; font-size: 16px; box-shadow: 0 1px 5px #000a; }
+.mk-barraca { width: 28px; height: 28px; border-radius: 8px; background: #3b2b18; border: 2px solid #d39a32; display: flex; align-items: center; justify-content: center; font-size: 16px; box-shadow: 0 1px 5px #000a; }
 .mk-barraca.pendente { opacity: .55; }
 #mapa.mira { cursor: crosshair; }
 
@@ -805,7 +805,7 @@ body.apk .so-apk { display: inline-flex !important; }
 /* silhuetas por espécie (máscara: a cor vem do texto) */
 .sil-img { display: inline-block; width: 100%; height: 100%; min-width: 14px; min-height: 12px; background: currentColor;
   -webkit-mask: var(--sil) center / contain no-repeat; mask: var(--sil) center / contain no-repeat; }
-.mk-zona .sil-img { width: 20px; height: 18px; color: #3a2316; }
+.mk-zona .sil-img { width: 20px; height: 18px; color: #fff; }
 .mk-animal .sil-img { width: 24px; height: 22px; color: var(--nevoa); }
 .ficha-sil .sil-img { width: 100%; height: 100%; color: var(--nevoa); }
 .dm-foto .sil-img, .ic-vazio .sil-img { width: 80%; height: 80%; color: var(--liquen); }
@@ -830,26 +830,26 @@ body.apk .so-apk { display: inline-flex !important; }
 .mk-barraca { width: 42px; height: 42px; font-size: 24px; border-radius: 10px; }
 
 /* genética 90% ou mais: ícone dourado */
-.mk-animal.dourado { background: radial-gradient(circle at 35% 30%, #cb9d0b, #b38a23 55%, #846216); border-color: #cb980b; box-shadow: 0 0 14px #f5c542cc; }
-.mk-animal.dourado svg { fill: #372908; }
-.mk-animal.dourado .sil-img { color: #372908; }
+.mk-animal.dourado { background: radial-gradient(circle at 35% 30%, #ffe9a3, #d9a520 55%, #8a6410); border-color: #ffe08a; box-shadow: 0 0 14px #f5c542cc; }
+.mk-animal.dourado svg { fill: #3a2a05; }
+.mk-animal.dourado .sil-img { color: #3a2a05; }
 
 /* animais: menores, macho azul, fêmea rosa, abatido cinza com ✕ */
 .mk-animal { width: 27px; height: 27px; position: relative; }
 .mk-animal svg { width: 19px; height: 19px; }
 .mk-animal .sil-img { width: 19px; height: 17px; }
-.mk-animal.macho { background: #244f81; border-color: #0b62cb; }
-.mk-animal.femea { background: #853462; border-color: #cb0b71; }
-.mk-animal.macho .sil-img, .mk-animal.femea .sil-img { color: #3a2316; }
-.mk-animal.macho svg, .mk-animal.femea svg { fill: #3a2316; }
+.mk-animal.macho { background: #1f4f86; border-color: #8fc2ff; }
+.mk-animal.femea { background: #8a2f63; border-color: #ffb0da; }
+.mk-animal.macho .sil-img, .mk-animal.femea .sil-img { color: #fff; }
+.mk-animal.macho svg, .mk-animal.femea svg { fill: #fff; }
 .mk-animal.lendario { border-color: var(--ambar); }
-.mk-animal.morto { background: #dacdaa; border-color: #6b4a32; opacity: .9; }
-.mk-animal.morto .sil-img { color: #6b4a32; }
-.mk-x { position: absolute; right: -5px; top: -7px; color: #cb1f0b; font-size: 13px; text-shadow: 0 0 3px #ece4cc; }
+.mk-animal.morto { background: #2b2b2b; border-color: #9a9a9a; opacity: .9; }
+.mk-animal.morto .sil-img { color: #9a9a9a; }
+.mk-x { position: absolute; right: -5px; top: -7px; color: #ff6b5a; font-size: 13px; text-shadow: 0 0 3px #000; }
 /* dourado (genética 90%+) vale mais que a cor do sexo; a borda continua mostrando o sexo */
-.mk-animal.dourado { background: radial-gradient(circle at 35% 30%, #cb9d0b, #b38a23 55%, #846216); box-shadow: 0 0 12px #f5c542cc; }
-.mk-animal.dourado .sil-img { color: #372908; }
-.mk-animal.dourado svg { fill: #372908; }
+.mk-animal.dourado { background: radial-gradient(circle at 35% 30%, #ffe9a3, #d9a520 55%, #8a6410); box-shadow: 0 0 12px #f5c542cc; }
+.mk-animal.dourado .sil-img { color: #3a2a05; }
+.mk-animal.dourado svg { fill: #3a2a05; }
 
 /* posição em tempo real: o ícone desliza até o ponto novo (sem deslizar durante o zoom) */
 .leaflet-marker-icon.mov { transition: transform .95s linear; }
@@ -857,9 +857,9 @@ body.apk .so-apk { display: inline-flex !important; }
 .ficha-morto { background: #57221d; color: #cb270b; font-weight: 700; padding: 4px 8px; border-radius: 6px; margin-bottom: 6px; }
 /* zonas: quadradas e em cores que não se confundem com macho (azul) e fêmea (rosa) */
 .mk-zona { border-radius: 6px; }
-.mk-zona.comer { background: #4f792e; }
-.mk-zona.beber { background: #b07322; }
-.mk-zona.dormir { background: #684a2e; }
+.mk-zona.comer { background: #4f7d2a; }
+.mk-zona.beber { background: #b8741a; }
+.mk-zona.dormir { background: #6b4a2b; }
 
 /* celular: ficha do animal menor */
 @media (max-width: 820px) {
@@ -939,10 +939,10 @@ body.apk .so-apk { display: inline-flex !important; }
 .mj-mon-i span { opacity: .8; flex-basis: 100%; }
 .orgao-vital { color: #5ba72f; font-weight: 600; }
 .novidades h4 { margin: 10px 0 4px; } .novidades ul { margin: 0 0 6px; padding-left: 20px; line-height: 1.5; }
-.mk-cao { width: 26px; height: 26px; border-radius: 50%; background: rgba(228,218,189,0.94); border: 2px solid #a28434; display: grid; place-items: center; font-size: 15px; }
+.mk-cao { width: 26px; height: 26px; border-radius: 50%; background: rgba(30,24,16,.9); border: 2px solid #c9a23a; display: grid; place-items: center; font-size: 15px; }
 .sala { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
 .sala-i { margin: 0; border: 1px solid var(--linha); border-radius: 8px; overflow: hidden; }
 .sala-i img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; }
 .sala-i figcaption { font-size: 12.5px; padding: 6px 10px; opacity: .85; }
 .sala-sem { aspect-ratio: 16/9; display: grid; place-items: center; opacity: .5; }
-.mk-zona.circular { background: #86783e; }
+.mk-zona.circular { background: #8a7a3a; }

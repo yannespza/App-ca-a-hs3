@@ -1,5 +1,14 @@
 [
  {
+  "id": "2026-11-28j",
+  "titulo": "Mapa mais legível",
+  "itens": [
+   "Os botões do mapa (Eu, Barraca, hora, Voltar) ficam numa linha própria, abaixo das camadas: nada mais escondido atrás deles.",
+   "Ícones do mapa com cores vivas e tamanho uniforme: estruturas turquesa, torres laranja, acampamentos amarelos, agentes vermelhos; zonas verde (comer), azul (beber), roxo (descansar) e amarelo (circulação das aves).",
+   "No PC estreito ou vertical, o topo quebra em duas linhas para caber tudo."
+  ]
+ },
+ {
   "id": "2026-11-28i",
   "titulo": "Visual novo: Painel do Caçador HS3",
   "itens": [

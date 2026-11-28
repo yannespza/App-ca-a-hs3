@@ -62,6 +62,7 @@
     <section class="mapa-papel so-mapa">
       <div id="mapa"></div>
       <div id="lic-alerta" class="lic-alerta" style="display:none"></div>
+      <div class="barra-mapa">
       <div class="camadas legenda">
         <label><input type="checkbox" id="f-pois" checked><span>Pontos</span></label>
         <label><input type="checkbox" id="f-zonas" checked><span>Zonas dos animais</span></label>
@@ -81,6 +82,7 @@
         <button class="btn-mapa" id="btn-tirar-pino" onclick="tirarPino()" style="display:none">Tirar pino</button>
         <button class="btn-mapa" id="btn-voltar" onclick="voltarAgora()" style="display:none">Voltar ao último local</button>
         <label class="btn-mapa alterna" title="Ao entrar na reserva, volta para onde você estava quando saiu"><input type="checkbox" id="f-voltar"><span>Voltar ao último local ao entrar</span></label><span class="ajuda-mapa" data-ajuda="voltar"></span>
+      </div>
       </div>
       <div class="hud-tele" id="telemetria"></div>
       <div class="dica-mapa" data-ajuda="pino">Clique no mapa para marcar um pino. Ele aparece também no mapa do jogo.</div>

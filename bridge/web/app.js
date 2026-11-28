@@ -50,7 +50,7 @@ async function carregarZonas() {
   for (const z of lista) {
     if (!z.descoberta || (fEsp && z.especie !== fEsp)) continue;
     const [nome, cls] = TIPO_ZONA[z.tipo] || [z.tipo, "comer"];
-    L.marker(toLL(z), { icon: L.divIcon({ className: "", html: `<div class="mk-zona ${cls}">${silhueta(z.grupo || "outro", z.especie)}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }) })
+    L.marker(toLL(z), { icon: L.divIcon({ className: "", html: `<div class="mk-zona ${cls}">${silhueta(z.grupo || "outro", z.especie)}</div>`, iconSize: [22, 22], iconAnchor: [11, 11] }) })
       .bindTooltip(`<b>${esc(z.especie_nome || "")}</b><br>Zona de ${nome.toLowerCase()}`)
       .bindPopup(() => popupZona(z, nome), { maxWidth: 300, autoPanPadding: [20, 60] })
       .on("click", () => marcarSeguindo(false))
@@ -186,7 +186,7 @@ function chaveIcone(p) {
 }
 function iconePoi(p) {
   const k = chaveIcone(p), peq = p.categoria === "estrutura" || !p.descoberto;
-  const lado = peq ? 22 : 28;
+  const lado = peq ? 18 : 22;
   return L.divIcon({ className: "", html: `<div class="mk-poi ${p.descoberto ? p.categoria : "oculto"} ic-${k}" style="width:${lado}px;height:${lado}px">
       <svg viewBox="0 0 24 24">${SVG_POI[k]}</svg></div>`, iconSize: [lado, lado], iconAnchor: [lado / 2, lado / 2] });
 }
@@ -384,7 +384,7 @@ function desenharBarracas(d) {
   barracasTexto = t;
   grupoBarracas.clearLayers();
   for (const b of d.barracas || []) {
-    L.marker(toLL(b), { icon: L.divIcon({ className: "", html: `<div class="mk-barraca ${b.pendente ? "pendente" : ""}">⛺</div>`, iconSize: [42, 42], iconAnchor: [21, 21] }), zIndexOffset: 2000 })
+    L.marker(toLL(b), { icon: L.divIcon({ className: "", html: `<div class="mk-barraca ${b.pendente ? "pendente" : ""}">⛺</div>`, iconSize: [32, 32], iconAnchor: [16, 16] }), zIndexOffset: 2000 })
       .bindTooltip(esc(b.nome) + (b.pendente ? " (pagando…)" : ""))
       .bindPopup(`<div class="pp-caixa" style="text-align:center"><b>${esc(b.nome)}</b><br>
         <button class="btn-papel verde" style="margin-top:6px;padding:10px 14px" onclick="barraca('ir','${esc(b.id)}')">🚶 Ir até a barraca</button><br>
@@ -490,7 +490,7 @@ function atualizarAnimais(lista) {
     vistos.add(String(a.id));
     const sexo = a.sexo === 0 ? " macho" : a.sexo === 1 ? " femea" : "";
     const cls = a.morto ? "mk-animal morto" : `mk-animal${sexo}${a.lendario ? " lendario" : ""}${(a.genetica || 0) >= 0.9 ? " dourado" : ""}${a.ao_vivo ? "" : " velho"}`;
-    const icone = L.divIcon({ className: "mov", html: `<div class="${cls}">${silhueta(a.grupo, a.especie)}${a.morto ? '<b class="mk-x">✕</b>' : ""}</div>`, iconSize: [27, 27], iconAnchor: [14, 14] });
+    const icone = L.divIcon({ className: "mov", html: `<div class="${cls}">${silhueta(a.grupo, a.especie)}${a.morto ? '<b class="mk-x">✕</b>' : ""}</div>`, iconSize: [24, 24], iconAnchor: [12, 12] });
     let m = marcAnimais[a.id];
     if (!m) {
       m = L.marker(toLL(a.pos), { icon: icone, riseOnHover: true });
