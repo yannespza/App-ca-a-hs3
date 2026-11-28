@@ -5,7 +5,8 @@
   "itens": [
    "Patos, gansos, marrecas e pombas agora têm zonas no mapa: no jogo elas são zonas de circulação (cor oliva).",
    "O ícone antigo do cão (verde, parado) saiu; fica só o que segue o Bob ao vivo.",
-   "Precisa reiniciar o jogo uma vez para as zonas das aves aparecerem."
+   "Precisa reiniciar o jogo uma vez para as zonas das aves aparecerem.",
+   "Correção de segurança: o mod não lê nem cria nada nos primeiros 60 s do jogo e a cada troca de mapa (menu, rancho, reserva). Os contratos do app aparecem na caixa do jogo ~1 min depois de entrar na reserva."
   ]
  },
  {

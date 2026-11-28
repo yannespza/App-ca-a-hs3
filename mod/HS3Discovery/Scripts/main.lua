@@ -57,7 +57,7 @@ end
 
 local function valid(o) return o ~= nil and o:IsValid() end
 local zonasFeitas = nil
-local calmoAte = 0     -- os.time(): até quando evitar leituras extras (mapa carregando / logo depois de viagem)
+local calmoAte = os.time() + 60   -- os.time(): até quando evitar leituras extras (jogo abrindo, mapa carregando, viagem)
 
 local seq = 0
 local function emit(kind, data)
@@ -73,7 +73,7 @@ end
 -- Listas dentro de listas (pontos de campo por mapa, reputação por mapa e vendedor) são lidas só a cada
 -- 10 s e guardadas como números: ler esse tipo de dado o tempo todo já fechou o jogo (ver mochila.lua).
 local lentos = { quando = 0, pontos_campo = nil, reputacao = nil }
-local caoCache = { obj = nil, nome = nil }     -- (precisa vir antes de readState)
+local caoCache = { nome = nil, ultimo = nil, tick = 0 }   -- só números/texto: nunca guardar objeto do jogo entre leituras
 local function readState()
     local s = { ok = false, ts = os.time() }
     local pc = FindFirstOf("HS3PlayerController")
@@ -164,18 +164,17 @@ local function readState()
     end)
     -- cão em campo (só leitura; sonda 28/11): posição, estado, raça, energia e nome
     pcall(function()
-        if os.time() <= calmoAte then return end
-        local c = caoCache.obj
-        if not (c and c:IsValid()) then
-            c = FindFirstOf("HS3CompanionPawn")
-            caoCache.obj, caoCache.nome = c, nil
-        end
-        if not (c and c:IsValid()) then return end
+        if os.time() <= calmoAte or not s.mapa or s.mapa:find("Hub") or s.mapa:find("Menu") then caoCache.ultimo = nil; return end
+        caoCache.tick = caoCache.tick + 1
+        if caoCache.tick % 2 == 0 and caoCache.ultimo then s.cao = caoCache.ultimo; return end   -- lê a cada 2 s
+        local c = FindFirstOf("HS3CompanionPawn")
+        if not (c and c:IsValid()) then caoCache.ultimo = nil; return end
         local t = c:K2_GetActorLocation()
-        s.cao = { x = t.X, y = t.Y, z = t.Z, estado = c.CompanionState, energia = c.CompanionEnergy }
-        pcall(function() s.cao.raca = c.CompanionBreed.TagName:ToString() end)
+        local cao = { x = t.X, y = t.Y, z = t.Z, estado = c.CompanionState, energia = c.CompanionEnergy }
+        pcall(function() cao.raca = c.CompanionBreed.TagName:ToString() end)
         if not caoCache.nome then pcall(function() caoCache.nome = c:GetCompanionName():ToString() end) end
-        s.cao.nome = caoCache.nome
+        cao.nome = caoCache.nome
+        caoCache.ultimo, s.cao = cao, cao
     end)
     s.ok = s.moedas ~= nil
     return s
@@ -876,9 +875,16 @@ local function lerContratosJogo()
 end
 
 local ultimoNivel = nil
+local nivelBruto = false
 local function periodic()
     ticks = ticks + 1
     local _, _, curto = currentLevel()
+    -- qualquer troca de mapa (menu, rancho, reserva): 60 s sem leituras extras enquanto o jogo carrega
+    if curto ~= nivelBruto then
+        nivelBruto = curto
+        if os.time() + 60 > calmoAte then calmoAte = os.time() + 60 end
+        caoCache.ultimo = nil
+    end
     -- o acampamento (Hub) e o menu não são reservas: nada de exportar mapa/pontos/névoa ali
     if curto and (curto:find("Hub") or curto:find("Menu")) then curto = nil end
     if curto and curto ~= ultimoNivel and FindFirstOf("HS3PlayerController") then
@@ -892,7 +898,8 @@ local function periodic()
         if f2 then f2:close() else pcall(iniciarCatalogo) end
     end
     if catalogo then pcall(passoCatalogo) end
-    if ticks % 2 == 0 then
+    -- (cria widgets do jogo: só numa reserva já carregada; criar objeto durante carregamento fecha o jogo)
+    if ticks % 2 == 0 and curto and os.time() > calmoAte and valid(FindFirstOf("HS3PlayerController")) then
         -- contratos do app na caixa de objetivos do jogo (Scripts\hud.lua, recarregado a cada vez)
         local f = io.open(DIR .. "hud.txt", "rb")
         if f then
@@ -925,7 +932,7 @@ local function periodic()
         pcall(exportPois)
     end
     -- sala de troféus: avisa quando aparece animal empalhado novo (o app tira print no PC)
-    if ticks % 45 == 20 and os.time() > calmoAte then
+    if nivelBruto and ticks % 45 == 20 and os.time() > calmoAte and valid(FindFirstOf("HS3PlayerController")) then
         pcall(function()
             local ch = loadfile(DIR .. "Scripts\\trofeus.lua")
             if not ch then return end
