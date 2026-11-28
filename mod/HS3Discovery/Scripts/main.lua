@@ -106,7 +106,7 @@ local function readState()
             end)
         end)
     end
-    local lerLentos = os.time() - lentos.quando >= 10
+    local lerLentos = os.time() - lentos.quando >= 10 and os.time() > calmoAte   -- listas dentro de listas: nunca durante carregamento
     if lerLentos and valid(store) then
         local pontos = {}
         pcall(function()
