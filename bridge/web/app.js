@@ -7,7 +7,10 @@ const dicaEspecies = (nome, l) => esc(`<b>${esc(nome)}</b> serve para ${l && l.l
 const dicaCaixa = document.createElement("div");
 dicaCaixa.className = "dica-flut";
 document.body.appendChild(dicaCaixa);
-document.addEventListener("mouseover", (e) => {
+// dica: passar o mouse (PC) ou tocar (celular)
+document.addEventListener("click", (e) => { if (e.target.closest && e.target.closest("[data-dica]")) mostrarDica(e); });
+document.addEventListener("mouseover", mostrarDica);
+function mostrarDica(e) {
   const el = e.target.closest && e.target.closest("[data-dica]");
   if (!el || !el.dataset.dica) { dicaCaixa.style.display = "none"; return; }
   dicaCaixa.innerHTML = el.dataset.dica;
@@ -16,7 +19,7 @@ document.addEventListener("mouseover", (e) => {
   let x = Math.min(Math.max(8, r.left), innerWidth - w - 8), y = r.bottom + 8;
   if (y + h > innerHeight - 8) y = r.top - h - 8;
   dicaCaixa.style.left = x + "px"; dicaCaixa.style.top = y + "px";
-});
+}
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const post = (url, body) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) }).then(r => r.json());
 
@@ -46,7 +49,7 @@ async function carregarZonas() {
   for (const z of lista) {
     if (!z.descoberta) continue;
     const [nome, cls] = TIPO_ZONA[z.tipo] || [z.tipo, "comer"];
-    L.marker(toLL(z), { icon: L.divIcon({ className: "", html: `<div class="mk-zona ${cls}">${silhueta(z.grupo || "outro")}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }) })
+    L.marker(toLL(z), { icon: L.divIcon({ className: "", html: `<div class="mk-zona ${cls}">${silhueta(z.grupo || "outro", z.especie)}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }) })
       .bindTooltip(`<b>${esc(z.especie_nome || "")}</b><br>Zona de ${nome.toLowerCase()}`)
       .bindPopup(() => popupZona(z, nome), { maxWidth: 300, autoPanPadding: [20, 60] })
       .on("click", () => marcarSeguindo(false))
@@ -59,7 +62,7 @@ function popupZona(z, nome) {
   const faixas = horas.length ? horas.map(h => `${String(h).padStart(2, "0")}h`).join(", ") : "ainda sem registro (marque animais aqui com o binóculo)";
   const bando = (z.bando_tipos || []).map(t => NOME_TIPO[t] || t);
   return `<div class="pop-zona">
-    <div class="pz-cab"><span class="mk-zona ${(TIPO_ZONA[z.tipo] || [])[1] || "comer"}">${silhueta(z.grupo || "outro")}</span>
+    <div class="pz-cab"><span class="mk-zona ${(TIPO_ZONA[z.tipo] || [])[1] || "comer"}">${silhueta(z.grupo || "outro", z.especie)}</span>
       <div><b>${esc(z.especie_nome || "")}</b><small>Zona de ${esc(nome.toLowerCase())} · raio ~${Math.round((z.raio || 0) / 100)} m</small></div></div>
     <div class="ficha-lin"><span>Bando nº</span><b>${z.bando ?? "–"}</b></div>
     <div class="ficha-lin"><span>Zonas do bando que você achou</span><b>${bando.length ? esc(bando.join(", ")) : "–"}</b></div>
@@ -315,7 +318,7 @@ function direcaoTexto(g) {
 function fichaAnimal(a) {
   const pot = a.potencial ?? a.genetica;
   return `<div class="ficha">
-    <div class="ficha-cab"><div class="ficha-sil">${silhueta(a.grupo)}</div>
+    <div class="ficha-cab"><div class="ficha-sil">${silhueta(a.grupo, a.especie)}</div>
       <div><div class="ficha-grupo">${esc(a.grupo_nome)}${a.lendario ? " · 👑 Lendário" : ""}</div>
       <div class="ficha-nome">${esc(a.especie_nome || a.grupo_nome)}</div>
       <div>${esc(a.sexo_nome)} · ${idadeTexto(a.idade_dias)}</div></div></div>
@@ -337,7 +340,7 @@ function atualizarAnimais(lista) {
     if (!a.pos) continue;
     vistos.add(String(a.id));
     const cls = `mk-animal${a.lendario ? " lendario" : ""}${a.ao_vivo ? "" : " velho"}`;
-    const icone = L.divIcon({ className: "", html: `<div class="${cls}">${silhueta(a.grupo)}</div>`, iconSize: [34, 34], iconAnchor: [17, 17] });
+    const icone = L.divIcon({ className: "", html: `<div class="${cls}">${silhueta(a.grupo, a.especie)}</div>`, iconSize: [34, 34], iconAnchor: [17, 17] });
     let m = marcAnimais[a.id];
     if (!m) {
       m = L.marker(toLL(a.pos), { icon: icone, riseOnHover: true });
@@ -756,11 +759,18 @@ async function renderArmario(forcar) {
       if (it.municoes) {
         const ruim = it.municoes.some(m => m.atual && !m.serve) || !it.municoes.some(m => m.atual);
         const carregada = it.municoes.find(m => m.atual);
-        mun = it.municoes.length ? `<label class="mo-municao ${ruim ? "ruim" : ""}" onclick="event.stopPropagation()" ${carregada ? `data-dica="${dicaEspecies(carregada.nome, carregada.especies)}"` : ""}><span>Munição</span>
-            <select ${pode ? "" : "disabled"} onchange="moAcao({acao:'municao',arma:'${esc(it.id)}',municao:this.value})">
-              ${it.municoes.some(m => m.atual) ? "" : `<option value="">— escolha —</option>`}
-              ${it.municoes.map(m => `<option value="${esc(m.id)}" ${m.atual ? "selected" : ""} title="${esc("Serve para: " + (m.especies || []).join(", "))}">${m.serve ? "✔" : "✖"} ${esc(m.nome)}${(m.cobre_nomes || []).length ? " — " + esc(m.cobre_nomes.join(", ")) : ""}${(m.ganha || []).length && (m.ganha || []).length < (m.cobre_nomes || []).length ? " (+" + esc(m.ganha.join(", ")) + ")" : ""}</option>`).join("")}
-            </select></label>` : `<div class="mo-aviso">Você não tem munição para esta arma</div>`;
+        // carrossel: ◀ munição ▶ (as espécies que ela serve aparecem passando o mouse ou tocando no nome)
+        const ms = it.municoes, k = Math.max(0, ms.findIndex(m => m.atual));
+        const vizinha = (passo) => ms[(k + passo + ms.length) % ms.length];
+        const atualM = ms.find(m => m.atual);
+        const nomeM = (m) => `${m.serve ? "✔" : "✖"} ${esc(m.nome)}${m.tem === false ? " · comprar" : ""}`;
+        mun = ms.length ? `<div class="mo-municao mo-carrossel ${ruim ? "ruim" : ""}" onclick="event.stopPropagation()">
+            <span>Munição</span>
+            <button class="mo-seta" ${pode && ms.length > 1 ? "" : "disabled"} title="${esc(vizinha(-1).nome)}" onclick="moAcao({acao:'municao',arma:'${esc(it.id)}',municao:'${esc(vizinha(-1).id)}'})">◀</button>
+            <b class="mo-mun-nome" tabindex="0" ${atualM ? `data-dica="${dicaEspecies(atualM.nome, atualM.especies)}"` : ""}>${atualM ? nomeM(atualM) : "— escolha —"}${(atualM?.cobre_nomes || []).length ? `<small>${esc(atualM.cobre_nomes.join(", "))}</small>` : ""}</b>
+            <button class="mo-seta" ${pode && ms.length > 1 ? "" : "disabled"} title="${esc(vizinha(atualM ? 1 : 0).nome)}" onclick="moAcao({acao:'municao',arma:'${esc(it.id)}',municao:'${esc(vizinha(atualM ? 1 : 0).id)}'})">▶</button>
+            <small class="mo-mun-n">${atualM ? k + 1 : 0}/${ms.length}</small></div>`
+          : `<div class="mo-aviso">Você não tem munição para esta arma</div>`;
       }
       const aces = (it.acessorios || []).length ? `<div class="mo-aces">${it.acessorios.map(e =>
           `<span class="${e.atual ? "tem" : ""}"><em>${esc(e.nome)}</em>${e.atual ? esc(e.atual_nome || "montado") : "nada"}</span>`).join("")}</div>` : "";
@@ -1036,7 +1046,7 @@ const chips = (l, cls = "") => (l || []).map(x => `<span class="chip ${cls}">${e
 const quando = (ts) => ts ? new Date(ts * 1000).toLocaleDateString("pt-BR") : "";
 
 function semFoto(i, cat, grande) {
-  if (cat === "animais") return silhueta(i.grupo || "outro");
+  if (cat === "animais") return silhueta(i.grupo || "outro", i.tag);
   const ic = { armas: "🎯", municao: "•", roupas: "🧥", itens: "🎒", caes: "🐕", guia: "📖" }[cat] || "?";
   return `<span class="ic-vazio${grande ? " g" : ""}">${ic}</span>`;
 }

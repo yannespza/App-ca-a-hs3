@@ -791,3 +791,21 @@ body.apk .so-apk { display: inline-flex !important; }
 .mk-barraca { width: 28px; height: 28px; border-radius: 8px; background: #3b2b18; border: 2px solid #d39a32; display: flex; align-items: center; justify-content: center; font-size: 16px; box-shadow: 0 1px 5px #000a; }
 .mk-barraca.pendente { opacity: .55; }
 #mapa.mira { cursor: crosshair; }
+
+/* carrossel de munição */
+.mo-carrossel { display: grid !important; grid-template-columns: auto 30px 1fr 30px auto; align-items: center; gap: 6px; }
+.mo-seta { width: 30px; height: 30px; border-radius: 7px; border: 1px solid var(--linha-2); background: #101916; color: var(--nevoa); cursor: pointer; font-size: 12px; }
+.mo-seta:disabled { opacity: .35; cursor: default; }
+.mo-mun-nome { text-align: center; font-size: 13px; color: var(--nevoa); line-height: 1.25; cursor: help; }
+.mo-mun-nome small { display: block; font-weight: 400; color: var(--liquen); font-size: 11.5px; }
+.mo-mun-n { color: var(--liquen); font-size: 11px; }
+.mo-carrossel.ruim .mo-mun-nome { color: #e08a6f; }
+@media (max-width: 820px) { .mo-carrossel { grid-template-columns: 34px 1fr 34px; } .mo-carrossel > span, .mo-mun-n { display: none; } .mo-seta { width: 34px; height: 34px; } }
+
+/* silhuetas por espécie (máscara: a cor vem do texto) */
+.sil-img { display: inline-block; width: 100%; height: 100%; min-width: 14px; min-height: 12px; background: currentColor;
+  -webkit-mask: var(--sil) center / contain no-repeat; mask: var(--sil) center / contain no-repeat; }
+.mk-zona .sil-img { width: 20px; height: 18px; color: #fff; }
+.mk-animal .sil-img { width: 24px; height: 22px; color: var(--nevoa); }
+.ficha-sil .sil-img { width: 100%; height: 100%; color: var(--nevoa); }
+.dm-foto .sil-img, .ic-vazio .sil-img { width: 80%; height: 80%; color: var(--liquen); }
