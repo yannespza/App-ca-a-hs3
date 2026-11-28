@@ -1,5 +1,13 @@
 [
  {
+  "id": "2026-11-28m",
+  "titulo": "Patente nova e modo noite corrigido",
+  "itens": [
+   "Patente recalculada: agora soma a reputação dos agentes de campo de todas as reservas (até 1000 cada, como no jogo) com os pontos do Earl. Ela sobe junto com os níveis dos agentes.",
+   "Modo noite: etiquetas verdes (Vestindo, serve, calibres, pressão baixa), avisos do mapa, ficha do animal, botão de fechar das janelas e menu do celular ficaram legíveis."
+  ]
+ },
+ {
   "id": "2026-11-28l",
   "titulo": "Pacote de ideias novas",
   "itens": [

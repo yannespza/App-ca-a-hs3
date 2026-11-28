@@ -1616,6 +1616,16 @@ class Companion:
 
     NIVEL_EARL, MAX_NIVEL_EARL = 200, 10
 
+    def reputacao_guardada(self, st):
+        """Última lista de reputação lida (todas as reservas). Fica salva para a patente não oscilar
+        enquanto o mod está no período calmo ou o jogo está fechado."""
+        rep = (st or {}).get("reputacao")
+        if rep:
+            if rep != self.dados.get("reputacao_ultima"):
+                self.dados["reputacao_ultima"] = rep
+            return rep
+        return self.dados.get("reputacao_ultima") or []
+
     def pontos_earl(self):
         """Pontos próprios do Earl (todas as reservas): a reputação de cada contrato dele que foi pago,
         menos a perda dos contratos abortados. Entram na patente no recálculo final."""
@@ -2399,7 +2409,7 @@ class Companion:
                 "abates": self.dados["abates"][-30:][::-1],
                 "estatisticas": self.estatisticas(),
                 "npc": missoes.NPC,
-                "patente": extras.patente(self.dados["abates"], lista),
+                "patente": extras.patente(self.reputacao_guardada(st), earl["valor"], {t for t, _ in AGENTES}),
                 "aviso_teleporte": self.aviso_teleporte,
                 "config": {"voltar_ao_ultimo_local": self.cfg.get("voltar_ao_ultimo_local"),
                            "contratos_no_jogo": self.cfg.get("contratos_no_jogo", True)},

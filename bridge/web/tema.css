@@ -278,3 +278,20 @@ body.noite .num:first-child b { color: var(--ouro); }
 body.noite .topo .num { border-color: #c9b48a; }
 body.noite .of-fala, body.noite .npc-funcao, body.noite .item-sub { color: var(--liquen); }
 body.noite .topo .btn { color: #ecdcb8 !important; }
+
+/* modo noite: etiquetas verdes/vermelhas e avisos com cor fixa ficavam apagados no fundo escuro */
+body.noite .item-tag, body.noite .dm-tem, body.noite .mo-selo.sim, body.noite .mj-chip.verde,
+body.noite .kit-cal:not(.sem) { background: #3f6b26; color: #e3f2c8; }
+body.noite .kit-cal:not(.sem) small { color: #d2e6b0; }
+body.noite .mo-selo.nao { background: #6b2a1d; color: #ffd2c4; }
+body.noite .mo-selo.rec, body.noite .item-tag.latao { background: #5c481c; color: #ffe08a; }
+body.noite .item-tag.cinza { background: var(--papel-3); color: var(--tinta-2); }
+body.noite .kit-ruim { color: #ff9a66; }
+body.noite .mj-chip { background: rgba(236,220,184,.12); color: var(--tinta); }
+body.noite .hud-item, body.noite .mapa-aviso { background: rgba(36,25,18,.96) !important; color: var(--tinta) !important; border-color: #c9b48a !important; box-shadow: 4px 4px 0 #0e0906; }
+body.noite .mapa-aviso * { color: inherit; }
+body.noite .mo-x { background: linear-gradient(#3e2d20, #2a1d14) !important; color: var(--tinta) !important; border-color: #c9b48a !important; }
+body.noite .ficha { background: rgba(36,25,18,.97); color: var(--tinta); border-color: #c9b48a; }
+body.noite .ficha-rod { color: var(--tinta-2); }
+body.noite .mo-check, body.noite .mo-jan-rodape .ok { color: #fff3dc; }
+@media (max-width: 900px) { body.noite .trilho { background: rgba(18,12,8,.97); } }

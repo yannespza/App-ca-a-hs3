@@ -2,7 +2,7 @@
 // Funciona com clique (PC) e toque (celular). Os textos ficam todos aqui.
 const AJUDA = {
   creditos: ["Créditos", "O dinheiro do jogo, lido ao vivo. Os contratos do Earl pagam em créditos direto no jogo."],
-  patente: ["Patente", "Seu nível no app. Sobe com animais abatidos (vale mais quem tem genética alta e tiro longo) e com contratos concluídos."],
+  patente: ["Patente", "Seu nível no app. Soma a reputação dos agentes de campo de todas as reservas (até 1000 cada, como no jogo) com os pontos do Earl. Sobe junto com os níveis dos agentes."],
   reputacao: ["Reputação na reserva", "A reputação com o vendedor da reserva em que você está. Os contratos do Earl também dão reputação."],
   campo: ["Pontos de campo", "Pontos da reserva atual que o jogo dá ao explorar e caçar. Servem para desbloquear coisas na loja da reserva."],
   atualizar: ["Procurar atualização", "Procura uma versão nova do app na internet. Se tiver, baixa, troca o programa e o mod e reabre sozinho. Depois feche e abra o jogo uma vez."],

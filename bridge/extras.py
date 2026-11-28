@@ -11,8 +11,9 @@ PARTES = {
 STATS = [("VisualDetectionFactor", "visual"), ("SoundDetectionFactor", "som"), ("SmellDetectionFactor", "cheiro"),
          ("SprintSpeedFactor", "corrida")]
 
-PATENTES = [(0, "Novato"), (1000, "Aprendiz"), (3000, "Mateiro"), (6000, "Rastreador"), (10000, "Caçador"),
-            (16000, "Veterano"), (25000, "Mestre caçador"), (40000, "Lenda do Texas")]
+# patente = reputação dos agentes de todas as reservas (cada um até 1000) + pontos do Earl
+PATENTES = [(0, "Novato"), (400, "Aprendiz"), (900, "Mateiro"), (1600, "Rastreador"), (2500, "Caçador"),
+            (3600, "Veterano"), (5000, "Mestre caçador"), (7000, "Lenda do Texas")]
 
 
 def ler(path, padrao):
@@ -178,8 +179,19 @@ def pontos_abate(a):
     return max(10, p)
 
 
-def patente(abates, missoes):
-    pts = sum(pontos_abate(a) for a in abates) + 250 * sum(1 for m in missoes if m.get("status") in ("concluida", "paga"))
+def patente(reputacoes, earl_pts, agentes_validos):
+    """Soma a reputação de cada agente de campo em cada reserva (até 1000 por agente, como no jogo)
+    com os pontos do Earl. Assim a patente anda junto com os níveis dos agentes."""
+    vistos, pts = set(), 0
+    for r in reputacoes or []:
+        if not isinstance(r, dict) or r.get("vendedor") not in agentes_validos:
+            continue
+        chave = (r.get("mapa"), r.get("vendedor"))
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        pts += min(1000, max(0, int(r.get("valor") or 0)))
+    pts += max(0, int(earl_pts or 0))
     atual, prox = PATENTES[0], None
     for i, (minimo, nome) in enumerate(PATENTES):
         if pts >= minimo:

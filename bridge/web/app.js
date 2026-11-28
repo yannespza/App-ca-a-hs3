@@ -911,7 +911,7 @@ function renderReputacao() {
   const e = earlDados;
   const html = (agentesDados.length ? `<div class="rep-sec">Agentes desta reserva</div>${agentesDados.map(a => ag(a)).join("")}` : `<p class="vazio">Entre numa reserva para ver os agentes.</p>`)
     + (e ? `<div class="rep-sec" style="margin-top:12px">Earl · todas as reservas</div>${ag(Object.assign({}, e, { nome: "Earl Whitaker" }), `${e.contratos} contrato${e.contratos === 1 ? "" : "s"} pago${e.contratos === 1 ? "" : "s"}`)}` : "")
-    + `<p class="sub" style="margin-top:10px">Cada nível dos agentes pede 200 pontos (até 1000). O Earl ganha pontos com os contratos dele e perde quando você aborta. No fim, a patente soma tudo.</p>`;
+    + `<p class="sub" style="margin-top:10px">Cada nível dos agentes pede 200 pontos (até 1000). O Earl ganha pontos com os contratos dele e perde quando você aborta. A patente soma os agentes de todas as reservas e o Earl.</p>`;
   if (el.innerHTML !== html) el.innerHTML = html;
 }
 function alternarNoite(forcar) {
@@ -941,7 +941,7 @@ function abrirAgentesAntigo() {
       <button class="mo-x" onclick="moFecharModal()">✕</button></header>
     <div class="mo-jan-corpo ag-lista">${linhas || "<p>Entre numa reserva para ver a reputação dos agentes.</p>"}
     <p class="mo-dica">Cada nível pede 200 pontos (até 1000). Os contratos do Earl dizem antes de aceitar qual agente recebe os pontos.</p>
-    ${linhaEarl}<p class="mo-dica">O Earl também ganha pontos com cada contrato dele que você completa (abortar tira). No fim, a patente vai somar os agentes de todas as reservas e o Earl.</p></div>`);
+    ${linhaEarl}<p class="mo-dica">O Earl também ganha pontos com cada contrato dele que você completa (abortar tira). A patente soma os agentes de todas as reservas (até 1000 cada) e o Earl.</p></div>`);
 }
 const moMunSel = {};   // munição escolhida no carrossel (ainda não mandada para o jogo), por arma
 function moMunPassar(arma, n, passo, k) { moMunSel[arma] = (k + passo + n) % n; renderArmario(true); }
