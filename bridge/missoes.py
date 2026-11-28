@@ -609,7 +609,7 @@ AVES = ("pato", "ganso", "faisao", "codorna", "pomba", "peru")
 
 ORGAOS = [("heart", "Coração"), ("lung", "Pulmão"), ("brain", "Cérebro"), ("spin", "Coluna"), ("neck", "Pescoço"),
           ("liver", "Fígado"), ("kidney", "Rim"), ("stomach", "Estômago"), ("intestin", "Intestino"), ("bowel", "Intestino"),
-          ("artery", "Artéria"), ("aorta", "Artéria"), ("bone", "Osso"), ("muscle", "Músculo"), ("flesh", "Carne"), ("leg", "Perna"),
+          ("artery", "Artéria"), ("aorta", "Artéria"), ("bone", "Osso"), ("muscle", "Músculo"), ("flesh", "Carne"), ("rib", "Costelas"), ("leg", "Perna"),
           ("head", "Cabeça"), ("jaw", "Mandíbula")]
 VITAIS = ("heart", "lung", "brain", "spin", "artery", "aorta")
 

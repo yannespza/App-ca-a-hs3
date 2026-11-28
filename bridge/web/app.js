@@ -795,7 +795,7 @@ async function atualizar() {
   $("ultimos").innerHTML = d.abates.length ? `<table class="tabela"><thead><tr><th>Animal</th><th>Peso</th><th>Troféu</th><th>Genética</th><th>Distância</th><th>Morte</th><th>Órgãos</th><th>Arma</th><th>Reserva</th></tr></thead><tbody>` +
     d.abates.slice(0, 15).map(a => `<tr><td><b>${esc(a.especie_nome || a.grupo_nome)}</b>${a.sexo_nome && a.sexo_nome !== "?" ? ` <small>${esc(a.sexo_nome)}</small>` : ""}</td>
       <td>${a.peso_kg ? `${a.peso_kg.toFixed(1).replace(".", ",")} kg` : "–"}</td>
-      <td>${a.pontos_trofeu ? `${a.pontos_trofeu.toFixed(1).replace(".", ",")}${a.lendario ? " ★" : ""}` : "–"}</td>
+      <td>${a.pontos_trofeu ? `${a.pontos_trofeu.toFixed(1).replace(".", ",")}${a.lendario ? ` <span title="Pelagem rara / lendário">★</span>` : ""}` : "–"}</td>
       <td>${pct(a.genetica)}</td><td>${metros(a.distancia_m)}</td>
       <td title="Tempo entre o tiro e a morte">${a.segundos_ate_morte != null ? `${a.segundos_ate_morte < 10 ? a.segundos_ate_morte.toFixed(1).replace(".", ",") : Math.round(a.segundos_ate_morte)} s` : "–"}</td>
       <td class="${a.vital ? "orgao-vital" : ""}" title="${a.vital ? "Acertou órgão vital" : ""}">${a.orgaos_nome && a.orgaos_nome.length ? esc(a.orgaos_nome.join(", ")) : "–"}</td><td>${esc((a.arma || "").replace(/^ID_/, "").replace(/_/g, " "))}</td><td>${esc(a.reserva ? nomeMapa(a.reserva) : "–")}</td></tr>`).join("") + `</tbody></table>`
