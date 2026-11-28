@@ -18,7 +18,6 @@ NPC = {
     "frase": "O vento não mente, garoto. Quem mente é caçador apressado.",
 }
 
-ESTADOS_CALMOS = {1, 2, 4, 256, 512}   # parado, vagando, andando, comendo, dormindo
 # o jogo junta o estado com outras marcas (bits acima de 4096). Contam só os 12 bits de baixo:
 # fugindo 8, espreitando 16, atacando 32, investida 64, investigando 1024, acuado 2048 = percebeu você
 ESTADOS_ALERTA = 8 | 16 | 32 | 64 | 1024 | 2048

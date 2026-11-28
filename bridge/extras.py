@@ -161,24 +161,6 @@ def loja_equipamentos(catalogo, comprados, na_mochila, icones=None):
     return saida
 
 
-def pontos_abate(a):
-    p = 100 + int((a.get("genetica") or 0) * 150) + int((a.get("distancia_m") or 0) / 5)
-    if a.get("calibre_compativel") is True:
-        p += 50
-    elif a.get("calibre_compativel") is False:
-        p -= 150
-    e = a.get("estado_animal")
-    if isinstance(e, int) and e >= 0 and not (e & 4095 & (8 | 16 | 32 | 64 | 1024 | 2048)):
-        p += 60
-    if a.get("atraido"):
-        p += 30
-    if a.get("torre") is False:
-        p += 20
-    if (a.get("tiros") or 1) == 1:
-        p += 40
-    return max(10, p)
-
-
 def patente(reputacoes, earl_pts, agentes_validos):
     """Soma a reputação de cada agente de campo em cada reserva (até 1000 por agente, como no jogo)
     com os pontos do Earl. Assim a patente anda junto com os níveis dos agentes."""

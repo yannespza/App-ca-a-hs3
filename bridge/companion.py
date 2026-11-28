@@ -1,8 +1,18 @@
-"""HS3 Companion - ponte entre o mod UE4SS do Hunting Simulator 3 e o app.
+"""Painel do Caçador HS3 - ponte entre o mod UE4SS do Hunting Simulator 3 e o app.
 
-Lê state.json e events.jsonl gravados pelo mod, gera e valida missões,
-paga recompensas escrevendo comandos em cmd.txt e serve o app em http://localhost.
-Só usa a biblioteca padrão do Python.
+Lê state.json, events.jsonl e os outros arquivos gravados pelo mod, gera e confere os contratos,
+paga recompensas escrevendo comandos em cmd.txt e serve o app (bridge/web) na rede da casa.
+Só usa a biblioteca padrão do Python (+ certifi; Pillow só para o print do troféu no Windows).
+
+Mapa deste arquivo (procure pelos títulos "# ---"):
+  caminhos, catálogo, persistência, geometria, missões, atualização automática (Atualizador)
+  Companion: instalação · arquivos do mod · processamento de eventos (marcado, peso, abate) · missões
+             pinos · dicas do Earl · voltar ao último local · armário/loja/enciclopédia · contratos do jogo
+             tempo real (estruturas, munição, alvejados) · card da semana · sessão · agenda
+             barracas · setups da mochila · ciclo (o laço de 1 s)
+  Handler: rotas HTTP (GET /api/..., POST /api/...)
+Outros módulos: missoes.py (gerador e regras dos contratos), manejo.py (censo, plano, índice),
+extras.py (loja, mochila, patente), mapa.py (pontos do mapa), instalador.py, imagens.py.
 """
 import hmac
 import gzip
@@ -302,7 +312,6 @@ def direcao(jogador, alvo, yaw):
 
 
 # ------------------------------------------------------------------ missões
-ESTADOS_CALMOS = {1, 2, 4, 256, 512}   # parado, vagando, andando, comendo, dormindo
 
 
 def nome_grupo(chave):
@@ -919,6 +928,29 @@ class Companion:
         return True
 
     # --- processamento de eventos
+    @staticmethod
+    def faixa_peso(id_, real):
+        """Peso só como faixa estimada (~15%): o mesmo desvio para o mesmo animal; o peso exato não fica guardado."""
+        r = random.Random(f"peso{id_}")
+        lo = real * (1 - r.uniform(0.02, 0.13))
+        casas = 1 if real < 5 else 0
+        return [round(lo, casas), round(lo * 1.15, casas)]
+
+    def aplicar_peso(self, m, real, ant):
+        """Atualiza a faixa de peso. Os animais crescem: se o peso mudou desde a última leitura, a faixa
+        anterior vai para peso_hist (dia do jogo e idade), e o card mostra quanto mudou."""
+        if not isinstance(real, (int, float)) or real <= 0:
+            return False
+        nova = self.faixa_peso(m.get("id"), real)
+        velha = (ant or {}).get("peso_faixa")
+        hist = list((ant or {}).get("peso_hist") or [])
+        if velha and abs(nova[0] - velha[0]) / max(0.1, velha[0]) >= 0.02:
+            hist.append({"faixa": velha, "dia": (ant or {}).get("peso_dia"), "idade_dias": (ant or {}).get("idade_dias")})
+            m["peso_hist"] = hist[-4:]
+        m["peso_faixa"] = nova
+        m["peso_dia"] = self.dados.get("dia_jogo", 0)
+        return nova != velha
+
     def registrar_grupo(self, chave):
         if chave and chave not in self.dados["grupos_vistos"]:
             self.dados["grupos_vistos"].append(chave)
@@ -929,29 +961,19 @@ class Companion:
         if tipo == "peso_marcado":
             # o peso chegou depois (o binóculo marcou durante o período calmo do mod)
             m = d["marcados"].get(str(ev.get("id")))
-            real = ev.get("peso_kg")
-            if m and isinstance(real, (int, float)) and real > 0 and not m.get("peso_faixa"):
-                r = random.Random(f"peso{ev.get('id')}")
-                lo = real * (1 - r.uniform(0.02, 0.13))
-                casas = 1 if real < 5 else 0
-                m["peso_faixa"] = [round(lo, casas), round(lo * 1.15, casas)]
+            if m and self.aplicar_peso(m, ev.get("peso_kg"), m):
                 self.salvar_pendente = True
             return []
         if tipo == "marcado":
-            # peso: só uma faixa estimada (~15%), sempre a mesma para o mesmo animal; o peso exato não fica guardado
             real = ev.pop("peso_kg", None)
-            if isinstance(real, (int, float)) and real > 0:
-                r = random.Random(f"peso{ev.get('id')}")
-                lo = real * (1 - r.uniform(0.02, 0.13))
-                hi = lo * 1.15
-                casas = 1 if real < 5 else 0
-                ev["peso_faixa"] = [round(lo, casas), round(hi, casas)]
             chave, nome = grupo_de(ev.get("especie"))
             ev.update({"grupo": chave, "grupo_nome": nome, "especie_nome": nome_especie(ev.get("especie")),
                        "sexo_nome": SEXO.get(ev.get("sexo"), "?"), "visto_em": time.time(), "reserva": self.nivel()})
             ant = d["marcados"].get(str(ev.get("id"))) or {}
-            if not ev.get("peso_faixa") and ant.get("peso_faixa"):      # remarcado sem peso: mantém a faixa que já tinha
-                ev["peso_faixa"] = ant["peso_faixa"]
+            for k in ("peso_faixa", "peso_hist", "peso_dia"):        # remarcado sem peso: mantém o que já tinha
+                if ant.get(k):
+                    ev[k] = ant[k]
+            self.aplicar_peso(ev, real, ant)
             novo = str(ev.get("id")) not in d["marcados"]
             if novo and ev.get("especie"):
                 d["especies_vistas"][ev["especie"]] = d["especies_vistas"].get(ev["especie"], 0) + 1
@@ -1392,130 +1414,6 @@ class Companion:
                 avaliar_missoes(d, {"tipo": "carcaca_recolhida", "id": id_, "ts": time.time()}, reserva)
                 self.salvar_pendente = True
 
-    @staticmethod
-    def tipo_estrutura(e):
-        """Classe do jogo + altura do caçador lá dentro -> torre (elevada) ou esconderijo (no chão / de pato)."""
-        cl = (e or {}).get("classe") or ""
-        if "Duck" in cl:
-            return "esconderijo"
-        alt = (e or {}).get("altura_m")
-        if isinstance(alt, (int, float)) and alt >= 2.5:
-            return "torre"
-        return "esconderijo"
-
-    def anotar_estrutura(self):
-        """Guarda onde e em que tipo de estrutura você esteve (o abate só chega ao recolher, bem depois do tiro)."""
-        e = (self.estado or {}).get("estrutura")
-        pos = (self.estado or {}).get("pos")
-        if not e or not pos or not self.em_reserva():
-            self.na_estrutura = None
-            return
-        tipo = self.tipo_estrutura(e)
-        self.na_estrutura = {"tipo": tipo, "classe": e.get("classe"), "altura_m": e.get("altura_m")}
-        hist = self.dados.setdefault("estruturas_usadas", [])
-        ult = hist[-1] if hist else None
-        if ult and ult.get("reserva") == self.nivel() and distancia_m(pos, {"x": ult["x"], "y": ult["y"], "z": pos.get("z", 0)}) < 15:
-            ult["ate"] = time.time()
-            return
-        hist.append({"tipo": tipo, "classe": e.get("classe"), "x": pos["x"], "y": pos["y"], "reserva": self.nivel(),
-                     "de": time.time(), "ate": time.time()})
-        del hist[:-60]
-        self.salvar_pendente = True
-
-    def estrutura_do_tiro(self, ab):
-        """Tipo da estrutura de onde saiu o tiro: a que você usou mais perto da origem do tiro."""
-        if ab.get("torre") is not True:
-            return None
-        o = ab.get("origem")
-        melhor, md = None, 25
-        for h in self.dados.get("estruturas_usadas", []):
-            if not isinstance(o, dict) or h.get("reserva") != ab.get("reserva"):
-                continue
-            dd = distancia_m({"x": o["x"], "y": o["y"], "z": 0}, {"x": h["x"], "y": h["y"], "z": 0})
-            if dd is not None and dd < md:
-                melhor, md = h, dd
-        return melhor["tipo"] if melhor else "estrutura"
-
-    def zonas_cansadas(self):
-        nv = self.nivel()
-        if not nv:
-            return []
-        if time.time() - getattr(self, "_cansadas_ts", 0) < 20 and getattr(self, "_cansadas_nv", None) == nv:
-            return self._cansadas
-        abates = [a for a in self.dados.get("abates") or [] if a.get("reserva") == nv]
-        try:
-            self._cansadas = manejo.zonas_cansadas(abates, self.zonas(), self.dados.get("dia_jogo", 0), dist=distancia_m)
-        except Exception as e:
-            print("zonas cansadas:", e)
-            self._cansadas = []
-        self._cansadas_ts, self._cansadas_nv = time.time(), nv
-        return self._cansadas
-
-    def proximos_movimentos(self, tags=None):
-        """O que fazer agora: zonas que você conhece onde o bando costuma estar nas próximas 3 horas do jogo."""
-        h = (self.estado or {}).get("hora")
-        pos = (self.estado or {}).get("pos")
-        if not isinstance(h, (int, float)) or not self.em_reserva():
-            return []
-        out = {}
-        for z in self.zonas():
-            if not z.get("descoberta") or not z.get("horas") or (tags and z.get("especie") not in tags):
-                continue
-            futuras = [((x - h) % 24) for x in z["horas"]]
-            falta = min(futuras)
-            if falta > 3:
-                continue
-            dist = distancia_m(pos, {"x": z["x"], "y": z["y"], "z": 0}) if pos else None
-            k = (z.get("especie"), z.get("tipo"))
-            if k not in out or (falta, dist or 1e9) < (out[k]["falta_h"], out[k]["dist"] or 1e9):
-                out[k] = {"especie": z.get("especie"), "especie_nome": z.get("especie_nome"), "tipo": z.get("tipo"),
-                          "falta_h": round(falta, 1), "hora": int((h + falta) % 24), "dist": round(dist) if dist else None,
-                          "x": z["x"], "y": z["y"]}
-        return sorted(out.values(), key=lambda a: (a["falta_h"], a["dist"] or 1e9))[:5]
-
-    def municao_baixa(self):
-        """Armas da mochila com menos de um pente de reserva (lido do jogo a cada 15 s)."""
-        if not self.em_reserva():
-            return []
-        eq = self.equipamento() or {}
-        out = []
-        for r in eq.get("municao") or []:
-            if not isinstance(r, dict) or r.get("Spare") is None:
-                continue
-            reserva = int(r.get("Spare") or 0)
-            na_arma = int(r.get("Amount") or 0) + int(r.get("Chamber") or 0)
-            pente = int(r.get("Size") or 0) or 5
-            if reserva < pente:
-                nome = re.sub(r"_C$", "", str(r.get("arma") or "")).replace("ID_", "").replace("_", " ").strip()
-                out.append({"arma": nome, "reserva": reserva, "na_arma": na_arma, "max": r.get("max")})
-        return out
-
-    def alvejados(self):
-        """Animais que levaram tiro seu neste mapa (alvejados.json, gravado pelo mod), por id."""
-        arq = self.cache.json(self.caminho("alvejados.json"), None)
-        if not isinstance(arq, dict) or not isinstance(arq.get("lista"), list):
-            return {}
-        if self.nivel() and arq.get("mapa") and arq["mapa"] not in self.nivel() and self.nivel() not in arq["mapa"]:
-            return {}
-        return {str(a.get("id")): a for a in arq["lista"] if isinstance(a, dict)}
-
-    @staticmethod
-    def situacao_alvejado(a, abatidos_ids):
-        """Resumo para o card: fatal (morreu) ou ferido (vivo), com tiros e órgãos atingidos."""
-        orgaos = []
-        for o in a.get("orgaos") or []:
-            n = missoes.nome_orgao(o)
-            if n and n not in orgaos:
-                orgaos.append(n)
-        vital = missoes.acertou_vital(a.get("orgaos"))
-        if a.get("morto") or a.get("vivo") is False or str(a.get("id")) in abatidos_ids:
-            estado = "fatal"
-        elif a.get("vivo"):
-            estado = "ferido"
-        else:
-            estado = "incerto"
-        return {"estado": estado, "tiros": int(a.get("tiros") or 0), "orgaos": orgaos[:5], "vital": vital}
-
     def arma_tem_luneta(self, arma):
         try:
             mun = (self.cache.json(self.caminho("armas.json"), None) or {}).get("municao") or {}
@@ -1611,50 +1509,6 @@ class Companion:
             p["agora"] = self.proximos_movimentos(tags) or self.proximos_movimentos()
             return p
 
-    def card_semana(self):
-        """Resumo dos últimos 7 dias do jogo nesta reserva, para a imagem de divulgação."""
-        with self.lock:
-            nv = self.nivel() if self.em_reserva() else None
-            if not nv:
-                nv = next((a.get("reserva") for a in reversed(self.dados.get("abates") or []) if a.get("reserva")), None)
-            dia = self.dados.get("dia_jogo", 0)
-            p = manejo.painel(self.dados, nv, nome_especie, grupo_de)
-            ab = [a for a in self.dados.get("abates") or [] if a.get("reserva") == nv
-                  and isinstance(a.get("dia_jogo"), int) and dia - a["dia_jogo"] < 7]
-            melhor = max(ab, key=lambda a: a.get("pontos_trofeu") or 0, default=None)
-            esp = {}
-            for a in ab:
-                esp[a.get("especie_nome") or a.get("grupo_nome") or "?"] = esp.get(a.get("especie_nome") or a.get("grupo_nome") or "?", 0) + 1
-            pat = (self.estado_cache_patente() or {})
-            return {"reserva": nv, "dia": dia, "abates": len(ab), "limpos": sum(1 for a in ab if (a.get("tiros") or 1) == 1),
-                    "vitais": sum(1 for a in ab if a.get("vital")),
-                    "avistados": sum(x["avistados"] for x in p["semana"]), "indice": p["indice"].get("valor"), "selo": p["indice"].get("selo"),
-                    "especies": sorted(esp.items(), key=lambda x: -x[1])[:5],
-                    "melhor": {"especie": melhor.get("especie_nome"), "pontos": melhor.get("pontos_trofeu"), "peso_kg": melhor.get("peso_kg"),
-                               "genetica": melhor.get("genetica")} if melhor and melhor.get("pontos_trofeu") else None,
-                    "patente": pat.get("patente"), "semana": p["semana"]}
-
-    def estado_cache_patente(self):
-        try:
-            earl = self.pontos_earl()
-            return extras.patente(self.reputacao_guardada(self.estado), earl["valor"], {t for t, _ in AGENTES})
-        except Exception:
-            return None
-
-    def salvar_card(self, data_url, nome):
-        import base64
-        if not isinstance(data_url, str) or not data_url.startswith("data:image/png;base64,"):
-            return {"ok": False, "erro": "Imagem inválida."}
-        bruto = base64.b64decode(data_url.split(",", 1)[1])
-        if len(bruto) > 8_000_000:
-            return {"ok": False, "erro": "Imagem grande demais."}
-        pasta = os.path.join(BASE_DIR, "Divulgacao")
-        os.makedirs(pasta, exist_ok=True)
-        nome = re.sub(r"[^\w\-]+", "-", str(nome or "card-semana"))[:60] + ".png"
-        with open(os.path.join(pasta, nome), "wb") as f:
-            f.write(bruto)
-        return {"ok": True, "arquivo": os.path.join("Divulgacao", nome)}
-
     def vigiar_queda(self, x, y, z):
         if z is not None:
             self._vigia = {"x": x, "y": y, "z": z, "ate": time.time() + 40, "n": 0, "ultimo": time.time()}
@@ -1724,7 +1578,8 @@ class Companion:
         return self.cache.json(self.caminho("catalogo_v2.json"), [])
 
     def equipamento(self):
-        return self.cache.json(self.caminho("equipamento.json"), {})
+        e = self.cache.json(self.caminho("equipamento.json"), {})
+        return e if isinstance(e, dict) else {}       # arquivo pela metade (o mod gravando) vira lista/None
 
     def tabela_calibres(self):
         """Tabela espécie × calibre do jogo. Cada reserva exporta só o que carregou, então o app junta tudo
@@ -1851,6 +1706,176 @@ class Companion:
                 "proximo": None if topo else (nv + 1) * self.NIVEL_EARL,
                 "progresso": 1.0 if topo else (v - nv * self.NIVEL_EARL) / self.NIVEL_EARL,
                 "contratos": sum(1 for m in self.dados.get("missoes") or [] if m.get("status") == "paga")}
+
+    # ------------------------------------------------------------ tempo real: estruturas, munição, alvejados
+    @staticmethod
+    def tipo_estrutura(e):
+        """Classe do jogo + altura do caçador lá dentro -> torre (elevada) ou esconderijo (no chão / de pato)."""
+        cl = (e or {}).get("classe") or ""
+        if "Duck" in cl:
+            return "esconderijo"
+        alt = (e or {}).get("altura_m")
+        if isinstance(alt, (int, float)) and alt >= 2.5:
+            return "torre"
+        return "esconderijo"
+
+    def anotar_estrutura(self):
+        """Guarda onde e em que tipo de estrutura você esteve (o abate só chega ao recolher, bem depois do tiro)."""
+        e = (self.estado or {}).get("estrutura")
+        pos = (self.estado or {}).get("pos")
+        if not e or not pos or not self.em_reserva():
+            self.na_estrutura = None
+            return
+        tipo = self.tipo_estrutura(e)
+        self.na_estrutura = {"tipo": tipo, "classe": e.get("classe"), "altura_m": e.get("altura_m")}
+        hist = self.dados.setdefault("estruturas_usadas", [])
+        ult = hist[-1] if hist else None
+        if ult and ult.get("reserva") == self.nivel() and distancia_m(pos, {"x": ult["x"], "y": ult["y"], "z": pos.get("z", 0)}) < 15:
+            ult["ate"] = time.time()
+            return
+        hist.append({"tipo": tipo, "classe": e.get("classe"), "x": pos["x"], "y": pos["y"], "reserva": self.nivel(),
+                     "de": time.time(), "ate": time.time()})
+        del hist[:-60]
+        self.salvar_pendente = True
+
+    def estrutura_do_tiro(self, ab):
+        """Tipo da estrutura de onde saiu o tiro: a que você usou mais perto da origem do tiro."""
+        if ab.get("torre") is not True:
+            return None
+        o = ab.get("origem")
+        melhor, md = None, 25
+        for h in self.dados.get("estruturas_usadas", []):
+            if not isinstance(o, dict) or h.get("reserva") != ab.get("reserva"):
+                continue
+            dd = distancia_m({"x": o["x"], "y": o["y"], "z": 0}, {"x": h["x"], "y": h["y"], "z": 0})
+            if dd is not None and dd < md:
+                melhor, md = h, dd
+        return melhor["tipo"] if melhor else "estrutura"
+
+    def zonas_cansadas(self):
+        nv = self.nivel()
+        if not nv:
+            return []
+        if time.time() - getattr(self, "_cansadas_ts", 0) < 20 and getattr(self, "_cansadas_nv", None) == nv:
+            return self._cansadas
+        abates = [a for a in self.dados.get("abates") or [] if a.get("reserva") == nv]
+        try:
+            self._cansadas = manejo.zonas_cansadas(abates, self.zonas(), self.dados.get("dia_jogo", 0), dist=distancia_m)
+        except Exception as e:
+            print("zonas cansadas:", e)
+            self._cansadas = []
+        self._cansadas_ts, self._cansadas_nv = time.time(), nv
+        return self._cansadas
+
+    def proximos_movimentos(self, tags=None):
+        """O que fazer agora: zonas que você conhece onde o bando costuma estar nas próximas 3 horas do jogo."""
+        h = (self.estado or {}).get("hora")
+        pos = (self.estado or {}).get("pos")
+        if not isinstance(h, (int, float)) or not self.em_reserva():
+            return []
+        out = {}
+        for z in self.zonas():
+            if not z.get("descoberta") or not z.get("horas") or (tags and z.get("especie") not in tags):
+                continue
+            futuras = [((x - h) % 24) for x in z["horas"]]
+            falta = min(futuras)
+            if falta > 3:
+                continue
+            dist = distancia_m(pos, {"x": z["x"], "y": z["y"], "z": 0}) if pos else None
+            k = (z.get("especie"), z.get("tipo"))
+            if k not in out or (falta, dist or 1e9) < (out[k]["falta_h"], out[k]["dist"] or 1e9):
+                out[k] = {"especie": z.get("especie"), "especie_nome": z.get("especie_nome"), "tipo": z.get("tipo"),
+                          "falta_h": round(falta, 1), "hora": int((h + falta) % 24), "dist": round(dist) if dist else None,
+                          "x": z["x"], "y": z["y"]}
+        return sorted(out.values(), key=lambda a: (a["falta_h"], a["dist"] or 1e9))[:5]
+
+    def municao_baixa(self):
+        """Armas da mochila com menos de um pente de reserva (lido do jogo a cada 15 s)."""
+        if not self.em_reserva():
+            return []
+        eq = self.equipamento() or {}
+        out = []
+        for r in eq.get("municao") or []:
+            if not isinstance(r, dict) or r.get("Spare") is None:
+                continue
+            reserva = int(r.get("Spare") or 0)
+            na_arma = int(r.get("Amount") or 0) + int(r.get("Chamber") or 0)
+            pente = int(r.get("Size") or 0) or 5
+            if reserva < pente:
+                nome = re.sub(r"_C$", "", str(r.get("arma") or "")).replace("ID_", "").replace("_", " ").strip()
+                out.append({"arma": nome, "reserva": reserva, "na_arma": na_arma, "max": r.get("max")})
+        return out
+
+    def alvejados(self):
+        """Animais que levaram tiro seu neste mapa (alvejados.json, gravado pelo mod), por id."""
+        arq = self.cache.json(self.caminho("alvejados.json"), None)
+        if not isinstance(arq, dict) or not isinstance(arq.get("lista"), list):
+            return {}
+        if self.nivel() and arq.get("mapa") and arq["mapa"] not in self.nivel() and self.nivel() not in arq["mapa"]:
+            return {}
+        return {str(a.get("id")): a for a in arq["lista"] if isinstance(a, dict)}
+
+    @staticmethod
+    def situacao_alvejado(a, abatidos_ids):
+        """Resumo para o card: fatal (morreu) ou ferido (vivo), com tiros e órgãos atingidos."""
+        orgaos = []
+        for o in a.get("orgaos") or []:
+            n = missoes.nome_orgao(o)
+            if n and n not in orgaos:
+                orgaos.append(n)
+        vital = missoes.acertou_vital(a.get("orgaos"))
+        if a.get("morto") or a.get("vivo") is False or str(a.get("id")) in abatidos_ids:
+            estado = "fatal"
+        elif a.get("vivo"):
+            estado = "ferido"
+        else:
+            estado = "incerto"
+        return {"estado": estado, "tiros": int(a.get("tiros") or 0), "orgaos": orgaos[:5], "vital": vital}
+
+    # ------------------------------------------------------------ divulgação: card da semana
+    def card_semana(self):
+        """Resumo dos últimos 7 dias do jogo nesta reserva, para a imagem de divulgação."""
+        with self.lock:
+            nv = self.nivel() if self.em_reserva() else None
+            if not nv:
+                nv = next((a.get("reserva") for a in reversed(self.dados.get("abates") or []) if a.get("reserva")), None)
+            dia = self.dados.get("dia_jogo", 0)
+            p = manejo.painel(self.dados, nv, nome_especie, grupo_de)
+            ab = [a for a in self.dados.get("abates") or [] if a.get("reserva") == nv
+                  and isinstance(a.get("dia_jogo"), int) and dia - a["dia_jogo"] < 7]
+            melhor = max(ab, key=lambda a: a.get("pontos_trofeu") or 0, default=None)
+            esp = {}
+            for a in ab:
+                esp[a.get("especie_nome") or a.get("grupo_nome") or "?"] = esp.get(a.get("especie_nome") or a.get("grupo_nome") or "?", 0) + 1
+            pat = (self.estado_cache_patente() or {})
+            return {"reserva": nv, "dia": dia, "abates": len(ab), "limpos": sum(1 for a in ab if (a.get("tiros") or 1) == 1),
+                    "vitais": sum(1 for a in ab if a.get("vital")),
+                    "avistados": sum(x["avistados"] for x in p["semana"]), "indice": p["indice"].get("valor"), "selo": p["indice"].get("selo"),
+                    "especies": sorted(esp.items(), key=lambda x: -x[1])[:5],
+                    "melhor": {"especie": melhor.get("especie_nome"), "pontos": melhor.get("pontos_trofeu"), "peso_kg": melhor.get("peso_kg"),
+                               "genetica": melhor.get("genetica")} if melhor and melhor.get("pontos_trofeu") else None,
+                    "patente": pat.get("patente"), "semana": p["semana"]}
+
+    def estado_cache_patente(self):
+        try:
+            earl = self.pontos_earl()
+            return extras.patente(self.reputacao_guardada(self.estado), earl["valor"], {t for t, _ in AGENTES})
+        except Exception:
+            return None
+
+    def salvar_card(self, data_url, nome):
+        import base64
+        if not isinstance(data_url, str) or not data_url.startswith("data:image/png;base64,"):
+            return {"ok": False, "erro": "Imagem inválida."}
+        bruto = base64.b64decode(data_url.split(",", 1)[1])
+        if len(bruto) > 8_000_000:
+            return {"ok": False, "erro": "Imagem grande demais."}
+        pasta = os.path.join(BASE_DIR, "Divulgacao")
+        os.makedirs(pasta, exist_ok=True)
+        nome = re.sub(r"[^\w\-]+", "-", str(nome or "card-semana"))[:60] + ".png"
+        with open(os.path.join(pasta, nome), "wb") as f:
+            f.write(bruto)
+        return {"ok": True, "arquivo": os.path.join("Divulgacao", nome)}
 
     # ------------------------------------------------------------ sessão de jogo (resumo)
     def cuidar_sessao(self):
@@ -2728,6 +2753,17 @@ TIPOS = {".html": "text/html; charset=utf-8", ".js": "application/javascript", "
          ".png": "image/png", ".svg": "image/svg+xml", ".jpg": "image/jpeg", ".woff2": "font/woff2"}
 
 
+class Servidor(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        """Celular que fecha a tela no meio de uma resposta derruba a conexão: é normal, não vai para o log."""
+        e = sys.exc_info()[1]
+        if isinstance(e, (ConnectionAbortedError, ConnectionResetError, BrokenPipeError, TimeoutError)):
+            return
+        super().handle_error(request, client_address)
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -3069,9 +3105,9 @@ def main():
     # "0.0.0.0" = também a rede de casa (celular, com PIN). Na primeira vez o Windows pergunta se libera: clique em Permitir.
     endereco = "0.0.0.0" if APP.cfg.get("celular") else "127.0.0.1"
     try:
-        servidor = ThreadingHTTPServer((endereco, porta), Handler)
+        servidor = Servidor((endereco, porta), Handler)
     except OSError:
-        servidor = ThreadingHTTPServer(("127.0.0.1", porta), Handler)
+        servidor = Servidor(("127.0.0.1", porta), Handler)
     print(f"App aberto em {url}  (deixe esta janela aberta enquanto joga)")
     if APP.cfg.get("abrir_navegador") and "--sem-navegador" not in sys.argv:
         threading.Timer(1.0, lambda: abrir_janela(url)).start()

@@ -498,6 +498,7 @@ function direcaoTexto(g) {
   return a < 15 ? "à frente" : a > 165 ? "atrás" : a > 110 ? `atrás, à ${lr}` : a < 60 ? `à frente, à ${lr}` : `à ${lr}`;
 }
 
+const faixaKg = f => f.map(x => String(x).replace(".", ",")).join("–") + " kg";
 function alvejadoHtml(v) {
   if (!v) return `<div class="ficha-lin"><span>Alvejado</span><b>Não</b></div>`;
   const tiros = v.tiros === 1 ? "1 tiro" : `${v.tiros} tiros`;
@@ -516,7 +517,9 @@ function fichaAnimal(a) {
     <div class="ficha-lin"><span>Genética</span><b>${pct(a.genetica)}</b></div>
     <div class="ficha-barra"><i style="width:${(a.genetica || 0) * 100}%"></i><em style="left:${(pot || 0) * 100}%"></em></div>
     <div class="ficha-lin"><span>Potencial genético</span><b>${pct(pot)}</b></div>
-    ${a.peso_faixa ? `<div class="ficha-lin"><span>Peso estimado</span><b>${a.peso_faixa.map(x => String(x).replace(".", ",")).join("–")} kg</b></div>` : ""}
+    ${a.peso_faixa ? `<div class="ficha-lin"><span>Peso estimado</span><b>${faixaKg(a.peso_faixa)}</b></div>` : ""}
+    ${(a.peso_hist || []).length ? (() => { const h = a.peso_hist[a.peso_hist.length - 1]; const dif = a.peso_faixa[0] - h.faixa[0];
+      return `<div class="ficha-peso-ant">${dif >= 0 ? "Cresceu" : "Perdeu peso"}: antes ${faixaKg(h.faixa)}${h.dia != null ? ` (dia ${h.dia})` : ""}</div>`; })() : ""}
     ${alvejadoHtml(a.alvejado)}
     <div class="ficha-lin"><span>Distância</span><b>${metros(a.distancia_m)}</b></div>
     <div class="ficha-lin"><span>Direção</span><b>${direcaoTexto(a.direcao)}</b></div>
@@ -963,20 +966,6 @@ function alternarVertical(forcar) {
   setTimeout(() => mapa.invalidateSize(), 80);
 }
 try { if (localStorage.getItem("hs3_vertical") === "1") setTimeout(() => alternarVertical(true), 0); } catch {}
-function abrirAgentesAntigo() {
-  const e = earlDados;
-  const linhaEarl = e ? `<div class="ag-lin ag-earl"><div class="ag-cab"><b>Earl</b><span>Nível ${e.nivel}${e.nivel >= e.max ? " (máximo)" : ""}</span></div>
-    <div class="ag-barra"><i style="width:${Math.round(e.progresso * 100)}%"></i></div>
-    <small>${fmt(e.valor)} pontos · ${e.contratos} contrato${e.contratos === 1 ? "" : "s"} pago${e.contratos === 1 ? "" : "s"}, todas as reservas${e.proximo ? ` · faltam ${fmt(e.proximo - e.valor)} para o nível ${e.nivel + 1}` : ""}</small></div>` : "";
-  const linhas = agentesDados.map(a => `<div class="ag-lin"><div class="ag-cab"><b>${esc(a.nome)}</b><span>Nível ${a.nivel}${a.nivel >= 5 ? " (máximo)" : ""}</span></div>
-    <div class="ag-barra"><i style="width:${Math.round(a.progresso * 100)}%"></i></div>
-    <small>${fmt(a.valor)} pontos${a.proximo ? ` · faltam ${fmt(a.proximo - a.valor)} para o nível ${a.nivel + 1}` : ""}</small></div>`).join("");
-  moModal(`<header class="mo-jan-topo"><div><h3>Reputação nesta reserva</h3><small>Os quatro agentes de campo do jogo</small></div>
-      <button class="mo-x" onclick="moFecharModal()">✕</button></header>
-    <div class="mo-jan-corpo ag-lista">${linhas || "<p>Entre numa reserva para ver a reputação dos agentes.</p>"}
-    <p class="mo-dica">Cada nível pede 200 pontos (até 1000). Os contratos do Earl dizem antes de aceitar qual agente recebe os pontos.</p>
-    ${linhaEarl}<p class="mo-dica">O Earl também ganha pontos com cada contrato dele que você completa (abortar tira). A patente soma os agentes de todas as reservas (até 1000 cada) e o Earl.</p></div>`);
-}
 const moMunSel = {};   // munição escolhida no carrossel (ainda não mandada para o jogo), por arma
 function moMunPassar(arma, n, passo, k) { moMunSel[arma] = (k + passo + n) % n; renderArmario(true); }
 async function renderArmario(forcar) {

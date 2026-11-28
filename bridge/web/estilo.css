@@ -820,12 +820,6 @@ body.apk .so-apk { display: inline-flex !important; }
 
 .num.clicavel { cursor: pointer; }
 .num.clicavel:hover { border-color: var(--blaze); }
-.ag-lista { display: grid; gap: 14px; min-width: min(420px, 86vw); }
-.ag-cab { display: flex; justify-content: space-between; margin-bottom: 4px; }
-.ag-cab span { color: var(--liquen); font-size: 13px; }
-.ag-barra { height: 8px; border-radius: 5px; background: var(--linha); overflow: hidden; }
-.ag-barra i { display: block; height: 100%; background: linear-gradient(90deg, #a97d2d, #6f9541); }
-.ag-lin small { color: var(--liquen); }
 
 .mk-barraca { width: 42px; height: 42px; font-size: 24px; border-radius: 10px; }
 
@@ -880,8 +874,6 @@ body.apk .so-apk { display: inline-flex !important; }
 .lic-item.zerou { border-color: #a64431; background: var(--papel-2); }
 .lic-item.zerou b { color: #cb2d0b; }
 @media (max-width: 700px) { .lic-item { font-size: 12px; padding: 6px 10px; } }
-.ag-earl { border-top: 1px dashed var(--linha); padding-top: 10px; margin-top: 6px; }
-.ag-earl .ag-barra i { background: linear-gradient(90deg, #85682f, #af8427); }
 
 /* loja: seções e equipamentos */
 .loja-secoes { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }

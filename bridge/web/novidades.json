@@ -4,7 +4,9 @@
   "titulo": "Peso estimado de volta",
   "itens": [
    "Animal marcado no binóculo logo depois de passar o tempo ou viajar ficava sem peso estimado: agora o peso chega uns segundos depois.",
-   "Marcar de novo o mesmo animal não apaga mais o peso estimado que ele já tinha."
+   "Marcar de novo o mesmo animal não apaga mais o peso estimado que ele já tinha.",
+   "Os animais crescem: quando você marca de novo um animal e o peso mudou, o card mostra o peso novo e o de antes (\"Cresceu: antes 70–80 kg, dia 3\").",
+   "Limpeza do código e do log do app (conexão do celular caindo não aparece mais como erro)."
   ]
  },
  {
