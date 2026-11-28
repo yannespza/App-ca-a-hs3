@@ -1362,6 +1362,19 @@ class Companion:
             atual = None      # leitura de outra reserva: não vale para comprar aqui
         return atual, self._licencas_todas
 
+    def ir_ate(self, corpo):
+        """Viagem rápida até um ponto descoberto do mapa (acampamento, torre, agente, cabana...)."""
+        if not self.em_reserva():
+            return {"ok": False, "erro": "Entre numa reserva no jogo primeiro."}
+        try:
+            x, y, z = float(corpo["x"]), float(corpo["y"]), float(corpo.get("z") or 0)
+        except (KeyError, TypeError, ValueError):
+            return {"ok": False, "erro": "Ponto inválido."}
+        self.pausa_pos_ate = time.time() + 15        # não grava "último local" no meio da viagem
+        if not self.enviar_comando([f"teleport {x:.0f} {y:.0f} {z:.0f}"]):
+            return {"ok": False, "erro": "O jogo não está respondendo."}
+        return {"ok": True}
+
     def recarregar_municao(self):
         """Enche a reserva de munição das armas da mochila (no jogo a munição não custa nada)."""
         if not self.em_reserva():
@@ -2102,6 +2115,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.responder(200, {"ok": True})
         if p == "/api/setups":
             return self.responder(200, APP.setups(corpo))
+        if p == "/api/ir":
+            return self.responder(200, APP.ir_ate(corpo))
         if p == "/api/municao":
             return self.responder(200, APP.recarregar_municao())
         if p == "/api/licenca":
