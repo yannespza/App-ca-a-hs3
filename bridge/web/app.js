@@ -242,6 +242,7 @@ function desenharBarracas(d) {
       .bindTooltip(esc(b.nome) + (b.pendente ? " (pagando…)" : ""))
       .bindPopup(`<div class="pp-caixa" style="text-align:center"><b>${esc(b.nome)}</b><br>
         <button class="btn-papel verde" style="margin-top:6px;padding:10px 14px" onclick="barraca('ir','${esc(b.id)}')">🚶 Ir até a barraca</button><br>
+        <button class="btn-papel" style="margin-top:6px" onclick="barraca('carro','${esc(b.id)}')" title="Traz o último carro que você usou, com o setup dele, para o lado da barraca">🚙 Trazer o carro para cá</button><br>
         <button class="btn-papel" style="margin-top:6px" onclick="barraca('desmontar','${esc(b.id)}')">Desmontar</button></div>`)
       .addTo(grupoBarracas);
   }

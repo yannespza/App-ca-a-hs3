@@ -1232,37 +1232,14 @@ class Companion:
                 avaliar_missoes(d, {"tipo": "carcaca_recolhida", "id": id_, "ts": time.time()}, reserva)
                 self.salvar_pendente = True
 
-    def vigiar_niveis(self):
-        """Agente subiu de nível nesta reserva: o Earl oferece um contrato de linhagem (genética) para ele."""
-        if not self.em_reserva() or time.time() - getattr(self, "_niveis_visto", 0) < 10:
-            return
-        self._niveis_visto = time.time()
-        nivel_mapa = self.nivel()
-        reserva = self.reserva()
-        guardados = self.dados.setdefault("niveis_agentes", {}).setdefault(reserva, {})
-        grupos = None
-        for r in (self.estado or {}).get("reputacao") or []:
-            if not nivel_mapa or nivel_mapa not in (r.get("mapa") or "") or r.get("vendedor") not in missoes.AGENTE_NOME:
-                continue
-            nv = min(5, int(r.get("valor") or 0) // 200)
-            antes = guardados.get(r["vendedor"])
-            guardados[r["vendedor"]] = nv
-            if antes is None or nv <= antes:
-                continue                     # primeira leitura só registra; contrato só quando sobe
-            if grupos is None:
-                grupos, _cap = self.info_gerador()
-            grupo = random.choice(grupos) if grupos else None
-            m = missoes.genetica_nivel(r["vendedor"], nv, grupo, nome_grupo)
-            m["reserva"] = reserva
-            self.dados["missoes"].append(m)
-            self.salvar_pendente = True
-
     def recontar_marcacoes(self):
         """Uma vez ao abrir: marcações feitas depois de aceitar um contrato de censo e que não contaram (erro até a v0.1.58)."""
         if getattr(self, "_recontou", False) or not self.em_reserva():
             return
         self._recontou = True
         d = self.dados
+        # contratos de "linhagem" por nível (v0.1.60) saíram: genética nova é só dos agentes do jogo
+        d["missoes"] = [m for m in d["missoes"] if not (m.get("genetica_nivel") and m["status"] in ("oferta", "ativa"))]
         for m in d["missoes"]:
             if m["status"] != "ativa" or not (m.get("cond") or {}).get("marcar"):
                 continue
@@ -1481,6 +1458,14 @@ class Companion:
             if not self.enviar_comando([f"cobrar {self.PRECO_BARRACA} {ref}"]):
                 return {"ok": False, "erro": "O jogo não está respondendo."}
             lista.append({"id": ref, "x": x, "y": y, "z": z, "nome": f"Barraca {len(lista) + 1}", "ts": time.time(), "pendente": ref})
+        elif acao == "carro":
+            b = next((b for b in lista if b["id"] == corpo.get("id")), None)
+            if not b:
+                return {"ok": False, "erro": "Barraca não encontrada."}
+            # 8 m ao lado da barraca (o jogo leva o último carro usado, com o setup dele)
+            alvo = f"carro {b['x'] + 800:.0f} {b['y']:.0f}" + (f" {b['z']:.0f}" if b.get("z") is not None else "")
+            if not self.enviar_comando([alvo]):
+                return {"ok": False, "erro": "O jogo não está respondendo."}
         elif acao == "desmontar":
             lista[:] = [b for b in lista if b["id"] != corpo.get("id")]
         elif acao == "ir":
@@ -1833,7 +1818,6 @@ class Companion:
             self.cuidar_posicao()
             self.contar_dias()
             self.recontar_marcacoes()
-            self.vigiar_niveis()
             self.vigiar_mortos()
             self.marcar_estruturas_perto()
             self.revisar_contratos()

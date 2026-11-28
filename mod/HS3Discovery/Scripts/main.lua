@@ -873,6 +873,21 @@ LoopAsync(1000, function()
                 elseif cmd == "teleport" then
                     local x, y, z = line:match("^teleport%s+(%S+)%s+(%S+)%s*(%S*)")
                     teleportar(tonumber(x), tonumber(y), tonumber(z))
+                elseif cmd == "carro" then
+                    -- carro x y [z]: traz o último veículo usado (com o setup dele) para perto do ponto (testado 27/11)
+                    local x, y, z = line:match("^carro%s+(%S+)%s+(%S+)%s*(%S*)")
+                    x, y, z = tonumber(x), tonumber(y), tonumber(z)
+                    if x and y then
+                        z = z or alturaChao(x, y)
+                        if not z then log("carro: sem altura do chão no destino")
+                        else
+                            local ok, e = pcall(function()
+                                FindFirstOf("HS3PlayerStateComponent_Vehicle"):Server_TeleportSpawnedVehicle({ Rotation = { X = 0, Y = 0, Z = 0, W = 1 },
+                                    Translation = { X = x, Y = y, Z = z + 100 }, Scale3D = { X = 1, Y = 1, Z = 1 } })
+                            end)
+                            log("carro trazido: " .. (ok and "OK" or tostring(e)))
+                        end
+                    end
                 elseif cmd == "cobrar" then
                     -- cobrar <créditos> <ref>: itens do app (barracas, câmeras...) pagos com o dinheiro do jogo
                     local valor, r = line:match("^cobrar%s+(%d+)%s*(%S*)")

@@ -178,6 +178,8 @@ def gerar(dados, pois, nome_grupo, grupos_reserva, cap, quantos=1):
         if len(saida) >= quantos:
             break
         m = _um(grupos, pois, nome_grupo, cap)
+        if grupos and random.random() < 0.10:      # de vez em quando: descarte de genética fraca
+            m = descarte(random.choice(grupos), nome_grupo, int(cap.get("nivel") or 0))
         if m and cap.get("nivel"):
             m["creditos"] = int(round(m["creditos"] * (1 + 0.1 * min(5, cap["nivel"])) / 10) * 10)   # mais difícil, paga mais
         if m and m["titulo"] not in usados:
@@ -484,17 +486,15 @@ def agente_de(m):
     return "NPC.Vendor.Butcher"                    # abate simples, várias espécies, atrair: carne
 
 
-def genetica_nivel(agente, nivel, grupo, nome_grupo):
-    """Contrato liberado quando um agente sobe de nível: descarte de animais de genética fraca de um grupo
-    para "melhorar a linhagem" (no app; o jogo não deixa mexer na genética de verdade)."""
+def descarte(grupo, nome_grupo, nivel=0):
+    """Controle: abater animais de genética fraca de um grupo (no jogo isso melhora a população da reserva)."""
     nome = _g(nome_grupo(grupo)) if grupo else "animais"
     meta = 2 if nivel < 3 else 3
     teto = 0.45 if nivel < 3 else 0.40
-    m = _base(f"Linhagem melhor: {nome}"[:60],
-              f"Parabéns pelo nível {nivel} com o {AGENTE_NOME.get(agente, 'agente')}. Agora dá para cuidar da linhagem: "
-              f"tire da reserva os {plural(nome, meta)} de genética fraca e deixe os bons crescerem.",
+    m = _base(random.choice(["Descarte de genética fraca", "Limpeza do bando", "Seleção no campo"]) + f": {nome}"[:60],
+              f"O Guarda pediu ajuda com os {nome}. Tem bicho fraco demais segurando o bando. Confira no binóculo e "
+              f"tire só os de potencial baixo. Deixe os bons crescerem.",
               f"Abata {meta} {plural(nome, meta)} com potencial genético de {int(teto * 100)}% ou menos (confira no binóculo).",
-              meta, 600 + 250 * nivel)
-    m.update({"tipo": "combo", "grupo": grupo, "cond": {"genetica_max": teto}, "vendedor": agente, "genetica_nivel": nivel})
-    m["reputacao"] = 20 + 5 * nivel
+              meta, 500 + 150 * nivel)
+    m.update({"tipo": "combo", "grupo": grupo, "cond": {"genetica_max": teto}, "vendedor": "NPC.Vendor.Ranger"})
     return m
