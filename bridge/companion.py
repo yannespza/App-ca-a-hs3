@@ -30,6 +30,7 @@ import extras
 import imagens
 import instalador
 import missoes
+import manejo
 import mapa
 
 
@@ -1099,8 +1100,19 @@ class Companion:
                 espera = self.dados.get("espera_agente") or {}
                 dia = self.dados.get("dia_jogo", 0)
                 novas = [m for m in novas if espera.get(missoes.agente_de(m), -1) <= dia]
+                # Bolsa de carne (painel Manejo): contrato do Açougueiro paga mais pela espécie que está em falta
+                try:
+                    dem = {}
+                    for l in manejo.painel(self.dados, self.nivel(), nome_especie, grupo_de)["especies"]:
+                        dem[l["grupo"]] = max(dem.get(l["grupo"], 0), l["demanda"])
+                except Exception:
+                    dem = {}
                 for m in novas:
                     m["reserva"] = reserva
+                    f = dem.get(m.get("grupo"))
+                    if f and missoes.agente_de(m) == "NPC.Vendor.Butcher" and m.get("creditos") and abs(f - 1) >= 0.05:
+                        m["creditos"] = int(round(m["creditos"] * f / 10) * 10)
+                        m["demanda"] = f
                 self.dados["missoes"].extend(novas[:n])
                 self.salvar_pendente = True
         except Exception as e:
@@ -1295,7 +1307,29 @@ class Companion:
         self._hora_antes = h
         if antes is not None and h < antes - 6:
             self.dados["dia_jogo"] = self.dados.get("dia_jogo", 0) + 1
+            self.registrar_boletim()
             salvar_json(DADOS_PATH, self.dados)
+
+    def registrar_boletim(self):
+        """Boletim da manhã: o resumo do dia que acabou de passar nesta reserva."""
+        try:
+            nv = self.nivel()
+            p = manejo.painel(dict(self.dados, dia_jogo=self.dados.get("dia_jogo", 1) - 1), nv, nome_especie, grupo_de)
+            b = dict(p["hoje"], reserva=nv, ts=time.time())
+            if not b["abates"] and not b["avistados"]:
+                return
+            self.dados.setdefault("boletins", []).append(b)
+            del self.dados["boletins"][:-60]
+            self.boletim_novo = {"ts": b["ts"], "dia": b["dia"]}
+        except Exception as e:
+            print("boletim:", e)
+
+    def dados_manejo(self):
+        with self.lock:
+            nv = self.nivel() if self.em_reserva() else None
+            if not nv:
+                nv = next((a.get("reserva") for a in reversed(self.dados.get("avistamentos") or []) if a.get("reserva")), None)
+            return manejo.painel(self.dados, nv, nome_especie, grupo_de)
 
     def vigiar_queda(self, x, y, z):
         if z is not None:
@@ -2059,7 +2093,7 @@ class Companion:
                 "rastreados": rastreados, "ultimo_marcado": getattr(self, "ultimo_marcado", None),
                 "barracas": self.barracas(), "preco_barraca": self.PRECO_BARRACA, "max_barracas": self.MAX_BARRACAS,
                 "licencas_alerta": getattr(self, "licencas_alerta", []), "aviso_app": getattr(self, "aviso_app", None),
-                "carcaca_nova": getattr(self, "carcaca_nova", None),
+                "carcaca_nova": getattr(self, "carcaca_nova", None), "boletim_novo": getattr(self, "boletim_novo", None),
                 "ofertas": [m for m in lista if m["status"] == "oferta"],
                 "ativas": [m for m in lista if m["status"] == "ativa"],
                 "contratos_jogo": self.contratos_jogo(),
@@ -2255,6 +2289,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.responder(200, APP.dados_mochila(ids, esp))
         if caminho == "/api/loja":
             return self.responder(200, APP.dados_loja())
+        if caminho == "/api/manejo":
+            return self.responder(200, APP.dados_manejo())
         if caminho == "/api/instalacao":
             q = urllib.parse.parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
             return self.responder(200, APP.info_instalacao((q.get("pasta") or [None])[0]))

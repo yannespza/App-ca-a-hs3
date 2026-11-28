@@ -252,7 +252,7 @@ function desenharLicencas(d) {
   el.style.display = lista.length ? "" : "none";
 }
 // ---- aviso sonoro (contrato de carcaça novo)
-let somCtx = null, carcacaVista = undefined, avisoVisto = undefined;
+let somCtx = null, carcacaVista = undefined, avisoVisto = undefined, boletimVisto = undefined;
 document.addEventListener("pointerdown", () => { try { somCtx = somCtx || new (window.AudioContext || window.webkitAudioContext)(); somCtx.resume(); } catch (e) {} }, { passive: true });
 function tocarAviso() {
   try {
@@ -274,6 +274,9 @@ function vigiarAvisos(d) {
   const ts = c ? c.ts : null;
   if (carcacaVista !== undefined && ts && ts !== carcacaVista) tocarAviso();
   carcacaVista = ts;
+  const bn = d.boletim_novo;
+  if (boletimVisto !== undefined && bn && bn.ts !== boletimVisto) moAviso(`Bom dia! O boletim do dia ${bn.dia} está na aba Manejo.`, "ok");
+  boletimVisto = bn ? bn.ts : null;
   const a = d.aviso_app;
   if (avisoVisto !== undefined && a && a.ts !== avisoVisto) perguntar(a.texto, "Ok");
   avisoVisto = a ? a.ts : null;
@@ -722,7 +725,7 @@ document.querySelectorAll("#abas button[data-aba]").forEach(b => b.onclick = () 
   abaAtual = b.dataset.aba;
   document.body.dataset.aba = abaAtual;
   document.querySelectorAll("#abas button[data-aba]").forEach(x => x.classList.toggle("ativo", x === b));
-  ["armario", "loja", "enciclopedia", "cacadas"].forEach(a => $("painel-" + a).classList.toggle("ativo", a === abaAtual));
+  ["armario", "loja", "enciclopedia", "cacadas", "manejo"].forEach(a => $("painel-" + a).classList.toggle("ativo", a === abaAtual));
   document.querySelector(".mapa-papel").classList.toggle("so-mapa", abaAtual === "mapa");
   if (abaAtual === "mapa") setTimeout(() => mapa.invalidateSize(), 50);
   atualizarAba();
@@ -1311,5 +1314,59 @@ function atualizarAba() {
   if (abaAtual === "armario") renderArmario();
   else if (abaAtual === "loja") renderLoja();
   else if (abaAtual === "enciclopedia") renderEnciclopedia();
+  else if (abaAtual === "manejo") renderManejo();
 }
-setInterval(() => { if (abaAtual === "armario" || abaAtual === "loja") atualizarAba(); }, 8000);
+setInterval(() => { if (abaAtual === "armario" || abaAtual === "loja" || abaAtual === "manejo") atualizarAba(); }, 8000);
+
+// ---------------------------------------------------------------- Manejo da reserva (só no app: nada aqui mexe no jogo)
+let manejoAssin = "";
+const NOME_RESERVA = r => /Colorado/i.test(r || "") ? "Colorado" : /Texas/i.test(r || "") ? "Texas" : /Poland|Polonia/i.test(r || "") ? "Polônia" : /Alaska/i.test(r || "") ? "Alasca" : (r || "–");
+async function renderManejo() {
+  let d;
+  try { d = await (await fetch("/api/manejo")).json(); } catch { return; }
+  const assin = JSON.stringify(d);
+  const p = $("painel-manejo");
+  if (assin === manejoAssin && p.innerHTML) return;
+  manejoAssin = assin;
+  const pct = v => v == null ? "–" : Math.round(v * 100) + "%";
+  const ind = d.indice || {};
+  const indice = ind.valor == null ? `<p class="vazio">Faça alguns abates nesta reserva para o índice aparecer.</p>` : `
+    <div class="mj-indice ${ind.selo ? "selo" : ""}"><div class="mj-nota"><b>${ind.valor}</b><small>de 100</small></div>
+      <div class="mj-partes">${ind.partes.map(x => `<div class="mj-parte"><span>${esc(x.nome)} <small>${esc(x.dica)}</small></span>
+        <span class="mj-b"><i style="width:${Math.round(x.valor / x.max * 100)}%"></i></span><b>${x.valor}/${x.max}</b></div>`).join("")}</div>
+      ${ind.selo ? `<div class="mj-selo">🏅 Reserva Modelo</div>` : `<div class="mj-selo apagado">Reserva Modelo a partir de 80</div>`}</div>
+    <p class="item-sub">Calculado com os últimos ${ind.base} abates desta reserva.</p>`;
+  const bol = b => `<div class="mj-bol"><div class="mj-bol-cab"><b>Dia ${b.dia}</b>${b.ts ? "<small>boletim da manhã</small>" : "<small>até agora</small>"}</div>
+    <p>${b.abates} abate${b.abates === 1 ? "" : "s"}${b.abates ? ` (${b.limpos} limpo${b.limpos === 1 ? "" : "s"})` : ""} · ${b.avistados} animal${b.avistados === 1 ? "" : "is"} avistado${b.avistados === 1 ? "" : "s"}
+      ${b.especies_abatidas.length ? `<br>Abatidos: ${esc(b.especies_abatidas.join(", "))}` : ""}
+      ${b.melhor ? `<br>Melhor troféu: <b>${esc(b.melhor.especie)}</b>, ${fmt(Math.round(b.melhor.pontos))} pts${b.melhor.peso_kg ? `, ${Math.round(b.melhor.peso_kg)} kg` : ""}` : ""}</p>
+    ${b.alertas.length ? `<ul class="mj-alertas">${b.alertas.map(a => `<li>${esc(a)}</li>`).join("")}</ul>` : ""}
+    ${b.procura.length ? `<p class="item-sub">Açougue procurando: ${b.procura.map(x => `${esc(x.nome)} (+${Math.round((x.demanda - 1) * 100)}%)`).join(", ")}</p>` : ""}</div>`;
+  const maxSem = Math.max(1, ...d.semana.map(x => Math.max(x.abates, x.avistados)));
+  const semana = `<div class="mj-semana">${d.semana.map(x => `<div class="mj-dia"><div class="mj-colunas">
+      <i class="av" style="height:${x.avistados / maxSem * 100}%" title="${x.avistados} avistados"></i><i class="ab" style="height:${x.abates / maxSem * 100}%" title="${x.abates} abates"></i></div>
+      <small>${x.dia}</small></div>`).join("")}</div>
+    <p class="item-sub"><span class="mj-leg av"></span> avistados <span class="mj-leg ab"></span> abates, por dia do jogo</p>`;
+  const chipP = { "alta": "verm", "média": "amb", "baixa": "verde", "sem dados": "" };
+  const esp = d.especies.map(l => {
+    const tot = l.machos + l.femeas;
+    const dem = l.demanda >= 1.05 ? `<span class="mj-chip verde">açougue paga +${Math.round((l.demanda - 1) * 100)}%</span>`
+      : l.demanda <= 0.95 ? `<span class="mj-chip">açougue paga −${Math.round((1 - l.demanda) * 100)}%</span>` : "";
+    return `<div class="mj-esp ${l.defeso ? "defeso" : ""}">
+      <div class="mj-esp-cab"><button class="lnk" onclick="abrirZona(${esc(JSON.stringify({ especie: l.tag }))})">${silhueta(l.grupo, l.tag)} ${esc(l.nome)}</button>
+        <span class="mj-chip ${chipP[l.pressao] || ""}">pressão ${esc(l.pressao)}</span>${l.defeso ? `<span class="mj-chip verm">defeso sugerido</span>` : ""}${dem}</div>
+      <div class="mj-esp-num"><span><b>${l.vistos}</b> vistos (7 dias)</span><span>♂ ${l.machos} · ♀ ${l.femeas}</span>
+        <span>genética média <b>${pct(l.genetica_media)}</b></span><span>melhor potencial <b>${pct(l.potencial_max)}</b></span>
+        <span><b>${l.abates_7d}</b> abates na semana · ${l.abates} no total</span></div>
+      ${tot ? `<div class="mj-sexo"><i class="m" style="width:${l.machos / tot * 100}%"></i><i class="f" style="width:${l.femeas / tot * 100}%"></i></div>` : ""}
+      ${l.alertas.length ? `<ul class="mj-alertas">${l.alertas.map(a => `<li>${esc(a)}</li>`).join("")}</ul>` : ""}</div>`;
+  }).join("");
+  p.innerHTML = `<header class="pag-topo"><h2>Manejo · ${esc(NOME_RESERVA(d.reserva))}</h2>
+      <p>Censo, equilíbrio e pressão de caça calculados com o que você avistou no binóculo e abateu. Dia ${d.dia} do jogo pelo contador do app. Nada aqui mexe no jogo.</p></header>
+    <h3>Índice de sustentabilidade</h3>${indice}
+    <h3>Boletins</h3><div class="mj-bols">${bol(d.hoje)}${(d.boletins || []).filter(b => b.dia !== d.hoje.dia).map(bol).join("")}</div>
+    <h3>Últimos 7 dias</h3>${semana}
+    <h3>Espécies (${d.especies.length})</h3>
+    <p class="item-sub">${d.totais.avistados} animais diferentes avistados e ${d.totais.abates} abates nesta reserva. A procura do açougue sobe com os dias sem abater a espécie e muda o valor dos contratos do Açougueiro.</p>
+    <div class="mj-lista">${esp || `<p class="vazio">Use o binóculo para começar o censo.</p>`}</div>`;
+}
