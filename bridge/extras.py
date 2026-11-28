@@ -92,14 +92,6 @@ def tipo_item(tag):
     return None, None
 
 
-def especies_por_calibre(calibres):
-    mapa = {}
-    for linha in calibres:
-        for c in linha.get("compativeis", []):
-            mapa.setdefault(c, []).append(linha.get("animal"))
-    return mapa
-
-
 def loja(catalogo, equip, na_mochila=None, icones=None):
     comprados = {b["id"] for b in equip.get("comprados", [])}
     vestidos = {r.get("item") for r in equip.get("roupa", [])}
@@ -219,6 +211,28 @@ def nome_atributo(a):
     return out.replace("Factor", "").strip()
 
 
+def carga_serve(linha, carga):
+    """A munição (carga) é permitida para a espécie? Regra conferida com a função do próprio jogo
+    (CaliberCompatibilityFunctionLibrary, 37 espécies × 27 cargas, 28/11/2026): vale a entrada MAIS ESPECÍFICA
+    da tabela que cobre a carga. Ex.: pomba lista Shell.20G.Bird como permitida e Shell.20G.Bird.Medium como proibida,
+    então a carga Medium é proibida; faisão só lista Shell.20G.Bird, então a Medium (filha) é permitida."""
+    if not carga or not linha:
+        return False
+    melhor, ok = -1, False
+    for lista, valor in ((linha.get("compativeis") or [], True), (linha.get("incompativeis") or [], False)):
+        for p in lista:
+            if (carga == p or carga.startswith(p + ".")) and len(p) > melhor:
+                melhor, ok = len(p), valor
+    return ok
+
+
+def calibre_arma_serve(linha, cal):
+    """A arma (calibre, ex.: Shell.20G) tem alguma carga permitida para a espécie."""
+    if not cal or not linha:
+        return False
+    return any(p == cal or p.startswith(cal + ".") or cal.startswith(p + ".") for p in linha.get("compativeis") or [])
+
+
 def _casa_tag(a, b):
     a, b = a or "", b or ""
     return bool(a and b) and (a == b or a.startswith(b + ".") or b.startswith(a + "."))
@@ -286,7 +300,6 @@ def enciclopedia_jogo(dados, calibres, catalogo_equip, abates, vistos, nome_espe
     vestidos = {r.get("item") for r in catalogo_equip.get("roupa", [])}
     na_mochila = {m.get("item") for m in catalogo_equip.get("mochila", [])}
     comprados |= {c.get("id") for c in dados.get("itens", []) if c.get("item") in na_mochila}   # itens de DLC
-    esp_cal = especies_por_calibre(calibres)
     calibre_por_arma = {a["arma"]: a["calibre"] for a in abates if a.get("arma") and a.get("calibre")}
 
     def img(n):
@@ -372,12 +385,15 @@ def enciclopedia_jogo(dados, calibres, catalogo_equip, abates, vistos, nome_espe
             d["sub"] = _sub_municao(cals[0] if cals else c.get("tipo"))
         if cals and cat in ("armas", "municao"):
             d["calibre"] = ", ".join(nome_calibre(x) for x in cals)
-            def casa(k, x):
-                return k == x or k.startswith(x + ".")
+            def serve(l, x):     # munição: a própria carga; arma: qualquer carga do calibre
+                return carga_serve(l, x) if cat == "municao" else calibre_arma_serve(l, x)
+
+            def proibida(l, x):  # citada na tabela e, pela entrada mais específica, não permitida
+                toca = any(k == x or k.startswith(x + ".") or x.startswith(k + ".") for k in (l.get("incompativeis") or []))
+                return toca and not serve(l, x)
             d["calibres"] = [{"nome": nome_calibre(x),
-                              "especies": sorted({nome_especie(a) for k, l in esp_cal.items() if casa(k, x) for a in l if a}),
-                              "proibidas": sorted({nome_especie(l.get("animal")) for l in calibres
-                                                   if any(casa(k, x) for k in l.get("incompativeis", []))} - {None})}
+                              "especies": sorted({nome_especie(l.get("animal")) for l in calibres if serve(l, x)} - {None}),
+                              "proibidas": sorted({nome_especie(l.get("animal")) for l in calibres if proibida(l, x)} - {None})}
                              for x in cals]
         if c.get("stats"):
             st = {nome: round(c["stats"].get(chave, 0)) for chave, nome in STATS}
@@ -589,21 +605,20 @@ def mochila(dados, calibres, equip, lida, missoes, nome_especie, grupo_de, grupo
         else:
             alvos_u.append({"chave": t, "nome": nome, "linhas": linhas, "tags": [t]})
 
-    def _casa_cal(p, cal, exato):
-        # munição (exato): a tabela lista a própria carga ou o "pai" dela (Shell.12G.Bird vale para Shell.12G.Bird.Medium)
-        # calibre da arma: a arma lista o "pai" (12G) e aceita qualquer carga dele
-        return p == cal or cal.startswith(p + ".") or (not exato and p.startswith(cal + "."))
+    def _serve(l, cal, exato):
+        # munição (exato): regra da entrada mais específica (carga_serve); arma: qualquer carga do calibre
+        return carga_serve(l, cal) if exato else calibre_arma_serve(l, cal)
 
     def cobre(cal, exato=False):
         """Chaves dos alvos em que esse calibre (arma) ou essa munição (exato) é permitido."""
         if not cal:
             return set()
-        return {u["chave"] for u in alvos_u if any(_casa_cal(p, cal, exato) for l in u["linhas"] for p in l.get("compativeis", []))}
+        return {u["chave"] for u in alvos_u if any(_serve(l, cal, exato) for l in u["linhas"])}
 
     def calibre_serve(cal, exato=False):
         if alvos_u:
             return bool(cobre(cal, exato))
-        return any(_casa_cal(p, cal, exato) for l in calibres for p in l.get("compativeis", []))
+        return any(_serve(l, cal, exato) for l in calibres)
 
     nome_alvo = {u["chave"]: u["nome"] for u in alvos_u}
 
@@ -1012,7 +1027,7 @@ def especies_da_carga(carga, calibres, nome_especie):
     if not carga:
         return []
     nomes = {nome_especie(l.get("animal")) for l in calibres if not (l.get("animal") or "").endswith(".Hub")
-             and any(p == carga or carga.startswith(p + ".") for p in l.get("compativeis", []))}
+             and carga_serve(l, carga)}
     return sorted(n for n in nomes if n)
 
 
@@ -1043,8 +1058,8 @@ def kit_especie(dados, calibres, equip, lida, tag, nome_especie, lic_mod=None, l
     pequeno = cab == "SmallGame"
 
     def serve_especie(cal, exato=False):
-        # munição (exato): a própria carga ou o "pai" dela na tabela; arma: qualquer carga do calibre
-        return any(p == cal or cal.startswith(p + ".") or (not exato and p.startswith(cal + ".")) for p in permitidos)
+        # munição (exato): regra da entrada mais específica; arma: qualquer carga do calibre
+        return carga_serve(linha, cal) if exato else calibre_arma_serve(linha, cal)
 
     # munição que você tem
     municoes = []
@@ -1243,8 +1258,7 @@ def capacidade(dados, calibres, equip, nivel, grupo_de, tipo_arma):
         if g == "outro":
             continue
         linha = next((l for l in calibres if l.get("animal") == tag), None) or next((l for l in calibres if _casa_tag(l.get("animal"), tag)), None)
-        permitidos = (linha or {}).get("compativeis", [])
-        ok_mun = [m for m in municoes if any(p == m or p.startswith(m + ".") for p in permitidos)]
+        ok_mun = [m for m in municoes if carga_serve(linha, m)]
         info = r.setdefault(g, {"armas": set(), "atrair": False, "especies": []})
         info["especies"].append(tag)
         for t, cals in armas:

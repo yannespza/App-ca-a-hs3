@@ -1013,6 +1013,7 @@ class Companion:
                     ab["perto_presa_m"] = round(dz) if dz is not None and dz < 1e8 else None
                 except Exception:
                     pass
+            self.conferir_calibre(ab)
             ab["estrutura_tipo"] = self.estrutura_do_tiro(ab)
             if isinstance(ab.get("pos"), dict):
                 try:
@@ -1596,6 +1597,48 @@ class Companion:
         if mudou:
             salvar_json(os.path.join(BASE_DIR, "calibres_todos.json"), list(self._calibres_todos.values()))
         return list(self._calibres_todos.values())
+
+    @staticmethod
+    def calibre_da_municao(municao):
+        """O mod não acha o calibre dos cartuchos de chumbo (B_Pellet_20G_Bird_Medium vem como "None"):
+        monta a tag pelo nome do projétil. Ex.: B_Pellet_20G_Bird_Medium -> Inventory.Ammo.Shell.20G.Bird.Medium."""
+        m = re.match(r"^B_(?:Pellet|Slug|Buck|Shell)_(\d+G)_?(.*)$", str(municao or ""))
+        if not m:
+            return None
+        resto = m.group(2) or ""
+        if "Slug" in str(municao):
+            return f"Inventory.Ammo.Shell.{m.group(1)}.Slug"
+        return f"Inventory.Ammo.Shell.{m.group(1)}" + ("." + resto.replace("_", ".") if resto else "")
+
+    def conferir_calibre(self, ab):
+        """Calibre certo pela tabela do jogo (mesma regra da função do jogo, conferida em 28/11/2026).
+        Completa o calibre dos cartuchos e o 'calibre certo' quando o mod não conseguiu dizer (animal não marcado)."""
+        cal = ab.get("calibre")
+        if not cal or cal == "None":
+            cal = self.calibre_da_municao(ab.get("municao"))
+            conhecidas = {t for l in self.tabela_calibres() for t in (l.get("compativeis") or []) + (l.get("incompativeis") or [])}
+            if cal in conhecidas:          # só aceita uma tag que existe na tabela do jogo
+                ab["calibre"] = cal
+            else:
+                cal = None
+        esp = ab.get("especie") or ab.get("especie_jogo")
+        if cal and cal != "None" and esp:
+            linha = next((l for l in self.tabela_calibres() if l.get("animal") == esp), None)
+            if linha:
+                ab["calibre_compativel"] = extras.carga_serve(linha, cal)
+        return ab
+
+    def revisar_calibres(self):
+        """Uma vez: completa calibre e 'calibre certo' dos abates antigos com a regra conferida no jogo (v 28/11)."""
+        if self.dados.get("calibres_revistos") == 2 or not self.tabela_calibres():
+            return
+        for ab in self.dados.get("abates") or []:
+            try:
+                self.conferir_calibre(ab)
+            except Exception:
+                pass
+        self.dados["calibres_revistos"] = 2
+        self.salvar_pendente = True
 
     # --- mochila
     # --- contratos do próprio jogo (lidos pelo mod em contratos_jogo.json)
@@ -2513,6 +2556,7 @@ class Companion:
             self.vigiar_mortos()
             self.marcar_estruturas_perto()
             self.anotar_estrutura()
+            self.revisar_calibres()
             self.revisar_contratos()
             if self.em_reserva():
                 if avaliar_missoes(self.dados, {"tipo": "posicao", "id": "local", "pos": self.estado["pos"], "ts": time.time()}, self.reserva()):
