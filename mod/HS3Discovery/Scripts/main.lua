@@ -538,7 +538,9 @@ local function writeAnimals()
         pcall(function()
             local loc = a:K2_GetActorLocation()
             local rot = a:K2_GetActorRotation()
-            lista[#lista + 1] = { id = a.EcoSimCreatureId, classe = a:GetClass():GetFName():ToString(),
+            local esp
+            pcall(function() esp = a.SpeciesTag.TagName:ToString() end)
+            lista[#lista + 1] = { id = a.EcoSimCreatureId, classe = a:GetClass():GetFName():ToString(), especie = esp,
                 x = loc.X, y = loc.Y, z = loc.Z, yaw = rot.Yaw }
         end)
     end
